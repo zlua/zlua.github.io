@@ -1,0 +1,55 @@
+<HEAD>
+<TITLE>4.6 Function Definitions</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_4_7.html>4.7 Fallbacks</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_5.html>4.5 Expressions</A>
+<HR>
+<H2><A NAME=S0460>4.6 Function Definitions</A></H2>
+<P>
+Functions in Lua can be defined anywhere in the global level of a module.
+The syntax for function definition is:
+<PRE>
+   <I>function</I> ::= <TT><B>function</B></TT><I> var </I>'(' [<I> parlist1 </I>] ')'<I> block </I><TT><B>end</B></TT><BR></PRE>
+<P>
+When Lua pre-compiles a chunk,
+all its function bodies are pre-compiled, too.
+Then, when Lua ``executes'' the function definition,
+its body is stored, with type <I>function</I>,
+into the variable <TT><B>var</B></TT>.
+<P>
+Parameters act as local variables,
+initialized with the argument values.
+<PRE>
+   <I>parlist1</I> ::= <I>'name' </I>{ ','<I> name </I>}<BR></PRE>
+<P>
+Results are returned using the <TT><B>return</B></TT> statement (see Section <A HREF=subsection3_4_4.html#return>4.4.3</A>).
+If control reaches the end of a function without a return instruction,
+the function returns with no results.
+<P>
+There is a special syntax for definition of methods,
+that is, functions which have an extra parameter <I>self</I>.
+<PRE>
+   <I>function</I> ::= <TT><B>function</B></TT><I> var </I>':'<I> name </I>'(' [<I> parlist1 </I>] ')'<I> block </I><TT><B>end</B></TT><BR></PRE>A declaration like
+<TT><B><PRE>
+function v:f (...)
+  ...
+end</PRE></B></TT>
+is equivalent to
+<TT><B><PRE>
+function v.f (self, ...)
+  ...
+end</PRE></B></TT>
+that is, the function gets an extra formal parameter called <TT><B>self</B></TT>.
+Notice that
+the variable <TT><B>v</B></TT> must be previously initialized with a table value.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_4_7.html>4.7 Fallbacks</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_5.html>4.5 Expressions</A>
+<HR>
+
+</BODY>

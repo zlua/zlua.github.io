@@ -1,0 +1,388 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lgc.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lgc.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lgc.c,v 1.72+ 2000/10/26 12:47:05 roberto Exp $
+** Garbage Collector
+** See Copyright Notice in lua.h
+*/
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+
+
+typedef struct <A NAME="GCState"><SPAN CLASS="definition">GCState</SPAN></A> {
+  <A HREF="lobject.h.html#Hash">Hash</A> *tmark;  /* list of marked tables to be visited */
+  <A HREF="lobject.h.html#Closure">Closure</A> *cmark;  /* list of marked closures to be visited */
+} <A HREF="lgc.c.html#GCState">GCState</A>;
+
+
+
+static void <A HREF="lgc.c.html#markobject">markobject</A> (<A HREF="lgc.c.html#GCState">GCState</A> *st, <A HREF="lobject.h.html#TObject">TObject</A> *o);
+
+
+/* mark a string; marks larger than 1 cannot be changed */
+#define <A NAME="strmark"><SPAN CLASS="definition">strmark</SPAN></A>(s)    {if ((s)-&gt;marked == 0) (s)-&gt;marked = 1;}
+
+
+
+static void <A NAME="protomark"><SPAN CLASS="definition">protomark</SPAN></A> (<A HREF="lobject.h.html#Proto">Proto</A> *f) {
+  if (!f-&gt;marked) {
+    int i;
+    f-&gt;marked = 1;
+    <A HREF="lgc.c.html#strmark">strmark</A>(f-&gt;source);
+    for (i=0; i&lt;f-&gt;nkstr; i++)
+      <A HREF="lgc.c.html#strmark">strmark</A>(f-&gt;kstr[i]);
+    for (i=0; i&lt;f-&gt;nkproto; i++)
+      <A HREF="lgc.c.html#protomark">protomark</A>(f-&gt;kproto[i]);
+    for (i=0; i&lt;f-&gt;nlocvars; i++)  /* mark local-variable names */
+      <A HREF="lgc.c.html#strmark">strmark</A>(f-&gt;locvars[i].varname);
+  }
+}
+
+
+static void <A NAME="markstack"><SPAN CLASS="definition">markstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lgc.c.html#GCState">GCState</A> *st) {
+  <A HREF="lstate.h.html#StkId">StkId</A> o;
+  for (o=L-&gt;stack; o&lt;L-&gt;top; o++)
+    <A HREF="lgc.c.html#markobject">markobject</A>(st, o);
+}
+
+
+static void <A NAME="marklock"><SPAN CLASS="definition">marklock</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lgc.c.html#GCState">GCState</A> *st) {
+  int i;
+  for (i=0; i&lt;L-&gt;refSize; i++) {
+    if (L-&gt;refArray[i].st == <A HREF="lstate.h.html#LOCK">LOCK</A>)
+      <A HREF="lgc.c.html#markobject">markobject</A>(st, &amp;L-&gt;refArray[i].o);
+  }
+}
+
+
+static void <A NAME="markclosure"><SPAN CLASS="definition">markclosure</SPAN></A> (<A HREF="lgc.c.html#GCState">GCState</A> *st, <A HREF="lobject.h.html#Closure">Closure</A> *cl) {
+  if (!<A HREF="lobject.h.html#ismarked">ismarked</A>(cl)) {
+    if (!cl-&gt;isC)
+      <A HREF="lgc.c.html#protomark">protomark</A>(cl-&gt;f.l);
+    cl-&gt;mark = st-&gt;cmark;  /* chain it for later traversal */
+    st-&gt;cmark = cl;
+  }
+}
+
+
+static void <A NAME="marktagmethods"><SPAN CLASS="definition">marktagmethods</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lgc.c.html#GCState">GCState</A> *st) {
+  int e;
+  for (e=0; e&lt;<A HREF="ltm.h.html#TM_N">TM_N</A>; e++) {
+    int t;
+    for (t=0; t&lt;=L-&gt;last_tag; t++) {
+      <A HREF="lobject.h.html#Closure">Closure</A> *cl = <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, t, e);
+      if (cl) <A HREF="lgc.c.html#markclosure">markclosure</A>(st, cl);
+    }
+  }
+}
+
+
+static void <A NAME="markobject"><SPAN CLASS="definition">markobject</SPAN></A> (<A HREF="lgc.c.html#GCState">GCState</A> *st, <A HREF="lobject.h.html#TObject">TObject</A> *o) {
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(o)) {
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>:  case <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>:
+      <A HREF="lgc.c.html#strmark">strmark</A>(<A HREF="lobject.h.html#tsvalue">tsvalue</A>(o));
+      break;
+    case <A HREF="lobject.h.html#LUA_TMARK">LUA_TMARK</A>:
+      <A HREF="lgc.c.html#markclosure">markclosure</A>(st, <A HREF="lobject.h.html#infovalue">infovalue</A>(o)-&gt;func);
+      break;
+    case <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>:
+      <A HREF="lgc.c.html#markclosure">markclosure</A>(st, <A HREF="lobject.h.html#clvalue">clvalue</A>(o));
+      break;
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: {
+      if (!<A HREF="lobject.h.html#ismarked">ismarked</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(o))) {
+        <A HREF="lobject.h.html#hvalue">hvalue</A>(o)-&gt;mark = st-&gt;tmark;  /* chain it in list of marked */
+        st-&gt;tmark = <A HREF="lobject.h.html#hvalue">hvalue</A>(o);
+      }
+      break;
+    }
+    default: break;  /* numbers, etc */
+  }
+}
+
+
+static void <A NAME="markall"><SPAN CLASS="definition">markall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lgc.c.html#GCState">GCState</A> st;
+  st.cmark = NULL;
+  st.tmark = L-&gt;gt;  /* put table of globals in mark list */
+  L-&gt;gt-&gt;mark = NULL;
+  <A HREF="lgc.c.html#marktagmethods">marktagmethods</A>(L, &amp;st);  /* mark tag methods */
+  <A HREF="lgc.c.html#markstack">markstack</A>(L, &amp;st); /* mark stack objects */
+  <A HREF="lgc.c.html#marklock">marklock</A>(L, &amp;st); /* mark locked objects */
+  for (;;) {  /* mark tables and closures */
+    if (st.cmark) {
+      int i;
+      <A HREF="lobject.h.html#Closure">Closure</A> *f = st.cmark;  /* get first closure from list */
+      st.cmark = f-&gt;mark;  /* remove it from list */
+      for (i=0; i&lt;f-&gt;nupvalues; i++)  /* mark its upvalues */
+        <A HREF="lgc.c.html#markobject">markobject</A>(&amp;st, &amp;f-&gt;upvalue[i]);
+    }
+    else if (st.tmark) {
+      int i;
+      <A HREF="lobject.h.html#Hash">Hash</A> *h = st.tmark;  /* get first table from list */
+      st.tmark = h-&gt;mark;  /* remove it from list */
+      for (i=0; i&lt;h-&gt;size; i++) {
+        <A HREF="lobject.h.html#Node">Node</A> *n = <A HREF="ltable.h.html#node">node</A>(h, i);
+        if (<A HREF="lobject.h.html#ttype">ttype</A>(<A HREF="ltable.h.html#key">key</A>(n)) != <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) {
+          if (<A HREF="lobject.h.html#ttype">ttype</A>(<A HREF="ltable.h.html#val">val</A>(n)) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>)
+            <A HREF="ltable.c.html#luaH_remove">luaH_remove</A>(h, <A HREF="ltable.h.html#key">key</A>(n));  /* dead element; try to remove it */
+          <A HREF="lgc.c.html#markobject">markobject</A>(&amp;st, &amp;n-&gt;<A HREF="ltable.h.html#key">key</A>);
+          <A HREF="lgc.c.html#markobject">markobject</A>(&amp;st, &amp;n-&gt;<A HREF="ltable.h.html#val">val</A>);
+        }
+      }
+    }
+    else break;  /* nothing else to mark */
+  }
+}
+
+
+static int <A NAME="hasmark"><SPAN CLASS="definition">hasmark</SPAN></A> (const <A HREF="lobject.h.html#TObject">TObject</A> *o) {
+  /* valid only for locked objects */
+  switch (o-&gt;<A HREF="lobject.h.html#ttype">ttype</A>) {
+    case <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>: case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>:
+      return <A HREF="lobject.h.html#tsvalue">tsvalue</A>(o)-&gt;marked;
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>:
+      return <A HREF="lobject.h.html#ismarked">ismarked</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(o));
+    case <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>:
+      return <A HREF="lobject.h.html#ismarked">ismarked</A>(<A HREF="lobject.h.html#clvalue">clvalue</A>(o));
+    default:  /* number */
+      return 1;
+  }
+}
+
+
+/* macro for internal debugging; check if a link of free refs is valid */
+#define <A NAME="VALIDLINK"><SPAN CLASS="definition">VALIDLINK</SPAN></A>(L, st,n)      (<A HREF="lstate.h.html#NONEXT">NONEXT</A> &lt;= (st) &amp;&amp; (st) &lt; (n))
+
+static void <A NAME="invalidaterefs"><SPAN CLASS="definition">invalidaterefs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = L-&gt;refSize;
+  int i;
+  for (i=0; i&lt;n; i++) {
+    struct <A HREF="lstate.h.html#Ref">Ref</A> *r = &amp;L-&gt;refArray[i];
+    if (r-&gt;st == <A HREF="lstate.h.html#HOLD">HOLD</A> &amp;&amp; !<A HREF="lgc.c.html#hasmark">hasmark</A>(&amp;r-&gt;o))
+      r-&gt;st = <A HREF="lstate.h.html#COLLECTED">COLLECTED</A>;
+    <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>((r-&gt;st == <A HREF="lstate.h.html#LOCK">LOCK</A> &amp;&amp; <A HREF="lgc.c.html#hasmark">hasmark</A>(&amp;r-&gt;o)) ||
+               (r-&gt;st == <A HREF="lstate.h.html#HOLD">HOLD</A> &amp;&amp; <A HREF="lgc.c.html#hasmark">hasmark</A>(&amp;r-&gt;o)) ||
+                r-&gt;st == <A HREF="lstate.h.html#COLLECTED">COLLECTED</A> ||
+                r-&gt;st == <A HREF="lstate.h.html#NONEXT">NONEXT</A> ||
+               (r-&gt;st &lt; n &amp;&amp; <A HREF="lgc.c.html#VALIDLINK">VALIDLINK</A>(L, L-&gt;refArray[r-&gt;st].st, n)),
+               "inconsistent ref table");
+  }
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lgc.c.html#VALIDLINK">VALIDLINK</A>(L, L-&gt;refFree, n), "inconsistent ref table");
+}
+
+
+
+static void <A NAME="collectproto"><SPAN CLASS="definition">collectproto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#Proto">Proto</A> **p = &amp;L-&gt;rootproto;
+  <A HREF="lobject.h.html#Proto">Proto</A> *next;
+  while ((next = *p) != NULL) {
+    if (next-&gt;marked) {
+      next-&gt;marked = 0;
+      p = &amp;next-&gt;next;
+    }
+    else {
+      *p = next-&gt;next;
+      <A HREF="lfunc.c.html#luaF_freeproto">luaF_freeproto</A>(L, next);
+    }
+  }
+}
+
+
+static void <A NAME="collectclosure"><SPAN CLASS="definition">collectclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#Closure">Closure</A> **p = &amp;L-&gt;rootcl;
+  <A HREF="lobject.h.html#Closure">Closure</A> *next;
+  while ((next = *p) != NULL) {
+    if (<A HREF="lobject.h.html#ismarked">ismarked</A>(next)) {
+      next-&gt;mark = next;  /* unmark */
+      p = &amp;next-&gt;next;
+    }
+    else {
+      *p = next-&gt;next;
+      <A HREF="lfunc.c.html#luaF_freeclosure">luaF_freeclosure</A>(L, next);
+    }
+  }
+}
+
+
+static void <A NAME="collecttable"><SPAN CLASS="definition">collecttable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#Hash">Hash</A> **p = &amp;L-&gt;roottable;
+  <A HREF="lobject.h.html#Hash">Hash</A> *next;
+  while ((next = *p) != NULL) {
+    if (<A HREF="lobject.h.html#ismarked">ismarked</A>(next)) {
+      next-&gt;mark = next;  /* unmark */
+      p = &amp;next-&gt;next;
+    }
+    else {
+      *p = next-&gt;next;
+      <A HREF="ltable.c.html#luaH_free">luaH_free</A>(L, next);
+    }
+  }
+}
+
+
+static void <A NAME="checktab"><SPAN CLASS="definition">checktab</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#stringtable">stringtable</A> *tb) {
+  if (tb-&gt;nuse &lt; (<A HREF="llimits.h.html#lint32">lint32</A>)(tb-&gt;size/4) &amp;&amp; tb-&gt;size &gt; 10)
+    <A HREF="lstring.c.html#luaS_resize">luaS_resize</A>(L, tb, tb-&gt;size/2);  /* table is too big */
+}
+
+
+static void <A NAME="collectstrings"><SPAN CLASS="definition">collectstrings</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int all) {
+  int i;
+  for (i=0; i&lt;L-&gt;strt.size; i++) {  /* for each list */
+    <A HREF="lobject.h.html#TString">TString</A> **p = &amp;L-&gt;strt.hash[i];
+    <A HREF="lobject.h.html#TString">TString</A> *next;
+    while ((next = *p) != NULL) {
+      if (next-&gt;marked &amp;&amp; !all) {  /* preserve? */
+        if (next-&gt;marked &lt; <A HREF="lstring.h.html#FIXMARK">FIXMARK</A>)  /* does not change FIXMARKs */
+          next-&gt;marked = 0;
+        p = &amp;next-&gt;nexthash;
+      } 
+      else {  /* collect */
+        *p = next-&gt;nexthash;
+        L-&gt;strt.nuse--;
+        L-&gt;nblocks -= <A HREF="lstring.h.html#sizestring">sizestring</A>(next-&gt;len);
+        <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, next);
+      }
+    }
+  }
+  <A HREF="lgc.c.html#checktab">checktab</A>(L, &amp;L-&gt;strt);
+}
+
+
+static void <A NAME="collectudata"><SPAN CLASS="definition">collectudata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int all) {
+  int i;
+  for (i=0; i&lt;L-&gt;udt.size; i++) {  /* for each list */
+    <A HREF="lobject.h.html#TString">TString</A> **p = &amp;L-&gt;udt.hash[i];
+    <A HREF="lobject.h.html#TString">TString</A> *next;
+    while ((next = *p) != NULL) {
+      <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(next-&gt;marked &lt;= 1, "udata cannot be fixed");
+      if (next-&gt;marked &amp;&amp; !all) {  /* preserve? */
+        next-&gt;marked = 0;
+        p = &amp;next-&gt;nexthash;
+      } 
+      else {  /* collect */
+        int tag = next-&gt;u.d.tag;
+        *p = next-&gt;nexthash;
+        next-&gt;nexthash = L-&gt;TMtable[tag].collected;  /* chain udata */
+        L-&gt;TMtable[tag].collected = next;
+        L-&gt;nblocks -= <A HREF="lstring.h.html#sizestring">sizestring</A>(next-&gt;len);
+        L-&gt;udt.nuse--;
+      }
+    }
+  }
+  <A HREF="lgc.c.html#checktab">checktab</A>(L, &amp;L-&gt;udt);
+}
+
+
+#define <A NAME="MINBUFFER"><SPAN CLASS="definition">MINBUFFER</SPAN></A>       256
+static void <A NAME="checkMbuffer"><SPAN CLASS="definition">checkMbuffer</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  if (L-&gt;Mbuffsize &gt; <A HREF="lgc.c.html#MINBUFFER">MINBUFFER</A>*2) {  /* is buffer too big? */
+    size_t newsize = L-&gt;Mbuffsize/2;  /* still larger than <A HREF="lgc.c.html#MINBUFFER">MINBUFFER</A> */
+    L-&gt;nblocks += (newsize - L-&gt;Mbuffsize)*sizeof(char);
+    L-&gt;Mbuffsize = newsize;
+    <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, L-&gt;Mbuffer, newsize, char);
+  }
+}
+
+
+static void <A NAME="callgcTM"><SPAN CLASS="definition">callgcTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *o) {
+  <A HREF="lobject.h.html#Closure">Closure</A> *tm = <A HREF="ltm.h.html#luaT_gettmbyObj">luaT_gettmbyObj</A>(L, o, <A HREF="ltm.h.html#TM_GC">TM_GC</A>);
+  if (tm != NULL) {
+    int oldah = L-&gt;allowhooks;
+    L-&gt;allowhooks = 0;  /* stop debug hooks during GC tag methods */
+    <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, 2);
+    <A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top) = tm;
+    <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+    *(L-&gt;top+1) = *o;
+    L-&gt;top += 2;
+    <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, L-&gt;top-2, 0);
+    L-&gt;allowhooks = oldah;  /* restore hooks */
+  }
+}
+
+
+static void <A NAME="callgcTMudata"><SPAN CLASS="definition">callgcTMudata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int tag;
+  <A HREF="lobject.h.html#TObject">TObject</A> o;
+  <A HREF="lobject.h.html#ttype">ttype</A>(&amp;o) = <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>;
+  L-&gt;GCthreshold = 2*L-&gt;nblocks;  /* avoid GC during tag methods */
+  for (tag=L-&gt;last_tag; tag&gt;=0; tag--) {  /* for each tag (in reverse order) */
+    <A HREF="lobject.h.html#TString">TString</A> *udata;
+    while ((udata = L-&gt;TMtable[tag].collected) != NULL) {
+      L-&gt;TMtable[tag].collected = udata-&gt;nexthash;  /* remove it from list */
+      <A HREF="lobject.h.html#tsvalue">tsvalue</A>(&amp;o) = udata;
+      <A HREF="lgc.c.html#callgcTM">callgcTM</A>(L, &amp;o);
+      <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, udata);
+    }
+  }
+}
+
+
+void <A NAME="luaC_collect"><SPAN CLASS="definition">luaC_collect</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int all) {
+  <A HREF="lgc.c.html#collectudata">collectudata</A>(L, all);
+  <A HREF="lgc.c.html#callgcTMudata">callgcTMudata</A>(L);
+  <A HREF="lgc.c.html#collectstrings">collectstrings</A>(L, all);
+  <A HREF="lgc.c.html#collecttable">collecttable</A>(L);
+  <A HREF="lgc.c.html#collectproto">collectproto</A>(L);
+  <A HREF="lgc.c.html#collectclosure">collectclosure</A>(L);
+}
+
+
+void <A NAME="luaC_collectgarbage"><SPAN CLASS="definition">luaC_collectgarbage</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lgc.c.html#markall">markall</A>(L);
+  <A HREF="lgc.c.html#invalidaterefs">invalidaterefs</A>(L);  /* check unlocked references */
+  <A HREF="lgc.c.html#luaC_collect">luaC_collect</A>(L, 0);
+  <A HREF="lgc.c.html#checkMbuffer">checkMbuffer</A>(L);
+  L-&gt;GCthreshold = 2*L-&gt;nblocks;  /* set new threshold */
+  <A HREF="lgc.c.html#callgcTM">callgcTM</A>(L, &amp;<A HREF="lobject.c.html#luaO_nilobject">luaO_nilobject</A>);
+}
+
+
+void <A NAME="luaC_checkGC"><SPAN CLASS="definition">luaC_checkGC</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  if (L-&gt;nblocks &gt;= L-&gt;GCthreshold)
+    <A HREF="lgc.c.html#luaC_collectgarbage">luaC_collectgarbage</A>(L);
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,43 @@
+<HEAD>
+<TITLE>6.3 Mathematical Functions</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_6_4.html>6.4 I/O Facilities</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_2.html>6.2 String Manipulation</A>
+<HR>
+<H2><A NAME=S0630>6.3 Mathematical Functions</A></H2>
+ <A NAME=mathlib></A>
+<P>
+This library is an interface to some functions of the standard C math library.
+Moreover, it registers a fallback for the binary operator <TT><B>^</B></TT> which,
+when applied to numbers <TT><B>x^y</B></TT>, returns <I>x^y</I>.
+<P>
+The library provides the following functions:
+
+
+
+
+<TT><B><PRE>
+abs acos asin atan atan2 ceil cos floor
+log log10 max min  mod  sin  sqrt tan</PRE></B></TT>
+Most of them
+are only interfaces to the homonymous functions in the C library,
+except that, for the trigonometric functions,
+all angles are expressed in degrees.
+<P>
+The function <TT><B>max</B></TT> returns the maximum
+value of its numeric arguments.
+Similarly, <TT><B>min</B></TT> computes the minimum.
+Both can be used with an unlimited number of arguments.
+<P>
+The function <TT><B>mod</B></TT> is equivalent to the <TT><B>%</B></TT> operator in C.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_6_4.html>6.4 I/O Facilities</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_2.html>6.2 String Manipulation</A>
+<HR>
+
+</BODY>

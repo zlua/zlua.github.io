@@ -1,0 +1,44 @@
+<HEAD>
+<TITLE>7.1 The Functions <TT><B>next</B></TT> and <TT><B>nextvar</B></TT></TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_7_2.html>7.2 Manipulating Strings</A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<HR>
+<H2><A NAME=S0710>7.1 The Functions <TT><B>next</B></TT> and <TT><B>nextvar</B></TT></A></H2>
+ <A NAME=exnext></A>
+
+This example shows how to use the function <TT><B>next</B></TT> to iterate
+over the fields of a table.
+Function <I>clone</I> receives any table and returns a clone of it.
+<TT><B><PRE>
+function clone (t)           -- t is a table
+  local new_t = {}           -- creates a new table
+  local i, v = next(t, nil)  -- i is an index of t, v = t[i]
+  while i do
+    new_t[i] = v
+    i, v = next(t, i)        -- get next index
+  end
+  return new_t
+end</PRE></B></TT>
+<P>
+The next example prints the names of all global variables
+in the system with non nil values:
+<TT><B><PRE>
+function printGlobalVariables ()
+  local i, v = nextvar(nil)
+  while i do
+    print(i)
+    i, v = nextvar(i)
+  end
+end</PRE></B></TT>
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_7_2.html>7.2 Manipulating Strings</A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<HR>
+
+</BODY>

@@ -1,0 +1,70 @@
+<HEAD>
+<TITLE>5.4 Calling Lua Functions</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_5_5.html>5.5 C Functions</A>
+<B>Up:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B> Previous:</B> <A HREF=subsection3_5_3.html>5.3 Manipulating Lua Objects</A>
+<HR>
+<H2><A NAME=S0540>5.4 Calling Lua Functions</A></H2>
+<P>
+Functions defined in Lua by a chunk executed with
+<TT><B>dofile</B></TT> or <TT><B>dostring</B></TT> can be called from the host program.
+This is done using the following protocol:
+first, the arguments to the function are pushed onto the Lua stack
+(see Section <A HREF=subsection3_5_2.html#pushing>5.2</A>), in direct order, i.e., the first argument is pushed first.
+Again, it is important to emphasize that, during this phase,
+no other Lua function can be called.
+<P>
+Then, the function is called using
+
+<TT><B><PRE>
+int            lua_call                 (char *functionname);</PRE></B></TT>
+or
+<TT><B><PRE>
+int            lua_callfunction         (lua_Object function);</PRE></B></TT>
+Both functions return an error code:
+0, in case of success; non zero, in case of errors.
+Finally, the returned values (a Lua function may return many values)
+can be retrieved with the macro
+
+<TT><B><PRE>
+lua_Object     lua_getresult             (int number);</PRE></B></TT>
+where <TT><B>number</B></TT> is the order of the result, starting with 1.
+When called with a number larger than the actual number of results,
+this function returns <TT><B>LUA_NOOBJECT</B></TT>.
+<P>
+Two special Lua functions have exclusive interfaces:
+<TT><B>error</B></TT> and <TT><B>setfallback</B></TT>.
+A C function can generate a Lua error calling the function
+
+<TT><B><PRE>
+void lua_error (char *message);</PRE></B></TT>
+This function never returns.
+If the C function has been called from Lua,
+the corresponding Lua execution terminates,
+as if an error had occurred inside Lua code.
+Otherwise, the whole program terminates.
+<P>
+Fallbacks can be changed with:
+
+<TT><B><PRE>
+lua_Object lua_setfallback (char *name, lua_CFunction fallback);</PRE></B></TT>
+The first parameter is the fallback name,
+and the second a CFunction to be used as the new fallback.
+This function returns a <TT><B>lua_Object</B></TT>,
+which is the old fallback value,
+or nil on fail (invalid fallback name).
+This old value can be used for chaining fallbacks.
+<P>
+An example of C code calling a Lua function is shown in
+Section <A HREF=subsection3_7_6.html#exLuacall>7.6</A>.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_5_5.html>5.5 C Functions</A>
+<B>Up:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B> Previous:</B> <A HREF=subsection3_5_3.html>5.3 Manipulating Lua Objects</A>
+<HR>
+
+</BODY>

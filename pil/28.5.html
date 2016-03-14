@@ -1,0 +1,101 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>Programming in Lua : 28.5</title>
+<link rel="stylesheet" type="text/css" href="pil.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</head>
+<body>
+<p class="warning">
+<A HREF="contents.html"><IMG TITLE="Programming in Lua (first edition)" SRC="capa.jpg" ALT="" ALIGN="left"></A>This first edition was written for Lua 5.0. While still largely relevant for later versions, there are some differences.<BR>The third edition targets Lua 5.2 and is available at <A HREF="http://www.amazon.com/exec/obidos/ASIN/859037985X/theprogrammil3-20">Amazon</A> and other bookstores.<BR>By buying the book, you also help to <A HREF="../donations.html">support the Lua project</A>.
+</p>
+<table width="100%" class="nav">
+<tr>
+<td width="10%" align="left"><a href="28.4.html"><img src="left.png" alt="Previous"></a></td>
+<td width="80%" align="center"><a href="contents.html">
+<font color="gray">Programming in </font><font color="blue"> Lua</font>
+</a></td>
+<td width="10%" align="right"><a href="29.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+<tr>
+<td width="10%" align="left"></td>
+<td width="80%" align="center"><a href="contents.html#P4">Part IV. The C API</a>
+<span class="spacer"></span>
+<a href="contents.html#28">Chapter 28. User-Defined Types in C</a></td>
+<td width="10%" align="right"></td></tr>
+</table>
+<hr>
+<h2><a name="lightudata">28.5 &ndash; Light Userdata</a></h2>
+
+<p>The userdata that we have been using until now is called
+full userdata.
+Lua offers another kind of userdata,
+called <em>light userdata</em>.
+
+<p>A light userdatum is a value that represents a C pointer
+(that is, a <code>void *</code> value).
+Because it is a value,
+we do not create them
+(in the same way that we do not create numbers).
+To put a light userdatum into the stack,
+we use <code>lua_pushlightuserdata</code>:
+<pre>
+    void lua_pushlightuserdata (lua_State *L, void *p);
+</pre>
+
+<p>Despite their common name,
+light userdata are quite different from full userdata.
+Light userdata are not buffers, but single pointers.
+They have no metatables.
+Like numbers, light userdata do not need to be
+managed by the garbage collector (and are not).
+
+<p>Some people use light userdata as a
+cheap alternative to full userdata.
+This is not a typical use, however.
+First, with light userdata you have to manage memory by yourself,
+because they are not subject to garbage collection.
+Second, despite the name, full userdata are inexpensive, too.
+They add little overhead compared to a <code>malloc</code>
+for the given memory size.
+
+<p>The real use of light userdata comes from equality.
+As a full userdata is an object,
+it is only equal to itself.
+A light userdata, on the other hand, represents a C pointer value.
+As such, it is equal to any userdata that represents the same pointer.
+Therefore, we can use light userdata to find C objects inside Lua.
+
+<p>As a typical example,
+suppose we are implementing a binding between Lua and a Window system.
+In this binding, we use full userdata to represent windows.
+(Each userdatum may contain the whole window structure or
+only a pointer to a window created by the system.)
+When there is an event inside a window (e.g., a mouse click),
+the system calls a specific callback,
+identifying the window by its address.
+To pass the callback to Lua,
+we must find the userdata that represents the given window.
+To find this userdata,
+we can keep a table where the indices are light userdata
+with the window addresses
+and the values are the full userdata that represent the windows in Lua.
+Once we have a window address,
+we push it into the API stack as a light userdata and use the userdata
+as an index into that table.
+(Note that the table should have weak values.
+Otherwise, those full userdata would never be collected.)
+
+<hr>
+<table width="100%" class="nav">
+<tr>
+<td width="90%" align="left">
+<small>
+  Copyright &copy; 2003&ndash;2004 Roberto Ierusalimschy.  All rights reserved.
+</small>
+</td>
+<td width="10%" align="right"><a href="29.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+</table>
+
+
+</body></html>
+

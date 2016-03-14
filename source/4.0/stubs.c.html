@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - stubs.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+stubs.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: stubs.c,v 1.20 2000/10/31 16:57:23 lhf Exp $
+** avoid runtime modules in luac
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="llex.h.html">llex.h</A>"
+#include "<A HREF="luac.h.html">luac.h</A>"
+#undef <A NAME="L"><SPAN CLASS="definition">L</SPAN></A>
+
+#ifndef NOSTUBS
+
+const char <A NAME="luac_ident"><SPAN CLASS="definition">luac_ident</SPAN></A>[] = "$luac: " <A HREF="lua.h.html#LUA_VERSION">LUA_VERSION</A> " " <A HREF="lua.h.html#LUA_COPYRIGHT">LUA_COPYRIGHT</A> " $\n"
+                          "$Authors: " <A HREF="lua.h.html#LUA_AUTHORS">LUA_AUTHORS</A> " $";
+
+/*
+* avoid lapi ldebug ldo lgc lstate ltm lvm
+* use only lcode lfunc llex lmem lobject lparser lstring ltable lzio
+*/
+
+/* simplified from ldo.c */
+void <A NAME="lua_error"><SPAN CLASS="definition">lua_error</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* <A HREF="stubs.c.html#L">L</A>, const char* s) {
+  <A HREF="lobject.h.html#UNUSED">UNUSED</A>(<A HREF="stubs.c.html#L">L</A>);
+  if (s) fprintf(stderr,"luac: %s\n",s);
+  exit(1);
+}
+
+/* simplified from ldo.c */
+void <A NAME="luaD_breakrun"><SPAN CLASS="definition">luaD_breakrun</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *<A HREF="stubs.c.html#L">L</A>, int errcode) {
+  <A HREF="lobject.h.html#UNUSED">UNUSED</A>(errcode);
+  <A HREF="stubs.c.html#lua_error">lua_error</A>(<A HREF="stubs.c.html#L">L</A>,"memory allocation error");
+}
+
+/* simplified from lstate.c */
+<A HREF="lstate.h.html#lua_State">lua_State</A> *<A NAME="lua_open"><SPAN CLASS="definition">lua_open</SPAN></A> (int stacksize) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *<A HREF="stubs.c.html#L">L</A> = <A HREF="lmem.h.html#luaM_new">luaM_new</A>(NULL, <A HREF="lstate.h.html#lua_State">lua_State</A>);
+  if (<A HREF="stubs.c.html#L">L</A> == NULL) return NULL;  /* memory allocation error */
+  <A HREF="stubs.c.html#L">L</A>-&gt;stack = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;strt.size = <A HREF="stubs.c.html#L">L</A>-&gt;udt.size = 0;
+  <A HREF="stubs.c.html#L">L</A>-&gt;strt.nuse = <A HREF="stubs.c.html#L">L</A>-&gt;udt.nuse = 0;
+  <A HREF="stubs.c.html#L">L</A>-&gt;strt.hash = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;udt.hash = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;Mbuffer = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;Mbuffsize = 0;
+  <A HREF="stubs.c.html#L">L</A>-&gt;rootproto = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;rootcl = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;roottable = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;TMtable = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;last_tag = -1;
+  <A HREF="stubs.c.html#L">L</A>-&gt;refArray = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;refSize = 0;
+  <A HREF="stubs.c.html#L">L</A>-&gt;refFree = <A HREF="lstate.h.html#NONEXT">NONEXT</A>;
+  <A HREF="stubs.c.html#L">L</A>-&gt;nblocks = sizeof(<A HREF="lstate.h.html#lua_State">lua_State</A>);
+  <A HREF="stubs.c.html#L">L</A>-&gt;GCthreshold = <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>;  /* to avoid GC during pre-definitions */
+  <A HREF="stubs.c.html#L">L</A>-&gt;callhook = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;linehook = NULL;
+  <A HREF="stubs.c.html#L">L</A>-&gt;allowhooks = 1;
+  <A HREF="stubs.c.html#L">L</A>-&gt;errorJmp = NULL;
+  if (stacksize == 0)
+    stacksize = <A HREF="llimits.h.html#DEFAULT_STACK_SIZE">DEFAULT_STACK_SIZE</A>;
+  else
+    stacksize += <A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>;
+  <A HREF="stubs.c.html#L">L</A>-&gt;gt = <A HREF="ltable.c.html#luaH_new">luaH_new</A>(<A HREF="stubs.c.html#L">L</A>, 10);  /* table of globals */
+  <A HREF="lstring.c.html#luaS_init">luaS_init</A>(<A HREF="stubs.c.html#L">L</A>);
+  <A HREF="stubs.c.html#luaX_init">luaX_init</A>(<A HREF="stubs.c.html#L">L</A>);
+  <A HREF="stubs.c.html#L">L</A>-&gt;GCthreshold = 2*<A HREF="stubs.c.html#L">L</A>-&gt;nblocks;
+  return <A HREF="stubs.c.html#L">L</A>;
+}
+
+/* copied from ldebug.c */
+int <A NAME="luaG_getline"><SPAN CLASS="definition">luaG_getline</SPAN></A> (int *lineinfo, int pc, int refline, int *prefi) {
+  int refi;
+  if (lineinfo == NULL || pc == -1)
+    return -1;  /* no line info or function is not active */
+  refi = prefi ? *prefi : 0;
+  if (lineinfo[refi] &lt; 0)
+    refline += -lineinfo[refi++]; 
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(lineinfo[refi] &gt;= 0, "invalid line info");
+  while (lineinfo[refi] &gt; pc) {
+    refline--;
+    refi--;
+    if (lineinfo[refi] &lt; 0)
+      refline -= -lineinfo[refi--]; 
+    <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(lineinfo[refi] &gt;= 0, "invalid line info");
+  }
+  for (;;) {
+    int nextline = refline + 1;
+    int nextref = refi + 1;
+    if (lineinfo[nextref] &lt; 0)
+      nextline += -lineinfo[nextref++]; 
+    <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(lineinfo[nextref] &gt;= 0, "invalid line info");
+    if (lineinfo[nextref] &gt; pc)
+      break;
+    refline = nextline;
+    refi = nextref;
+  }
+  if (prefi) *prefi = refi;
+  return refline;
+}
+
+/*
+* the code below avoids the lexer and the parser (llex lparser lcode).
+* it is useful if you only want to load binary files.
+* this works for interpreters like lua.c too.
+*/
+
+#ifdef NOPARSER
+
+#include "<A HREF="llex.h.html">llex.h</A>"
+#include "<A HREF="lparser.h.html">lparser.h</A>"
+
+void <A NAME="luaX_init"><SPAN CLASS="definition">luaX_init</SPAN></A>(<A HREF="lstate.h.html#lua_State">lua_State</A> *<A HREF="stubs.c.html#L">L</A>) {
+  <A HREF="lobject.h.html#UNUSED">UNUSED</A>(<A HREF="stubs.c.html#L">L</A>);
+}
+
+<A HREF="lobject.h.html#Proto">Proto</A> *<A NAME="luaY_parser"><SPAN CLASS="definition">luaY_parser</SPAN></A>(<A HREF="lstate.h.html#lua_State">lua_State</A> *<A HREF="stubs.c.html#L">L</A>, <A HREF="lzio.h.html#ZIO">ZIO</A> *z) {
+  <A HREF="lobject.h.html#UNUSED">UNUSED</A>(z);
+  <A HREF="stubs.c.html#lua_error">lua_error</A>(<A HREF="stubs.c.html#L">L</A>,"parser not loaded");
+  return NULL;
+}
+
+#endif
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

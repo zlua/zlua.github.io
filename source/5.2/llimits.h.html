@@ -1,0 +1,344 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - llimits.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+llimits.h
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: llimits.h,v 1.103.1.1 2013/04/12 18:48:47 roberto Exp $
+** Limits, basic types, and some other `installation-dependent' definitions
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="llimits.h.html#llimits_h">llimits_h</A>
+#define <A NAME="llimits_h"><SPAN CLASS="definition">llimits_h</SPAN></A>
+
+
+#include &lt;limits.h&gt;
+#include &lt;stddef.h&gt;
+
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+typedef unsigned <A HREF="luaconf.h.html#LUA_INT32">LUA_INT32</A> <A NAME="lu_int32"><SPAN CLASS="definition">lu_int32</SPAN></A>;
+
+typedef <A HREF="luaconf.h.html#LUAI_UMEM">LUAI_UMEM</A> <A NAME="lu_mem"><SPAN CLASS="definition">lu_mem</SPAN></A>;
+
+typedef <A HREF="luaconf.h.html#LUAI_MEM">LUAI_MEM</A> <A NAME="l_mem"><SPAN CLASS="definition">l_mem</SPAN></A>;
+
+
+
+/* chars used as small naturals (so that `char' is reserved for characters) */
+typedef unsigned char <A NAME="lu_byte"><SPAN CLASS="definition">lu_byte</SPAN></A>;
+
+
+#define <A NAME="MAX_SIZET"><SPAN CLASS="definition">MAX_SIZET</SPAN></A>       ((size_t)(~(size_t)0)-2)
+
+#define <A NAME="MAX_LUMEM"><SPAN CLASS="definition">MAX_LUMEM</SPAN></A>       ((<A HREF="llimits.h.html#lu_mem">lu_mem</A>)(~(<A HREF="llimits.h.html#lu_mem">lu_mem</A>)0)-2)
+
+#define <A NAME="MAX_LMEM"><SPAN CLASS="definition">MAX_LMEM</SPAN></A>        ((<A HREF="llimits.h.html#l_mem">l_mem</A>) ((<A HREF="llimits.h.html#MAX_LUMEM">MAX_LUMEM</A> &gt;&gt; 1) - 2))
+
+
+#define <A NAME="MAX_INT"><SPAN CLASS="definition">MAX_INT</SPAN></A> (INT_MAX-2)  /* maximum value of an int (-2 for safety) */
+
+/*
+** conversion of pointer to integer
+** this is for hashing only; there is no problem if the integer
+** cannot hold the whole pointer value
+*/
+#define <A NAME="IntPoint"><SPAN CLASS="definition">IntPoint</SPAN></A>(p)  ((unsigned int)(<A HREF="llimits.h.html#lu_mem">lu_mem</A>)(p))
+
+
+
+/* type to ensure maximum alignment */
+#if !defined(<A HREF="llimits.h.html#LUAI_USER_ALIGNMENT_T">LUAI_USER_ALIGNMENT_T</A>)
+#define <A NAME="LUAI_USER_ALIGNMENT_T"><SPAN CLASS="definition">LUAI_USER_ALIGNMENT_T</SPAN></A>   union { double u; void *s; long l; }
+#endif
+
+typedef <A HREF="llimits.h.html#LUAI_USER_ALIGNMENT_T">LUAI_USER_ALIGNMENT_T</A> <A NAME="L_Umaxalign"><SPAN CLASS="definition">L_Umaxalign</SPAN></A>;
+
+
+/* result of a `usual argument conversion' over <A HREF="lua.h.html#lua_Number">lua_Number</A> */
+typedef <A HREF="luaconf.h.html#LUAI_UACNUMBER">LUAI_UACNUMBER</A> <A NAME="l_uacNumber"><SPAN CLASS="definition">l_uacNumber</SPAN></A>;
+
+
+/* internal assertions for in-house debugging */
+#if defined(<A HREF="llimits.h.html#lua_assert">lua_assert</A>)
+#define <A HREF="llimits.h.html#check_exp">check_exp</A>(c,e)          (<A HREF="llimits.h.html#lua_assert">lua_assert</A>(c), (e))
+/* to avoid problems with conditions too long */
+#define <A HREF="llimits.h.html#lua_longassert">lua_longassert</A>(c)       { if (!(c)) <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0); }
+#else
+#define <A NAME="lua_assert"><SPAN CLASS="definition">lua_assert</SPAN></A>(c)           ((void)0)
+#define <A NAME="check_exp"><SPAN CLASS="definition">check_exp</SPAN></A>(c,e)          (e)
+#define <A NAME="lua_longassert"><SPAN CLASS="definition">lua_longassert</SPAN></A>(c)       ((void)0)
+#endif
+
+/*
+** assertion for checking API calls
+*/
+#if !defined(<A HREF="llimits.h.html#luai_apicheck">luai_apicheck</A>)
+
+#if defined(LUA_USE_APICHECK)
+#include &lt;assert.h&gt;
+#define <A HREF="llimits.h.html#luai_apicheck">luai_apicheck</A>(L,e)      assert(e)
+#else
+#define <A NAME="luai_apicheck"><SPAN CLASS="definition">luai_apicheck</SPAN></A>(L,e)      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(e)
+#endif
+
+#endif
+
+#define <A NAME="api_check"><SPAN CLASS="definition">api_check</SPAN></A>(l,e,msg)      <A HREF="llimits.h.html#luai_apicheck">luai_apicheck</A>(l,(e) &amp;&amp; msg)
+
+
+#if !defined(<A HREF="llimits.h.html#UNUSED">UNUSED</A>)
+#define <A NAME="UNUSED"><SPAN CLASS="definition">UNUSED</SPAN></A>(x)       ((void)(x))     /* to avoid warnings */
+#endif
+
+
+#define <A NAME="cast"><SPAN CLASS="definition">cast</SPAN></A>(t, exp)    ((t)(exp))
+
+#define <A NAME="cast_byte"><SPAN CLASS="definition">cast_byte</SPAN></A>(i)    <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_byte">lu_byte</A>, (i))
+#define <A NAME="cast_num"><SPAN CLASS="definition">cast_num</SPAN></A>(i)     <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lua.h.html#lua_Number">lua_Number</A>, (i))
+#define <A NAME="cast_int"><SPAN CLASS="definition">cast_int</SPAN></A>(i)     <A HREF="llimits.h.html#cast">cast</A>(int, (i))
+#define <A NAME="cast_uchar"><SPAN CLASS="definition">cast_uchar</SPAN></A>(i)   <A HREF="llimits.h.html#cast">cast</A>(unsigned char, (i))
+
+
+/*
+** non-return type
+*/
+#if defined(__GNUC__)
+#define <A HREF="llimits.h.html#l_noret">l_noret</A>         void __attribute__((noreturn))
+#elif defined(_MSC_VER)
+#define <A HREF="llimits.h.html#l_noret">l_noret</A>         void __declspec(noreturn)
+#else
+#define <A NAME="l_noret"><SPAN CLASS="definition">l_noret</SPAN></A>         void
+#endif
+
+
+
+/*
+** maximum depth for nested C calls and syntactical nested non-terminals
+** in a program. (<A HREF="lobject.h.html#Value">Value</A> must fit in an unsigned short int.)
+*/
+#if !defined(<A HREF="llimits.h.html#LUAI_MAXCCALLS">LUAI_MAXCCALLS</A>)
+#define <A NAME="LUAI_MAXCCALLS"><SPAN CLASS="definition">LUAI_MAXCCALLS</SPAN></A>          200
+#endif
+
+/*
+** maximum number of upvalues in a closure (both C and Lua). (<A HREF="lobject.h.html#Value">Value</A>
+** must fit in an unsigned char.)
+*/
+#define <A NAME="MAXUPVAL"><SPAN CLASS="definition">MAXUPVAL</SPAN></A>        UCHAR_MAX
+
+
+/*
+** type for virtual-machine instructions
+** must be an unsigned with (at least) 4 bytes (see details in lopcodes.h)
+*/
+typedef <A HREF="llimits.h.html#lu_int32">lu_int32</A> <A NAME="Instruction"><SPAN CLASS="definition">Instruction</SPAN></A>;
+
+
+
+/* maximum stack for a Lua function */
+#define <A NAME="MAXSTACK"><SPAN CLASS="definition">MAXSTACK</SPAN></A>        250
+
+
+
+/* minimum size for the string table (must be power of 2) */
+#if !defined(<A HREF="llimits.h.html#MINSTRTABSIZE">MINSTRTABSIZE</A>)
+#define <A NAME="MINSTRTABSIZE"><SPAN CLASS="definition">MINSTRTABSIZE</SPAN></A>   32
+#endif
+
+
+/* minimum size for string buffer */
+#if !defined(<A HREF="llimits.h.html#LUA_MINBUFFER">LUA_MINBUFFER</A>)
+#define <A NAME="LUA_MINBUFFER"><SPAN CLASS="definition">LUA_MINBUFFER</SPAN></A>   32
+#endif
+
+
+#if !defined(<A HREF="llimits.h.html#lua_lock">lua_lock</A>)
+#define <A NAME="lua_lock"><SPAN CLASS="definition">lua_lock</SPAN></A>(L)     ((void) 0)
+#define <A NAME="lua_unlock"><SPAN CLASS="definition">lua_unlock</SPAN></A>(L)   ((void) 0)
+#endif
+
+#if !defined(<A HREF="llimits.h.html#luai_threadyield">luai_threadyield</A>)
+#define <A NAME="luai_threadyield"><SPAN CLASS="definition">luai_threadyield</SPAN></A>(L)     {<A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L); <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);}
+#endif
+
+
+/*
+** these macros allow user-specific actions on threads when you defined
+** LUAI_EXTRASPACE and need to do something extra when a thread is
+** created/deleted/resumed/yielded.
+*/
+#if !defined(<A HREF="llimits.h.html#luai_userstateopen">luai_userstateopen</A>)
+#define <A NAME="luai_userstateopen"><SPAN CLASS="definition">luai_userstateopen</SPAN></A>(L)           ((void)L)
+#endif
+
+#if !defined(<A HREF="llimits.h.html#luai_userstateclose">luai_userstateclose</A>)
+#define <A NAME="luai_userstateclose"><SPAN CLASS="definition">luai_userstateclose</SPAN></A>(L)          ((void)L)
+#endif
+
+#if !defined(<A HREF="llimits.h.html#luai_userstatethread">luai_userstatethread</A>)
+#define <A NAME="luai_userstatethread"><SPAN CLASS="definition">luai_userstatethread</SPAN></A>(L,L1)      ((void)L)
+#endif
+
+#if !defined(<A HREF="llimits.h.html#luai_userstatefree">luai_userstatefree</A>)
+#define <A NAME="luai_userstatefree"><SPAN CLASS="definition">luai_userstatefree</SPAN></A>(L,L1)        ((void)L)
+#endif
+
+#if !defined(<A HREF="llimits.h.html#luai_userstateresume">luai_userstateresume</A>)
+#define <A NAME="luai_userstateresume"><SPAN CLASS="definition">luai_userstateresume</SPAN></A>(L,n)       ((void)L)
+#endif
+
+#if !defined(<A HREF="llimits.h.html#luai_userstateyield">luai_userstateyield</A>)
+#define <A NAME="luai_userstateyield"><SPAN CLASS="definition">luai_userstateyield</SPAN></A>(L,n)        ((void)L)
+#endif
+
+/*
+** <A HREF="llimits.h.html#lua_number2int">lua_number2int</A> is a macro to convert <A HREF="lua.h.html#lua_Number">lua_Number</A> to int.
+** <A HREF="llimits.h.html#lua_number2integer">lua_number2integer</A> is a macro to convert <A HREF="lua.h.html#lua_Number">lua_Number</A> to <A HREF="lua.h.html#lua_Integer">lua_Integer</A>.
+** <A HREF="llimits.h.html#lua_number2unsigned">lua_number2unsigned</A> is a macro to convert a <A HREF="lua.h.html#lua_Number">lua_Number</A> to a <A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A>.
+** <A HREF="llimits.h.html#lua_unsigned2number">lua_unsigned2number</A> is a macro to convert a <A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A> to a <A HREF="lua.h.html#lua_Number">lua_Number</A>.
+** <A HREF="llimits.h.html#luai_hashnum">luai_hashnum</A> is a macro to hash a <A HREF="lua.h.html#lua_Number">lua_Number</A> value into an integer.
+** The hash must be deterministic and give reasonable values for
+** both small and large values (outside the range of integers).
+*/
+
+#if defined(MS_ASMTRICK) || defined(<A HREF="luaconf.h.html#LUA_MSASMTRICK">LUA_MSASMTRICK</A>)     /* { */
+/* trick with Microsoft assembler for X86 */
+
+#define <A HREF="llimits.h.html#lua_number2int">lua_number2int</A>(i,n)  __asm {__asm fld n   __asm fistp i}
+#define <A HREF="llimits.h.html#lua_number2integer">lua_number2integer</A>(i,n)         <A HREF="llimits.h.html#lua_number2int">lua_number2int</A>(i, n)
+#define <A HREF="llimits.h.html#lua_number2unsigned">lua_number2unsigned</A>(i,n)  \
+  {__int64 l; __asm {__asm fld n   __asm fistp l} i = (unsigned int)l;}
+
+
+#elif defined(<A HREF="luaconf.h.html#LUA_IEEE754TRICK">LUA_IEEE754TRICK</A>)         /* }{ */
+/* the next trick should work on any machine using IEEE754 with
+   a 32-bit int type */
+
+union <A NAME="luai_Cast"><SPAN CLASS="definition">luai_Cast</SPAN></A> { double l_d; <A HREF="luaconf.h.html#LUA_INT32">LUA_INT32</A> l_p[2]; };
+
+#if !defined(<A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A>)    /* { */
+#define <A HREF="llimits.h.html#LUAI_EXTRAIEEE">LUAI_EXTRAIEEE</A>  \
+  static const union <A HREF="llimits.h.html#luai_Cast">luai_Cast</A> ieeeendian = {-(33.0 + 6755399441055744.0)};
+#define <A HREF="llimits.h.html#LUA_IEEEENDIANLOC">LUA_IEEEENDIANLOC</A>       (ieeeendian.l_p[1] == 33)
+#else
+#define <A NAME="LUA_IEEEENDIANLOC"><SPAN CLASS="definition">LUA_IEEEENDIANLOC</SPAN></A>       <A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A>
+#define <A NAME="LUAI_EXTRAIEEE"><SPAN CLASS="definition">LUAI_EXTRAIEEE</SPAN></A>          /* empty */
+#endif                          /* } */
+
+#define <A NAME="lua_number2int32"><SPAN CLASS="definition">lua_number2int32</SPAN></A>(i,n,t) \
+  { <A HREF="llimits.h.html#LUAI_EXTRAIEEE">LUAI_EXTRAIEEE</A> \
+    volatile union <A HREF="llimits.h.html#luai_Cast">luai_Cast</A> u; u.l_d = (n) + 6755399441055744.0; \
+    (i) = (t)u.l_p[<A HREF="llimits.h.html#LUA_IEEEENDIANLOC">LUA_IEEEENDIANLOC</A>]; }
+
+#define <A HREF="llimits.h.html#luai_hashnum">luai_hashnum</A>(i,n)  \
+  { volatile union <A HREF="llimits.h.html#luai_Cast">luai_Cast</A> u; u.l_d = (n) + 1.0;  /* avoid -0 */ \
+    (i) = u.l_p[0]; (i) += u.l_p[1]; }  /* add double bits for his hash */
+
+#define <A HREF="llimits.h.html#lua_number2int">lua_number2int</A>(i,n)             <A HREF="llimits.h.html#lua_number2int32">lua_number2int32</A>(i, n, int)
+#define <A HREF="llimits.h.html#lua_number2unsigned">lua_number2unsigned</A>(i,n)        <A HREF="llimits.h.html#lua_number2int32">lua_number2int32</A>(i, n, <A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A>)
+
+/* the trick can be expanded to <A HREF="lua.h.html#lua_Integer">lua_Integer</A> when it is a 32-bit value */
+#if defined(<A HREF="luaconf.h.html#LUA_IEEELL">LUA_IEEELL</A>)
+#define <A HREF="llimits.h.html#lua_number2integer">lua_number2integer</A>(i,n)         <A HREF="llimits.h.html#lua_number2int32">lua_number2int32</A>(i, n, <A HREF="lua.h.html#lua_Integer">lua_Integer</A>)
+#endif
+
+#endif                          /* } */
+
+
+/* the following definitions always work, but may be slow */
+
+#if !defined(<A HREF="llimits.h.html#lua_number2int">lua_number2int</A>)
+#define <A NAME="lua_number2int"><SPAN CLASS="definition">lua_number2int</SPAN></A>(i,n)     ((i)=(int)(n))
+#endif
+
+#if !defined(<A HREF="llimits.h.html#lua_number2integer">lua_number2integer</A>)
+#define <A NAME="lua_number2integer"><SPAN CLASS="definition">lua_number2integer</SPAN></A>(i,n) ((i)=(<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)(n))
+#endif
+
+#if !defined(<A HREF="llimits.h.html#lua_number2unsigned">lua_number2unsigned</A>)       /* { */
+/* the following definition assures proper modulo behavior */
+#if defined(<A HREF="luaconf.h.html#LUA_NUMBER_DOUBLE">LUA_NUMBER_DOUBLE</A>) || defined(LUA_NUMBER_FLOAT)
+#include &lt;math.h&gt;
+#define <A NAME="SUPUNSIGNED"><SPAN CLASS="definition">SUPUNSIGNED</SPAN></A>     ((<A HREF="lua.h.html#lua_Number">lua_Number</A>)(~(<A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A>)0) + 1)
+#define <A HREF="llimits.h.html#lua_number2unsigned">lua_number2unsigned</A>(i,n)  \
+        ((i)=(<A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A>)((n) - floor((n)/<A HREF="llimits.h.html#SUPUNSIGNED">SUPUNSIGNED</A>)*<A HREF="llimits.h.html#SUPUNSIGNED">SUPUNSIGNED</A>))
+#else
+#define <A NAME="lua_number2unsigned"><SPAN CLASS="definition">lua_number2unsigned</SPAN></A>(i,n)        ((i)=(<A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A>)(n))
+#endif
+#endif                          /* } */
+
+
+#if !defined(<A HREF="llimits.h.html#lua_unsigned2number">lua_unsigned2number</A>)
+/* on several machines, coercion from unsigned to double is slow,
+   so it may be worth to avoid */
+#define <A NAME="lua_unsigned2number"><SPAN CLASS="definition">lua_unsigned2number</SPAN></A>(u)  \
+    (((u) &lt;= (<A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A>)INT_MAX) ? (<A HREF="lua.h.html#lua_Number">lua_Number</A>)(int)(u) : (<A HREF="lua.h.html#lua_Number">lua_Number</A>)(u))
+#endif
+
+
+
+#if defined(ltable_c) &amp;&amp; !defined(<A HREF="llimits.h.html#luai_hashnum">luai_hashnum</A>)
+
+#include &lt;float.h&gt;
+#include &lt;math.h&gt;
+
+#define <A NAME="luai_hashnum"><SPAN CLASS="definition">luai_hashnum</SPAN></A>(i,n) { int e;  \
+  n = <A HREF="luaconf.h.html#l_mathop">l_mathop</A>(frexp)(n, &amp;e) * (<A HREF="lua.h.html#lua_Number">lua_Number</A>)(INT_MAX - DBL_MAX_EXP);  \
+  <A HREF="llimits.h.html#lua_number2int">lua_number2int</A>(i, n); i += e; }
+
+#endif
+
+
+
+/*
+** macro to control inclusion of some hard tests on stack reallocation
+*/
+#if !defined(HARDSTACKTESTS)
+#define <A HREF="llimits.h.html#condmovestack">condmovestack</A>(L)        ((void)0)
+#else
+/* realloc stack keeping its size */
+#define <A NAME="condmovestack"><SPAN CLASS="definition">condmovestack</SPAN></A>(L)        <A HREF="ldo.c.html#luaD_reallocstack">luaD_reallocstack</A>((L), (L)-&gt;stacksize)
+#endif
+
+#if !defined(HARDMEMTESTS)
+#define <A HREF="llimits.h.html#condchangemem">condchangemem</A>(L)        <A HREF="llimits.h.html#condmovestack">condmovestack</A>(L)
+#else
+#define <A NAME="condchangemem"><SPAN CLASS="definition">condchangemem</SPAN></A>(L)  \
+        ((void)(!(<A HREF="lstate.h.html#G">G</A>(L)-&gt;gcrunning) || (<A HREF="lgc.c.html#luaC_fullgc">luaC_fullgc</A>(L, 0), 1)))
+#endif
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

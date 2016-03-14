@@ -1,0 +1,58 @@
+<HEAD>
+<TITLE>6.2 String Manipulation</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=subsection3_6_3.html>6.3 Mathematical Functions</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_1.html>6.1 Predefined Functions</A>
+<H2><A NAME=S0620>6.2 String Manipulation</A></H2>
+<P>
+This library provides generic functions for string manipulation,
+such as finding and extracting substrings.
+When indexing a string, the first character has position 1.
+See Section <A HREF=subsection3_7_2.html#exstring>7.2</A> for some examples on string manipulation
+in Lua.
+<P>
+<H3><A NAME=S0621> <TT><B><B>strfind (str, substr, [init, [end]])</B></B></TT></A></H3>
+<P>
+Receives two string arguments,
+and returns a number.
+This number indicates the first position where the second argument appears
+in the first argument.
+If the second argument is not a substring of the first one,
+then <TT><B><B>strfind</B></B></TT> returns <B>nil</B>.
+A third optional numerical argument specifies where to start the search.
+Another optional numerical argument specifies where to stop it.
+<P>
+<H3><A NAME=S0622> <TT><B><B>strlen (s)</B></B></TT></A></H3>
+<P>
+Receives a string and returns its length.
+<P>
+<H3><A NAME=S0623> <TT><B><B>strsub (s, i, j)</B></B></TT></A></H3>
+<P>
+Returns another string, which is a substring of <TT><B><B>s</B></B></TT>,
+starting at <TT><B><B>i</B></B></TT>  and runing until <TT><B><B>j</B></B></TT>.
+If <TT><B><B>j</B></B></TT> is absent or is <B>nil</B>,
+it is assumed to be equal to the length of <TT><B><B>s</B></B></TT>.
+Particularly, the call <TT><B><B>strsub(s,1,j)</B></B></TT> returns a prefix of <TT><B><B>s</B></B></TT>
+with length <TT><B><B>j</B></B></TT>,
+while the call <TT><B><B>strsub(s,i)</B></B></TT> returns a suffix of <TT><B><B>s</B></B></TT>,
+starting at <TT><B><B>i</B></B></TT>..
+<P>
+<H3><A NAME=S0624> <TT><B><B>strlower (s)</B></B></TT></A></H3>
+<P>
+Receives a string and returns a copy of that string with all
+upper case letters changed to lower case.
+All other characters are left unchanged.
+<P>
+<H3><A NAME=S0625> <TT><B><B>strupper (s)</B></B></TT></A></H3>
+<P>
+Receives a string and returns a copy of that string with all
+lower case letters changed to upper case.
+All other characters are left unchanged.
+<P>
+<B> Next:</B> <A HREF=subsection3_6_3.html>6.3 Mathematical Functions</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_1.html>6.1 Predefined Functions</A>
+
+</BODY>

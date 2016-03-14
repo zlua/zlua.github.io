@@ -1,0 +1,31 @@
+.type, .file {
+	width: 10em ;
+	font-size: small ;
+	color: gray ;
+}
+
+.name {
+	width: 15em ;
+}
+
+h3:before {
+	content: "\2756  " ;
+}
+
+table {
+	border: none ;
+	border-spacing: 0 ;
+	border-collapse: collapse ;
+}
+
+table a:hover  {
+	margin: -3px -3px -3px -3px ;
+	padding: 3px  3px  3px  3px ;
+	border-radius: 4px ;
+}
+
+td {
+	padding: 0 ;
+	text-align: left ;
+	line-height: 1.25 ;
+}

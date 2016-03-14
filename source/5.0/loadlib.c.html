@@ -1,0 +1,240 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - loadlib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+loadlib.c
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: <A HREF="loadlib.c.html#loadlib">loadlib</A>.c,v 1.4 2003/04/07 20:11:53 roberto Exp $
+** Dynamic library loader for Lua
+** See Copyright Notice in lua.h
+*
+* This  Lua library  exports a  single function,  called <A HREF="loadlib.c.html#loadlib">loadlib</A>,  which is
+* called from Lua  as <A HREF="loadlib.c.html#loadlib">loadlib</A>(lib,init), where lib is the  full name of the
+* library to be  loaded (including the complete path) and  init is the name
+* of a function  to be called after the library  is loaded. Typically, this
+* function will register other functions,  thus making the complete library
+* available  to Lua.  The init  function is  *not* automatically  called by
+* <A HREF="loadlib.c.html#loadlib">loadlib</A>. Instead,  <A HREF="loadlib.c.html#loadlib">loadlib</A> returns  the init function  as a  Lua function
+* that the client  can call when it  thinks is appropriate. In  the case of
+* errors,  <A HREF="loadlib.c.html#loadlib">loadlib</A>  returns  nil  and two  strings  describing  the  error.
+* The  first string  is  supplied by  the operating  system;  it should  be
+* informative and useful  for error messages. The second  string is "open",
+* "init", or  "absent" to identify  the error and is  meant to be  used for
+* making  decisions without  having to  look into  the first  string (whose
+* format is system-dependent).
+*
+* This module contains  an implementation of <A HREF="loadlib.c.html#loadlib">loadlib</A> for  Unix systems that
+* have dlfcn, an implementation for Windows,  and a stub for other systems.
+* See  the list  at  the end  of  this  file for  some  links to  available
+* implementations of dlfcn  and interfaces to other  native dynamic loaders
+* on top of which <A HREF="loadlib.c.html#loadlib">loadlib</A> could be implemented.
+*
+*/
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+#undef <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+
+
+#ifdef USE_DLOPEN
+#define <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+/*
+* This is an implementation of <A HREF="loadlib.c.html#loadlib">loadlib</A> based on the dlfcn interface.
+* The dlfcn interface is available in Linux, SunOS, Solaris, IRIX, FreeBSD,
+* NetBSD, AIX 4.2, HPUX 11, and  probably most other Unix flavors, at least
+* as an emulation layer on top of native functions.
+*/
+
+#include &lt;dlfcn.h&gt;
+
+static int <A HREF="loadlib.c.html#loadlib">loadlib</A>(<A HREF="lstate.h.html#lua_State">lua_State</A> *L)
+{
+ const char *path=<A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L,1);
+ const char *init=<A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L,2);
+ void *lib=dlopen(path,RTLD_NOW);
+ if (lib!=NULL)
+ {
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> f=(<A HREF="lua.h.html#lua_CFunction">lua_CFunction</A>) dlsym(lib,init);
+  if (f!=NULL)
+  {
+   <A HREF="lapi.c.html#lua_pushlightuserdata">lua_pushlightuserdata</A>(L,lib);
+   <A HREF="lapi.c.html#lua_pushcclosure">lua_pushcclosure</A>(L,f,1);
+   return 1;
+  }
+ }
+ /* else return appropriate error messages */
+ <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+ <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L,dlerror());
+ <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L,(lib!=NULL) ? "init" : "open");
+ if (lib!=NULL) dlclose(lib);
+ return 3;
+}
+
+#endif
+
+
+
+/*
+** In Windows, default is to use dll; otherwise, default is not to use dll
+*/
+#ifndef <A HREF="loadlib.c.html#USE_DLL">USE_DLL</A>
+#ifdef _WIN32
+#define <A HREF="loadlib.c.html#USE_DLL">USE_DLL</A> 1
+#else
+#define <A NAME="USE_DLL"><SPAN CLASS="definition">USE_DLL</SPAN></A> 0
+#endif
+#endif
+
+
+#if <A HREF="loadlib.c.html#USE_DLL">USE_DLL</A>
+#define <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+/*
+* This is an implementation of <A HREF="loadlib.c.html#loadlib">loadlib</A> for Windows using native functions.
+*/
+
+#include &lt;windows.h&gt;
+
+static void <A NAME="pusherror"><SPAN CLASS="definition">pusherror</SPAN></A>(<A HREF="lstate.h.html#lua_State">lua_State</A> *L)
+{
+ int error=GetLastError();
+ char buffer[128];
+ if (FormatMessage(FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM,
+        0, error, 0, buffer, sizeof(buffer), 0))
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L,buffer);
+ else
+  <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L,"system error %d\n",error);
+}
+
+static int <A HREF="loadlib.c.html#loadlib">loadlib</A>(<A HREF="lstate.h.html#lua_State">lua_State</A> *L)
+{
+ const char *path=<A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L,1);
+ const char *init=<A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L,2);
+ HINSTANCE lib=LoadLibrary(path);
+ if (lib!=NULL)
+ {
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> f=(<A HREF="lua.h.html#lua_CFunction">lua_CFunction</A>) GetProcAddress(lib,init);
+  if (f!=NULL)
+  {
+   <A HREF="lapi.c.html#lua_pushlightuserdata">lua_pushlightuserdata</A>(L,lib);
+   <A HREF="lapi.c.html#lua_pushcclosure">lua_pushcclosure</A>(L,f,1);
+   return 1;
+  }
+ }
+ <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+ <A HREF="loadlib.c.html#pusherror">pusherror</A>(L);
+ <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L,(lib!=NULL) ? "init" : "open");
+ if (lib!=NULL) FreeLibrary(lib);
+ return 3;
+}
+
+#endif
+
+
+
+#ifndef <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+/* Fallback for other systems */
+
+/*
+** Those systems support dlopen, so they should have defined USE_DLOPEN.
+** The default (no)implementation gives them a special error message.
+*/
+#ifdef linux
+#define <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+#endif
+
+#ifdef sun
+#define <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+#endif
+
+#ifdef sgi
+#define <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+#endif
+
+#ifdef BSD
+#define <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+#endif
+
+#ifdef _WIN32
+#define <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+#endif
+
+#ifdef <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+#undef <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>
+#define <A HREF="loadlib.c.html#LOADLIB">LOADLIB</A> "`<A HREF="loadlib.c.html#loadlib">loadlib</A>' not installed (check your Lua configuration)"
+#else
+#define <A NAME="LOADLIB"><SPAN CLASS="definition">LOADLIB</SPAN></A> "`<A HREF="loadlib.c.html#loadlib">loadlib</A>' not supported"
+#endif
+
+static int <A NAME="loadlib"><SPAN CLASS="definition">loadlib</SPAN></A>(<A HREF="lstate.h.html#lua_State">lua_State</A> *L)
+{
+ <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+ <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L,<A HREF="loadlib.c.html#LOADLIB">LOADLIB</A>);
+ <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L,"absent");
+ return 3;
+}
+#endif
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> int <A NAME="luaopen_loadlib"><SPAN CLASS="definition">luaopen_loadlib</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L)
+{
+ <A HREF="lua.h.html#lua_register">lua_register</A>(L,"<A HREF="loadlib.c.html#loadlib">loadlib</A>",<A HREF="loadlib.c.html#loadlib">loadlib</A>);
+ return 0;
+}
+
+/*
+* Here are some links to available implementations of dlfcn and
+* interfaces to other native dynamic loaders on top of which <A HREF="loadlib.c.html#loadlib">loadlib</A>
+* could be implemented. Please send contributions and corrections to us.
+*
+* AIX
+* Starting with AIX 4.2, dlfcn is included in the base OS.
+* There is also an emulation package available.
+* http://www.faqs.org/faqs/aix-faq/part4/section-21.html
+*
+* HPUX 
+* HPUX 11 has dlfcn. For HPUX 10 use shl_*.
+* http://www.geda.seul.org/mailinglist/geda-dev37/msg00094.html
+* http://www.stat.umn.edu/~luke/xls/projects/dlbasics/dlbasics.html
+*
+* Macintosh, Windows
+* http://www.stat.umn.edu/~luke/xls/projects/dlbasics/dlbasics.html
+*
+* Mac OS X/Darwin
+* http://www.opendarwin.org/projects/dlcompat/
+*
+* GLIB has wrapper code for BeOS, OS2, Unix and Windows
+* http://cvs.gnome.org/lxr/source/glib/gmodule/
+*
+*/
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

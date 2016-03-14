@@ -1,0 +1,81 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - luadebug.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+luadebug.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: luadebug.h,v 1.17 2000/10/30 12:38:50 roberto Exp $
+** Debugging API
+** See Copyright Notice in lua.h
+*/
+
+
+#ifndef <A HREF="luadebug.h.html#luadebug_h">luadebug_h</A>
+#define <A NAME="luadebug_h"><SPAN CLASS="definition">luadebug_h</SPAN></A>
+
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+typedef struct <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A>;  /* activation record */
+typedef struct <A NAME="lua_Localvar"><SPAN CLASS="definition">lua_Localvar</SPAN></A> <A NAME="lua_Localvar"><SPAN CLASS="definition">lua_Localvar</SPAN></A>;
+
+typedef void (*<A NAME="lua_Hook"><SPAN CLASS="definition">lua_Hook</SPAN></A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar);
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A HREF="ldebug.c.html#lua_getstack">lua_getstack</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int level, <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar);
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *what, <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar);
+<A HREF="lua.h.html#LUA_API">LUA_API</A> const char *<A HREF="ldebug.c.html#lua_getlocal">lua_getlocal</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar, int n);
+<A HREF="lua.h.html#LUA_API">LUA_API</A> const char *<A HREF="ldebug.c.html#lua_setlocal">lua_setlocal</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar, int n);
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> <A HREF="ldebug.c.html#lua_setcallhook">lua_setcallhook</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> func);
+<A HREF="lua.h.html#LUA_API">LUA_API</A> <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> <A HREF="ldebug.c.html#lua_setlinehook">lua_setlinehook</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> func);
+
+
+#define <A NAME="LUA_IDSIZE"><SPAN CLASS="definition">LUA_IDSIZE</SPAN></A>      60
+
+struct <A NAME="lua_Debug"><SPAN CLASS="definition">lua_Debug</SPAN></A> {
+  const char *event;     /* `call', `return' */
+  int currentline;       /* (l) */
+  const char *name;      /* (n) */
+  const char *namewhat;  /* (n) `global', `tag method', `local', `field' */
+  int nups;              /* (u) number of upvalues */
+  int linedefined;       /* (S) */
+  const char *what;      /* (S) `Lua' function, `C' function, Lua `<A HREF="lua.c.html#main">main</A>' */
+  const char *source;    /* (S) */
+  char short_src[<A HREF="luadebug.h.html#LUA_IDSIZE">LUA_IDSIZE</A>]; /* (S) */
+  /* private part */
+  struct <A HREF="lobject.h.html#lua_TObject">lua_TObject</A> *_func;  /* active function */
+};
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,196 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lfunc.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lfunc.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lfunc.c,v 2.30.1.1 2013/04/12 18:48:47 roberto Exp $
+** Auxiliary functions to manipulate prototypes and closures
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stddef.h&gt;
+
+#define <A NAME="lfunc_c"><SPAN CLASS="definition">lfunc_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+
+<A HREF="lobject.h.html#Closure">Closure</A> *<A NAME="luaF_newCclosure"><SPAN CLASS="definition">luaF_newCclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  <A HREF="lobject.h.html#Closure">Closure</A> *c = &amp;<A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>, <A HREF="lfunc.h.html#sizeCclosure">sizeCclosure</A>(n), NULL, 0)-&gt;cl;
+  c-&gt;c.nupvalues = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(n);
+  return c;
+}
+
+
+<A HREF="lobject.h.html#Closure">Closure</A> *<A NAME="luaF_newLclosure"><SPAN CLASS="definition">luaF_newLclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  <A HREF="lobject.h.html#Closure">Closure</A> *c = &amp;<A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>, <A HREF="lfunc.h.html#sizeLclosure">sizeLclosure</A>(n), NULL, 0)-&gt;cl;
+  c-&gt;l.p = NULL;
+  c-&gt;l.nupvalues = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(n);
+  while (n--) c-&gt;l.upvals[n] = NULL;
+  return c;
+}
+
+
+<A HREF="lobject.h.html#UpVal">UpVal</A> *<A NAME="luaF_newupval"><SPAN CLASS="definition">luaF_newupval</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#UpVal">UpVal</A> *uv = &amp;<A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lobject.h.html#LUA_TUPVAL">LUA_TUPVAL</A>, sizeof(<A HREF="lobject.h.html#UpVal">UpVal</A>), NULL, 0)-&gt;uv;
+  uv-&gt;v = &amp;uv-&gt;u.value;
+  <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(uv-&gt;v);
+  return uv;
+}
+
+
+<A HREF="lobject.h.html#UpVal">UpVal</A> *<A NAME="luaF_findupval"><SPAN CLASS="definition">luaF_findupval</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> level) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="lstate.h.html#GCObject">GCObject</A> **pp = &amp;L-&gt;openupval;
+  <A HREF="lobject.h.html#UpVal">UpVal</A> *p;
+  <A HREF="lobject.h.html#UpVal">UpVal</A> *uv;
+  while (*pp != NULL &amp;&amp; (p = <A HREF="lstate.h.html#gco2uv">gco2uv</A>(*pp))-&gt;v &gt;= level) {
+    <A HREF="lstate.h.html#GCObject">GCObject</A> *o = <A HREF="lstate.h.html#obj2gco">obj2gco</A>(p);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(p-&gt;v != &amp;p-&gt;u.value);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lgc.h.html#isold">isold</A>(o) || <A HREF="lgc.h.html#isold">isold</A>(<A HREF="lstate.h.html#obj2gco">obj2gco</A>(L)));
+    if (p-&gt;v == level) {  /* found a corresponding upvalue? */
+      if (<A HREF="lgc.h.html#isdead">isdead</A>(g, o))  /* is it dead? */
+        <A HREF="lgc.h.html#changewhite">changewhite</A>(o);  /* resurrect it */
+      return p;
+    }
+    pp = &amp;p-&gt;next;
+  }
+  /* not found: create a new one */
+  uv = &amp;<A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lobject.h.html#LUA_TUPVAL">LUA_TUPVAL</A>, sizeof(<A HREF="lobject.h.html#UpVal">UpVal</A>), pp, 0)-&gt;uv;
+  uv-&gt;v = level;  /* current value lives in the stack */
+  uv-&gt;u.l.prev = &amp;g-&gt;uvhead;  /* double link it in `uvhead' list */
+  uv-&gt;u.l.next = g-&gt;uvhead.u.l.next;
+  uv-&gt;u.l.next-&gt;u.l.prev = uv;
+  g-&gt;uvhead.u.l.next = uv;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(uv-&gt;u.l.next-&gt;u.l.prev == uv &amp;&amp; uv-&gt;u.l.prev-&gt;u.l.next == uv);
+  return uv;
+}
+
+
+static void <A NAME="unlinkupval"><SPAN CLASS="definition">unlinkupval</SPAN></A> (<A HREF="lobject.h.html#UpVal">UpVal</A> *uv) {
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(uv-&gt;u.l.next-&gt;u.l.prev == uv &amp;&amp; uv-&gt;u.l.prev-&gt;u.l.next == uv);
+  uv-&gt;u.l.next-&gt;u.l.prev = uv-&gt;u.l.prev;  /* remove from `uvhead' list */
+  uv-&gt;u.l.prev-&gt;u.l.next = uv-&gt;u.l.next;
+}
+
+
+void <A NAME="luaF_freeupval"><SPAN CLASS="definition">luaF_freeupval</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#UpVal">UpVal</A> *uv) {
+  if (uv-&gt;v != &amp;uv-&gt;u.value)  /* is it open? */
+    <A HREF="lfunc.c.html#unlinkupval">unlinkupval</A>(uv);  /* remove from open list */
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, uv);  /* free upvalue */
+}
+
+
+void <A NAME="luaF_close"><SPAN CLASS="definition">luaF_close</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> level) {
+  <A HREF="lobject.h.html#UpVal">UpVal</A> *uv;
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  while (L-&gt;openupval != NULL &amp;&amp; (uv = <A HREF="lstate.h.html#gco2uv">gco2uv</A>(L-&gt;openupval))-&gt;v &gt;= level) {
+    <A HREF="lstate.h.html#GCObject">GCObject</A> *o = <A HREF="lstate.h.html#obj2gco">obj2gco</A>(uv);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lgc.h.html#isblack">isblack</A>(o) &amp;&amp; uv-&gt;v != &amp;uv-&gt;u.value);
+    L-&gt;openupval = uv-&gt;next;  /* remove from `open' list */
+    if (<A HREF="lgc.h.html#isdead">isdead</A>(g, o))
+      <A HREF="lfunc.c.html#luaF_freeupval">luaF_freeupval</A>(L, uv);  /* free upvalue */
+    else {
+      <A HREF="lfunc.c.html#unlinkupval">unlinkupval</A>(uv);  /* remove upvalue from 'uvhead' list */
+      <A HREF="lobject.h.html#setobj">setobj</A>(L, &amp;uv-&gt;u.value, uv-&gt;v);  /* move value to upvalue slot */
+      uv-&gt;v = &amp;uv-&gt;u.value;  /* now current value lives here */
+      <A HREF="lstate.h.html#gch">gch</A>(o)-&gt;next = g-&gt;allgc;  /* link upvalue into 'allgc' list */
+      g-&gt;allgc = o;
+      <A HREF="lgc.c.html#luaC_checkupvalcolor">luaC_checkupvalcolor</A>(g, uv);
+    }
+  }
+}
+
+
+<A HREF="lobject.h.html#Proto">Proto</A> *<A NAME="luaF_newproto"><SPAN CLASS="definition">luaF_newproto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = &amp;<A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lobject.h.html#LUA_TPROTO">LUA_TPROTO</A>, sizeof(<A HREF="lobject.h.html#Proto">Proto</A>), NULL, 0)-&gt;p;
+  f-&gt;k = NULL;
+  f-&gt;sizek = 0;
+  f-&gt;p = NULL;
+  f-&gt;sizep = 0;
+  f-&gt;code = NULL;
+  f-&gt;cache = NULL;
+  f-&gt;sizecode = 0;
+  f-&gt;lineinfo = NULL;
+  f-&gt;sizelineinfo = 0;
+  f-&gt;upvalues = NULL;
+  f-&gt;sizeupvalues = 0;
+  f-&gt;numparams = 0;
+  f-&gt;is_vararg = 0;
+  f-&gt;maxstacksize = 0;
+  f-&gt;locvars = NULL;
+  f-&gt;sizelocvars = 0;
+  f-&gt;linedefined = 0;
+  f-&gt;lastlinedefined = 0;
+  f-&gt;source = NULL;
+  return f;
+}
+
+
+void <A NAME="luaF_freeproto"><SPAN CLASS="definition">luaF_freeproto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *f) {
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;code, f-&gt;sizecode);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;p, f-&gt;sizep);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;k, f-&gt;sizek);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;lineinfo, f-&gt;sizelineinfo);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;locvars, f-&gt;sizelocvars);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;upvalues, f-&gt;sizeupvalues);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f);
+}
+
+
+/*
+** Look for n-th local variable at line `line' in function `func'.
+** Returns NULL if not found.
+*/
+const char *<A NAME="luaF_getlocalname"><SPAN CLASS="definition">luaF_getlocalname</SPAN></A> (const <A HREF="lobject.h.html#Proto">Proto</A> *f, int local_number, int pc) {
+  int i;
+  for (i = 0; i&lt;f-&gt;sizelocvars &amp;&amp; f-&gt;locvars[i].startpc &lt;= pc; i++) {
+    if (pc &lt; f-&gt;locvars[i].endpc) {  /* is variable active? */
+      local_number--;
+      if (local_number == 0)
+        return <A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;locvars[i].varname);
+    }
+  }
+  return NULL;  /* not found */
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

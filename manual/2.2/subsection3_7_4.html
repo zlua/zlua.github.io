@@ -1,0 +1,92 @@
+<HEAD>
+<TITLE>7.4 Inheritance</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_7_5.html>7.5 A CFunction</A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=subsection3_7_3.html>7.3 Persistence</A>
+<HR>
+<H2><A NAME=S0740>7.4 Inheritance</A></H2>
+ <A NAME=exfallback></A>
+The fallback for absent indices can be used to implement many
+kinds of inheritance in Lua.
+As an example,
+the following code implements single inheritance:
+<TT><B><PRE>
+function Index (t,f)
+  if f == 'parent' then  -- to avoid loop
+    return OldIndex(t,f)
+  end
+  local p = t.parent
+  if type(p) == 'table' then
+    return p[f]
+  else
+    return OldIndex(t,f)
+  end
+end
+
+OldIndex = setfallback(&quot;index&quot;, Index)</PRE></B></TT>
+Whenever Lua attempts to access an absent field in a table,
+it calls the fallback function <TT><B>Index</B></TT>.
+If the table has a field <TT><B>parent</B></TT> with a table value,
+then Lua attempts to access the desired field in this parent object.
+This process is repeated ``upwards'' until a value
+for the field is found or the object has no parent.
+In the latter case, the previous fallback is called to supply a value
+for the field.
+<P>
+When better performance is needed,
+the same fallback may be implemented in C,
+as illustrated below.
+<TT><B><PRE>
+int lockedParentName;  /* stores the lock index for the string &quot;parent&quot; */
+int lockedOldIndex;    /* previous fallback function */
+
+void callOldFallback (lua_Object table, lua_Object index)
+{
+  lua_Object oldIndex = lua_getlocked(lockedOldIndex);
+  lua_pushobject(table);
+  lua_pushobject(index);
+  lua_callfunction(oldIndex);
+}
+
+void Index (void)
+{
+  lua_Object table = lua_getparam(1);
+  lua_Object index = lua_getparam(2);
+  lua_Object parent;
+  if (lua_isstring(index) &amp;&amp; strcmp(lua_getstring(index), &quot;parent&quot;) == 0)
+  {
+    callOldFallback(table, index);
+    return;
+  }
+  lua_pushobject(table);
+  lua_pushlocked(lockedParentName);
+  parent = lua_getsubscript();
+  if (lua_istable(parent))
+  {
+    lua_pushobject(parent);
+    lua_pushobject(index);
+    /* return result from getsubscript */
+    lua_pushobject(lua_getsubscript());
+  }
+  else
+    callOldFallback(table, index);
+}</PRE></B></TT>
+This code must be registered with:
+<TT><B><PRE>
+  lua_pushliteral(&quot;parent&quot;);
+  lockedParentName = lua_lock();
+  lua_pushobject(lua_setfallback(&quot;index&quot;, Index));
+  lockedOldIndex = lua_lock();</PRE></B></TT>
+Notice how the string <TT><B>"parent"</B></TT> is kept
+locked in Lua for optimal performance.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_7_5.html>7.5 A CFunction</A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=subsection3_7_3.html>7.3 Persistence</A>
+<HR>
+
+</BODY>

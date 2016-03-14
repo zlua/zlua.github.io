@@ -1,0 +1,323 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lopcodes.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lopcodes.h
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lopcodes.h,v 1.142.1.2 2014/10/20 18:32:09 roberto Exp $
+** Opcodes for Lua virtual machine
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lopcodes.h.html#lopcodes_h">lopcodes_h</A>
+#define <A NAME="lopcodes_h"><SPAN CLASS="definition">lopcodes_h</SPAN></A>
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+
+
+/*===========================================================================
+  We assume that instructions are unsigned numbers.
+  All instructions have an opcode in the first 6 bits.
+  Instructions can have the following fields:
+        `A' : 8 bits
+        `B' : 9 bits
+        `C' : 9 bits
+        'Ax' : 26 bits ('A', 'B', and 'C' together)
+        `Bx' : 18 bits (`B' and `C' together)
+        `sBx' : signed Bx
+
+  A signed argument is represented in excess K; that is, the number
+  value is the unsigned value minus K. K is exactly the maximum value
+  for that argument (so that -max is represented by 0, and +max is
+  represented by 2*max), which is half the maximum for the corresponding
+  unsigned argument.
+===========================================================================*/
+
+
+enum <A NAME="OpMode"><SPAN CLASS="definition">OpMode</SPAN></A> {<A NAME="iABC"><SPAN CLASS="definition">iABC</SPAN></A>, <A NAME="iABx"><SPAN CLASS="definition">iABx</SPAN></A>, <A NAME="iAsBx"><SPAN CLASS="definition">iAsBx</SPAN></A>, <A NAME="iAx"><SPAN CLASS="definition">iAx</SPAN></A>};  /* basic instruction format */
+
+
+/*
+** size and position of opcode arguments.
+*/
+#define <A NAME="SIZE_C"><SPAN CLASS="definition">SIZE_C</SPAN></A>          9
+#define <A NAME="SIZE_B"><SPAN CLASS="definition">SIZE_B</SPAN></A>          9
+#define <A NAME="SIZE_Bx"><SPAN CLASS="definition">SIZE_Bx</SPAN></A>         (<A HREF="lopcodes.h.html#SIZE_C">SIZE_C</A> + <A HREF="lopcodes.h.html#SIZE_B">SIZE_B</A>)
+#define <A NAME="SIZE_A"><SPAN CLASS="definition">SIZE_A</SPAN></A>          8
+#define <A NAME="SIZE_Ax"><SPAN CLASS="definition">SIZE_Ax</SPAN></A>         (<A HREF="lopcodes.h.html#SIZE_C">SIZE_C</A> + <A HREF="lopcodes.h.html#SIZE_B">SIZE_B</A> + <A HREF="lopcodes.h.html#SIZE_A">SIZE_A</A>)
+
+#define <A NAME="SIZE_OP"><SPAN CLASS="definition">SIZE_OP</SPAN></A>         6
+
+#define <A NAME="POS_OP"><SPAN CLASS="definition">POS_OP</SPAN></A>          0
+#define <A NAME="POS_A"><SPAN CLASS="definition">POS_A</SPAN></A>           (<A HREF="lopcodes.h.html#POS_OP">POS_OP</A> + <A HREF="lopcodes.h.html#SIZE_OP">SIZE_OP</A>)
+#define <A NAME="POS_C"><SPAN CLASS="definition">POS_C</SPAN></A>           (<A HREF="lopcodes.h.html#POS_A">POS_A</A> + <A HREF="lopcodes.h.html#SIZE_A">SIZE_A</A>)
+#define <A NAME="POS_B"><SPAN CLASS="definition">POS_B</SPAN></A>           (<A HREF="lopcodes.h.html#POS_C">POS_C</A> + <A HREF="lopcodes.h.html#SIZE_C">SIZE_C</A>)
+#define <A NAME="POS_Bx"><SPAN CLASS="definition">POS_Bx</SPAN></A>          <A HREF="lopcodes.h.html#POS_C">POS_C</A>
+#define <A NAME="POS_Ax"><SPAN CLASS="definition">POS_Ax</SPAN></A>          <A HREF="lopcodes.h.html#POS_A">POS_A</A>
+
+
+/*
+** limits for opcode arguments.
+** we use (signed) int to manipulate most arguments,
+** so they must fit in <A HREF="luaconf.h.html#LUAI_BITSINT">LUAI_BITSINT</A>-1 bits (-1 for sign)
+*/
+#if <A HREF="lopcodes.h.html#SIZE_Bx">SIZE_Bx</A> &lt; <A HREF="luaconf.h.html#LUAI_BITSINT">LUAI_BITSINT</A>-1
+#define <A HREF="lopcodes.h.html#MAXARG_Bx">MAXARG_Bx</A>        ((1&lt;&lt;<A HREF="lopcodes.h.html#SIZE_Bx">SIZE_Bx</A>)-1)
+#define <A HREF="lopcodes.h.html#MAXARG_sBx">MAXARG_sBx</A>        (<A HREF="lopcodes.h.html#MAXARG_Bx">MAXARG_Bx</A>&gt;&gt;1)         /* `sBx' is signed */
+#else
+#define <A NAME="MAXARG_Bx"><SPAN CLASS="definition">MAXARG_Bx</SPAN></A>        <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>
+#define <A NAME="MAXARG_sBx"><SPAN CLASS="definition">MAXARG_sBx</SPAN></A>        <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>
+#endif
+
+#if <A HREF="lopcodes.h.html#SIZE_Ax">SIZE_Ax</A> &lt; <A HREF="luaconf.h.html#LUAI_BITSINT">LUAI_BITSINT</A>-1
+#define <A HREF="lopcodes.h.html#MAXARG_Ax">MAXARG_Ax</A>       ((1&lt;&lt;<A HREF="lopcodes.h.html#SIZE_Ax">SIZE_Ax</A>)-1)
+#else
+#define <A NAME="MAXARG_Ax"><SPAN CLASS="definition">MAXARG_Ax</SPAN></A>       <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>
+#endif
+
+
+#define <A NAME="MAXARG_A"><SPAN CLASS="definition">MAXARG_A</SPAN></A>        ((1&lt;&lt;<A HREF="lopcodes.h.html#SIZE_A">SIZE_A</A>)-1)
+#define <A NAME="MAXARG_B"><SPAN CLASS="definition">MAXARG_B</SPAN></A>        ((1&lt;&lt;<A HREF="lopcodes.h.html#SIZE_B">SIZE_B</A>)-1)
+#define <A NAME="MAXARG_C"><SPAN CLASS="definition">MAXARG_C</SPAN></A>        ((1&lt;&lt;<A HREF="lopcodes.h.html#SIZE_C">SIZE_C</A>)-1)
+
+
+/* creates a mask with `n' 1 bits at position `p' */
+#define <A NAME="MASK1"><SPAN CLASS="definition">MASK1</SPAN></A>(n,p)      ((~((~(<A HREF="llimits.h.html#Instruction">Instruction</A>)0)&lt;&lt;(n)))&lt;&lt;(p))
+
+/* creates a mask with `n' 0 bits at position `p' */
+#define <A NAME="MASK0"><SPAN CLASS="definition">MASK0</SPAN></A>(n,p)      (~<A HREF="lopcodes.h.html#MASK1">MASK1</A>(n,p))
+
+/*
+** the following macros help to manipulate instructions
+*/
+
+#define <A NAME="GET_OPCODE"><SPAN CLASS="definition">GET_OPCODE</SPAN></A>(i)   (<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lopcodes.h.html#OpCode">OpCode</A>, ((i)&gt;&gt;<A HREF="lopcodes.h.html#POS_OP">POS_OP</A>) &amp; <A HREF="lopcodes.h.html#MASK1">MASK1</A>(<A HREF="lopcodes.h.html#SIZE_OP">SIZE_OP</A>,0)))
+#define <A NAME="SET_OPCODE"><SPAN CLASS="definition">SET_OPCODE</SPAN></A>(i,o) ((i) = (((i)&amp;<A HREF="lopcodes.h.html#MASK0">MASK0</A>(<A HREF="lopcodes.h.html#SIZE_OP">SIZE_OP</A>,<A HREF="lopcodes.h.html#POS_OP">POS_OP</A>)) | \
+                ((<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, o)&lt;&lt;<A HREF="lopcodes.h.html#POS_OP">POS_OP</A>)&amp;<A HREF="lopcodes.h.html#MASK1">MASK1</A>(<A HREF="lopcodes.h.html#SIZE_OP">SIZE_OP</A>,<A HREF="lopcodes.h.html#POS_OP">POS_OP</A>))))
+
+#define <A NAME="getarg"><SPAN CLASS="definition">getarg</SPAN></A>(i,pos,size)      (<A HREF="llimits.h.html#cast">cast</A>(int, ((i)&gt;&gt;pos) &amp; <A HREF="lopcodes.h.html#MASK1">MASK1</A>(size,0)))
+#define <A NAME="setarg"><SPAN CLASS="definition">setarg</SPAN></A>(i,v,pos,size)    ((i) = (((i)&amp;<A HREF="lopcodes.h.html#MASK0">MASK0</A>(size,pos)) | \
+                ((<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, v)&lt;&lt;pos)&amp;<A HREF="lopcodes.h.html#MASK1">MASK1</A>(size,pos))))
+
+#define <A NAME="GETARG_A"><SPAN CLASS="definition">GETARG_A</SPAN></A>(i)     <A HREF="lopcodes.h.html#getarg">getarg</A>(i, <A HREF="lopcodes.h.html#POS_A">POS_A</A>, <A HREF="lopcodes.h.html#SIZE_A">SIZE_A</A>)
+#define <A NAME="SETARG_A"><SPAN CLASS="definition">SETARG_A</SPAN></A>(i,v)   <A HREF="lopcodes.h.html#setarg">setarg</A>(i, v, <A HREF="lopcodes.h.html#POS_A">POS_A</A>, <A HREF="lopcodes.h.html#SIZE_A">SIZE_A</A>)
+
+#define <A NAME="GETARG_B"><SPAN CLASS="definition">GETARG_B</SPAN></A>(i)     <A HREF="lopcodes.h.html#getarg">getarg</A>(i, <A HREF="lopcodes.h.html#POS_B">POS_B</A>, <A HREF="lopcodes.h.html#SIZE_B">SIZE_B</A>)
+#define <A NAME="SETARG_B"><SPAN CLASS="definition">SETARG_B</SPAN></A>(i,v)   <A HREF="lopcodes.h.html#setarg">setarg</A>(i, v, <A HREF="lopcodes.h.html#POS_B">POS_B</A>, <A HREF="lopcodes.h.html#SIZE_B">SIZE_B</A>)
+
+#define <A NAME="GETARG_C"><SPAN CLASS="definition">GETARG_C</SPAN></A>(i)     <A HREF="lopcodes.h.html#getarg">getarg</A>(i, <A HREF="lopcodes.h.html#POS_C">POS_C</A>, <A HREF="lopcodes.h.html#SIZE_C">SIZE_C</A>)
+#define <A NAME="SETARG_C"><SPAN CLASS="definition">SETARG_C</SPAN></A>(i,v)   <A HREF="lopcodes.h.html#setarg">setarg</A>(i, v, <A HREF="lopcodes.h.html#POS_C">POS_C</A>, <A HREF="lopcodes.h.html#SIZE_C">SIZE_C</A>)
+
+#define <A NAME="GETARG_Bx"><SPAN CLASS="definition">GETARG_Bx</SPAN></A>(i)    <A HREF="lopcodes.h.html#getarg">getarg</A>(i, <A HREF="lopcodes.h.html#POS_Bx">POS_Bx</A>, <A HREF="lopcodes.h.html#SIZE_Bx">SIZE_Bx</A>)
+#define <A NAME="SETARG_Bx"><SPAN CLASS="definition">SETARG_Bx</SPAN></A>(i,v)  <A HREF="lopcodes.h.html#setarg">setarg</A>(i, v, <A HREF="lopcodes.h.html#POS_Bx">POS_Bx</A>, <A HREF="lopcodes.h.html#SIZE_Bx">SIZE_Bx</A>)
+
+#define <A NAME="GETARG_Ax"><SPAN CLASS="definition">GETARG_Ax</SPAN></A>(i)    <A HREF="lopcodes.h.html#getarg">getarg</A>(i, <A HREF="lopcodes.h.html#POS_Ax">POS_Ax</A>, <A HREF="lopcodes.h.html#SIZE_Ax">SIZE_Ax</A>)
+#define <A NAME="SETARG_Ax"><SPAN CLASS="definition">SETARG_Ax</SPAN></A>(i,v)  <A HREF="lopcodes.h.html#setarg">setarg</A>(i, v, <A HREF="lopcodes.h.html#POS_Ax">POS_Ax</A>, <A HREF="lopcodes.h.html#SIZE_Ax">SIZE_Ax</A>)
+
+#define <A NAME="GETARG_sBx"><SPAN CLASS="definition">GETARG_sBx</SPAN></A>(i)   (<A HREF="lopcodes.h.html#GETARG_Bx">GETARG_Bx</A>(i)-<A HREF="lopcodes.h.html#MAXARG_sBx">MAXARG_sBx</A>)
+#define <A NAME="SETARG_sBx"><SPAN CLASS="definition">SETARG_sBx</SPAN></A>(i,b) <A HREF="lopcodes.h.html#SETARG_Bx">SETARG_Bx</A>((i),<A HREF="llimits.h.html#cast">cast</A>(unsigned int, (b)+<A HREF="lopcodes.h.html#MAXARG_sBx">MAXARG_sBx</A>))
+
+
+#define <A NAME="CREATE_ABC"><SPAN CLASS="definition">CREATE_ABC</SPAN></A>(o,a,b,c)     ((<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, o)&lt;&lt;<A HREF="lopcodes.h.html#POS_OP">POS_OP</A>) \
+                        | (<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, a)&lt;&lt;<A HREF="lopcodes.h.html#POS_A">POS_A</A>) \
+                        | (<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, b)&lt;&lt;<A HREF="lopcodes.h.html#POS_B">POS_B</A>) \
+                        | (<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, c)&lt;&lt;<A HREF="lopcodes.h.html#POS_C">POS_C</A>))
+
+#define <A NAME="CREATE_ABx"><SPAN CLASS="definition">CREATE_ABx</SPAN></A>(o,a,bc)      ((<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, o)&lt;&lt;<A HREF="lopcodes.h.html#POS_OP">POS_OP</A>) \
+                        | (<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, a)&lt;&lt;<A HREF="lopcodes.h.html#POS_A">POS_A</A>) \
+                        | (<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, bc)&lt;&lt;<A HREF="lopcodes.h.html#POS_Bx">POS_Bx</A>))
+
+#define <A NAME="CREATE_Ax"><SPAN CLASS="definition">CREATE_Ax</SPAN></A>(o,a)          ((<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, o)&lt;&lt;<A HREF="lopcodes.h.html#POS_OP">POS_OP</A>) \
+                        | (<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>, a)&lt;&lt;<A HREF="lopcodes.h.html#POS_Ax">POS_Ax</A>))
+
+
+/*
+** Macros to operate RK indices
+*/
+
+/* this bit 1 means constant (0 means register) */
+#define <A NAME="BITRK"><SPAN CLASS="definition">BITRK</SPAN></A>           (1 &lt;&lt; (<A HREF="lopcodes.h.html#SIZE_B">SIZE_B</A> - 1))
+
+/* test whether value is a constant */
+#define <A NAME="ISK"><SPAN CLASS="definition">ISK</SPAN></A>(x)          ((x) &amp; <A HREF="lopcodes.h.html#BITRK">BITRK</A>)
+
+/* gets the index of the constant */
+#define <A NAME="INDEXK"><SPAN CLASS="definition">INDEXK</SPAN></A>(r)       ((int)(r) &amp; ~<A HREF="lopcodes.h.html#BITRK">BITRK</A>)
+
+#define <A NAME="MAXINDEXRK"><SPAN CLASS="definition">MAXINDEXRK</SPAN></A>      (<A HREF="lopcodes.h.html#BITRK">BITRK</A> - 1)
+
+/* code a constant index as a RK value */
+#define <A NAME="RKASK"><SPAN CLASS="definition">RKASK</SPAN></A>(x)        ((x) | <A HREF="lopcodes.h.html#BITRK">BITRK</A>)
+
+
+/*
+** invalid register that fits in 8 bits
+*/
+#define <A NAME="NO_REG"><SPAN CLASS="definition">NO_REG</SPAN></A>          <A HREF="lopcodes.h.html#MAXARG_A">MAXARG_A</A>
+
+
+/*
+** R(x) - register
+** Kst(x) - constant (in constant table)
+** RK(x) == if <A HREF="lopcodes.h.html#ISK">ISK</A>(x) then Kst(<A HREF="lopcodes.h.html#INDEXK">INDEXK</A>(x)) else R(x)
+*/
+
+
+/*
+** grep "ORDER OP" if you change these enums
+*/
+
+typedef enum {
+/*----------------------------------------------------------------------
+name            args    description
+------------------------------------------------------------------------*/
+<A NAME="OP_MOVE"><SPAN CLASS="definition">OP_MOVE</SPAN></A>,/*      A B     R(A) := R(B)                                    */
+<A NAME="OP_LOADK"><SPAN CLASS="definition">OP_LOADK</SPAN></A>,/*     A Bx    R(A) := Kst(Bx)                                 */
+<A NAME="OP_LOADKX"><SPAN CLASS="definition">OP_LOADKX</SPAN></A>,/*    A       R(A) := Kst(extra arg)                          */
+<A NAME="OP_LOADBOOL"><SPAN CLASS="definition">OP_LOADBOOL</SPAN></A>,/*  A B C   R(A) := (Bool)B; if (C) pc++                    */
+<A NAME="OP_LOADNIL"><SPAN CLASS="definition">OP_LOADNIL</SPAN></A>,/*   A B     R(A), R(A+1), ..., R(A+B) := nil                */
+<A NAME="OP_GETUPVAL"><SPAN CLASS="definition">OP_GETUPVAL</SPAN></A>,/*  A B     R(A) := UpValue[B]                              */
+
+<A NAME="OP_GETTABUP"><SPAN CLASS="definition">OP_GETTABUP</SPAN></A>,/*  A B C   R(A) := UpValue[B][RK(C)]                       */
+<A NAME="OP_GETTABLE"><SPAN CLASS="definition">OP_GETTABLE</SPAN></A>,/*  A B C   R(A) := R(B)[RK(C)]                             */
+
+<A NAME="OP_SETTABUP"><SPAN CLASS="definition">OP_SETTABUP</SPAN></A>,/*  A B C   UpValue[A][RK(B)] := RK(C)                      */
+<A NAME="OP_SETUPVAL"><SPAN CLASS="definition">OP_SETUPVAL</SPAN></A>,/*  A B     UpValue[B] := R(A)                              */
+<A NAME="OP_SETTABLE"><SPAN CLASS="definition">OP_SETTABLE</SPAN></A>,/*  A B C   R(A)[RK(B)] := RK(C)                            */
+
+<A NAME="OP_NEWTABLE"><SPAN CLASS="definition">OP_NEWTABLE</SPAN></A>,/*  A B C   R(A) := {} (size = B,C)                         */
+
+<A NAME="OP_SELF"><SPAN CLASS="definition">OP_SELF</SPAN></A>,/*      A B C   R(A+1) := R(B); R(A) := R(B)[RK(C)]             */
+
+<A NAME="OP_ADD"><SPAN CLASS="definition">OP_ADD</SPAN></A>,/*       A B C   R(A) := RK(B) + RK(C)                           */
+<A NAME="OP_SUB"><SPAN CLASS="definition">OP_SUB</SPAN></A>,/*       A B C   R(A) := RK(B) - RK(C)                           */
+<A NAME="OP_MUL"><SPAN CLASS="definition">OP_MUL</SPAN></A>,/*       A B C   R(A) := RK(B) * RK(C)                           */
+<A NAME="OP_DIV"><SPAN CLASS="definition">OP_DIV</SPAN></A>,/*       A B C   R(A) := RK(B) / RK(C)                           */
+<A NAME="OP_MOD"><SPAN CLASS="definition">OP_MOD</SPAN></A>,/*       A B C   R(A) := RK(B) % RK(C)                           */
+<A NAME="OP_POW"><SPAN CLASS="definition">OP_POW</SPAN></A>,/*       A B C   R(A) := RK(B) ^ RK(C)                           */
+<A NAME="OP_UNM"><SPAN CLASS="definition">OP_UNM</SPAN></A>,/*       A B     R(A) := -R(B)                                   */
+<A NAME="OP_NOT"><SPAN CLASS="definition">OP_NOT</SPAN></A>,/*       A B     R(A) := not R(B)                                */
+<A NAME="OP_LEN"><SPAN CLASS="definition">OP_LEN</SPAN></A>,/*       A B     R(A) := length of R(B)                          */
+
+<A NAME="OP_CONCAT"><SPAN CLASS="definition">OP_CONCAT</SPAN></A>,/*    A B C   R(A) := R(B).. ... ..R(C)                       */
+
+<A NAME="OP_JMP"><SPAN CLASS="definition">OP_JMP</SPAN></A>,/*       A sBx   pc+=sBx; if (A) close all upvalues &gt;= R(A - 1)  */
+<A NAME="OP_EQ"><SPAN CLASS="definition">OP_EQ</SPAN></A>,/*        A B C   if ((RK(B) == RK(C)) ~= A) then pc++            */
+<A NAME="OP_LT"><SPAN CLASS="definition">OP_LT</SPAN></A>,/*        A B C   if ((RK(B) &lt;  RK(C)) ~= A) then pc++            */
+<A NAME="OP_LE"><SPAN CLASS="definition">OP_LE</SPAN></A>,/*        A B C   if ((RK(B) &lt;= RK(C)) ~= A) then pc++            */
+
+<A NAME="OP_TEST"><SPAN CLASS="definition">OP_TEST</SPAN></A>,/*      A C     if not (R(A) &lt;=&gt; C) then pc++                   */
+<A NAME="OP_TESTSET"><SPAN CLASS="definition">OP_TESTSET</SPAN></A>,/*   A B C   if (R(B) &lt;=&gt; C) then R(A) := R(B) else pc++     */
+
+<A NAME="OP_CALL"><SPAN CLASS="definition">OP_CALL</SPAN></A>,/*      A B C   R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1)) */
+<A NAME="OP_TAILCALL"><SPAN CLASS="definition">OP_TAILCALL</SPAN></A>,/*  A B C   return R(A)(R(A+1), ... ,R(A+B-1))              */
+<A NAME="OP_RETURN"><SPAN CLASS="definition">OP_RETURN</SPAN></A>,/*    A B     return R(A), ... ,R(A+B-2)      (see note)      */
+
+<A NAME="OP_FORLOOP"><SPAN CLASS="definition">OP_FORLOOP</SPAN></A>,/*   A sBx   R(A)+=R(A+2);
+                        if R(A) &lt;?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }*/
+<A NAME="OP_FORPREP"><SPAN CLASS="definition">OP_FORPREP</SPAN></A>,/*   A sBx   R(A)-=R(A+2); pc+=sBx                           */
+
+<A NAME="OP_TFORCALL"><SPAN CLASS="definition">OP_TFORCALL</SPAN></A>,/*  A C     R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2));  */
+<A NAME="OP_TFORLOOP"><SPAN CLASS="definition">OP_TFORLOOP</SPAN></A>,/*  A sBx   if R(A+1) ~= nil then { R(A)=R(A+1); pc += sBx }*/
+
+<A NAME="OP_SETLIST"><SPAN CLASS="definition">OP_SETLIST</SPAN></A>,/*   A B C   R(A)[(C-1)*FPF+i] := R(A+i), 1 &lt;= i &lt;= B        */
+
+<A NAME="OP_CLOSURE"><SPAN CLASS="definition">OP_CLOSURE</SPAN></A>,/*   A Bx    R(A) := closure(KPROTO[Bx])                     */
+
+<A NAME="OP_VARARG"><SPAN CLASS="definition">OP_VARARG</SPAN></A>,/*    A B     R(A), R(A+1), ..., R(A+B-2) = vararg            */
+
+<A NAME="OP_EXTRAARG"><SPAN CLASS="definition">OP_EXTRAARG</SPAN></A>/*   Ax      extra (larger) argument for previous opcode     */
+} <A NAME="OpCode"><SPAN CLASS="definition">OpCode</SPAN></A>;
+
+
+#define <A NAME="NUM_OPCODES"><SPAN CLASS="definition">NUM_OPCODES</SPAN></A>     (<A HREF="llimits.h.html#cast">cast</A>(int, <A HREF="lopcodes.h.html#OP_EXTRAARG">OP_EXTRAARG</A>) + 1)
+
+
+
+/*===========================================================================
+  Notes:
+  (*) In <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>, if (B == 0) then B = top. If (C == 0), then `top' is
+  set to last_result+1, so next open instruction (<A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>, <A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A>,
+  <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>) may use `top'.
+
+  (*) In <A HREF="lopcodes.h.html#OP_VARARG">OP_VARARG</A>, if (B == 0) then use actual number of varargs and
+  set top (like in <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A> with C == 0).
+
+  (*) In <A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A>, if (B == 0) then return up to `top'.
+
+  (*) In <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>, if (B == 0) then B = `top'; if (C == 0) then next
+  'instruction' is EXTRAARG(real C).
+
+  (*) In <A HREF="lopcodes.h.html#OP_LOADKX">OP_LOADKX</A>, the next 'instruction' is always EXTRAARG.
+
+  (*) For comparisons, A specifies what condition the test should accept
+  (true or false).
+
+  (*) All `skips' (pc++) assume that next instruction is a jump.
+
+===========================================================================*/
+
+
+/*
+** masks for instruction properties. The format is:
+** bits 0-1: op mode
+** bits 2-3: C arg mode
+** bits 4-5: B arg mode
+** bit 6: instruction set register A
+** bit 7: operator is a test (next instruction must be a jump)
+*/
+
+enum <A NAME="OpArgMask"><SPAN CLASS="definition">OpArgMask</SPAN></A> {
+  <A NAME="OpArgN"><SPAN CLASS="definition">OpArgN</SPAN></A>,  /* argument is not used */
+  <A NAME="OpArgU"><SPAN CLASS="definition">OpArgU</SPAN></A>,  /* argument is used */
+  <A NAME="OpArgR"><SPAN CLASS="definition">OpArgR</SPAN></A>,  /* argument is a register or a jump offset */
+  <A NAME="OpArgK"><SPAN CLASS="definition">OpArgK</SPAN></A>   /* argument is a constant or register/constant */
+};
+
+<A HREF="luaconf.h.html#LUAI_DDEC">LUAI_DDEC</A> const <A HREF="llimits.h.html#lu_byte">lu_byte</A> <A HREF="lopcodes.c.html#luaP_opmodes">luaP_opmodes</A>[<A HREF="lopcodes.h.html#NUM_OPCODES">NUM_OPCODES</A>];
+
+#define <A NAME="getOpMode"><SPAN CLASS="definition">getOpMode</SPAN></A>(m)    (<A HREF="llimits.h.html#cast">cast</A>(enum <A HREF="lopcodes.h.html#OpMode">OpMode</A>, <A HREF="lopcodes.c.html#luaP_opmodes">luaP_opmodes</A>[m] &amp; 3))
+#define <A NAME="getBMode"><SPAN CLASS="definition">getBMode</SPAN></A>(m)     (<A HREF="llimits.h.html#cast">cast</A>(enum <A HREF="lopcodes.h.html#OpArgMask">OpArgMask</A>, (<A HREF="lopcodes.c.html#luaP_opmodes">luaP_opmodes</A>[m] &gt;&gt; 4) &amp; 3))
+#define <A NAME="getCMode"><SPAN CLASS="definition">getCMode</SPAN></A>(m)     (<A HREF="llimits.h.html#cast">cast</A>(enum <A HREF="lopcodes.h.html#OpArgMask">OpArgMask</A>, (<A HREF="lopcodes.c.html#luaP_opmodes">luaP_opmodes</A>[m] &gt;&gt; 2) &amp; 3))
+#define <A NAME="testAMode"><SPAN CLASS="definition">testAMode</SPAN></A>(m)    (<A HREF="lopcodes.c.html#luaP_opmodes">luaP_opmodes</A>[m] &amp; (1 &lt;&lt; 6))
+#define <A NAME="testTMode"><SPAN CLASS="definition">testTMode</SPAN></A>(m)    (<A HREF="lopcodes.c.html#luaP_opmodes">luaP_opmodes</A>[m] &amp; (1 &lt;&lt; 7))
+
+
+<A HREF="luaconf.h.html#LUAI_DDEC">LUAI_DDEC</A> const char *const <A HREF="lopcodes.c.html#luaP_opnames">luaP_opnames</A>[<A HREF="lopcodes.h.html#NUM_OPCODES">NUM_OPCODES</A>+1];  /* opcode names */
+
+
+/* number of list items to accumulate before a SETLIST instruction */
+#define <A NAME="LFIELDS_PER_FLUSH"><SPAN CLASS="definition">LFIELDS_PER_FLUSH</SPAN></A>       50
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

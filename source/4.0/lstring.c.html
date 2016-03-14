@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lstring.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstring.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstring.c,v 1.45a 2000/10/30 17:49:19 roberto Exp $
+** String table (keeps all strings handled by Lua)
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+
+
+/*
+** type equivalent to <A HREF="lobject.h.html#TString">TString</A>, but with maximum alignment requirements
+*/
+union <A NAME="L_UTString"><SPAN CLASS="definition">L_UTString</SPAN></A> {
+  <A HREF="lobject.h.html#TString">TString</A> ts;
+  union <A HREF="llimits.h.html#L_Umaxalign">L_Umaxalign</A> dummy;  /* ensures maximum alignment for `local' udata */
+};
+
+
+
+void <A NAME="luaS_init"><SPAN CLASS="definition">luaS_init</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  L-&gt;strt.hash = <A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L, 1, <A HREF="lobject.h.html#TString">TString</A> *);
+  L-&gt;udt.hash = <A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L, 1, <A HREF="lobject.h.html#TString">TString</A> *);
+  L-&gt;nblocks += 2*sizeof(<A HREF="lobject.h.html#TString">TString</A> *);
+  L-&gt;strt.size = L-&gt;udt.size = 1;
+  L-&gt;strt.nuse = L-&gt;udt.nuse = 0;
+  L-&gt;strt.hash[0] = L-&gt;udt.hash[0] = NULL;
+}
+
+
+void <A NAME="luaS_freeall"><SPAN CLASS="definition">luaS_freeall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L-&gt;strt.nuse==0, "non-empty string table");
+  L-&gt;nblocks -= (L-&gt;strt.size + L-&gt;udt.size)*sizeof(<A HREF="lobject.h.html#TString">TString</A> *);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, L-&gt;strt.hash);
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L-&gt;udt.nuse==0, "non-empty udata table");
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, L-&gt;udt.hash);
+}
+
+
+static unsigned long <A NAME="hash_s"><SPAN CLASS="definition">hash_s</SPAN></A> (const char *s, size_t l) {
+  unsigned long h = l;  /* seed */
+  size_t step = (l&gt;&gt;5)|1;  /* if string is too long, don't hash all its chars */
+  for (; l&gt;=step; l-=step)
+    h = h ^ ((h&lt;&lt;5)+(h&gt;&gt;2)+(unsigned char)*(s++));
+  return h;
+}
+
+
+void <A NAME="luaS_resize"><SPAN CLASS="definition">luaS_resize</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#stringtable">stringtable</A> *tb, int newsize) {
+  <A HREF="lobject.h.html#TString">TString</A> **newhash = <A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L, newsize, <A HREF="lobject.h.html#TString">TString</A> *);
+  int i;
+  for (i=0; i&lt;newsize; i++) newhash[i] = NULL;
+  /* rehash */
+  for (i=0; i&lt;tb-&gt;size; i++) {
+    <A HREF="lobject.h.html#TString">TString</A> *p = tb-&gt;hash[i];
+    while (p) {  /* for each <A HREF="ltable.h.html#node">node</A> in the list */
+      <A HREF="lobject.h.html#TString">TString</A> *next = p-&gt;nexthash;  /* save next */
+      unsigned long h = (tb == &amp;L-&gt;strt) ? p-&gt;u.s.hash : <A HREF="llimits.h.html#IntPoint">IntPoint</A>(p-&gt;u.d.value);
+      int h1 = h&amp;(newsize-1);  /* new position */
+      <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(h%newsize == (h&amp;(newsize-1)),
+                    "a&amp;(x-1) == a%x, for x power of 2");
+      p-&gt;nexthash = newhash[h1];  /* chain it in new position */
+      newhash[h1] = p;
+      p = next;
+    }
+  }
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, tb-&gt;hash);
+  L-&gt;nblocks += (newsize - tb-&gt;size)*sizeof(<A HREF="lobject.h.html#TString">TString</A> *);
+  tb-&gt;size = newsize;
+  tb-&gt;hash = newhash;
+}
+
+
+static void <A NAME="newentry"><SPAN CLASS="definition">newentry</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#stringtable">stringtable</A> *tb, <A HREF="lobject.h.html#TString">TString</A> *ts, int h) {
+  ts-&gt;nexthash = tb-&gt;hash[h];  /* chain new entry */
+  tb-&gt;hash[h] = ts;
+  tb-&gt;nuse++;
+  if (tb-&gt;nuse &gt; (<A HREF="llimits.h.html#lint32">lint32</A>)tb-&gt;size &amp;&amp; tb-&gt;size &lt; <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>/2)  /* too crowded? */
+    <A HREF="lstring.c.html#luaS_resize">luaS_resize</A>(L, tb, tb-&gt;size*2);
+}
+
+
+
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_newlstr"><SPAN CLASS="definition">luaS_newlstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l) {
+  unsigned long h = <A HREF="lstring.c.html#hash_s">hash_s</A>(str, l);
+  int h1 = h &amp; (L-&gt;strt.size-1);
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+  for (ts = L-&gt;strt.hash[h1]; ts; ts = ts-&gt;nexthash) {
+    if (ts-&gt;len == l &amp;&amp; (memcmp(str, ts-&gt;str, l) == 0))
+      return ts;
+  }
+  /* not found */
+  ts = (<A HREF="lobject.h.html#TString">TString</A> *)<A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L, <A HREF="lstring.h.html#sizestring">sizestring</A>(l));
+  ts-&gt;marked = 0;
+  ts-&gt;nexthash = NULL;
+  ts-&gt;len = l;
+  ts-&gt;u.s.hash = h;
+  ts-&gt;u.s.constindex = 0;
+  memcpy(ts-&gt;str, str, l);
+  ts-&gt;str[l] = 0;  /* ending 0 */
+  L-&gt;nblocks += <A HREF="lstring.h.html#sizestring">sizestring</A>(l);
+  <A HREF="lstring.c.html#newentry">newentry</A>(L, &amp;L-&gt;strt, ts, h1);  /* insert it on table */
+  return ts;
+}
+
+
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_newudata"><SPAN CLASS="definition">luaS_newudata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t s, void *udata) {
+  union <A HREF="lstring.c.html#L_UTString">L_UTString</A> *uts = (union <A HREF="lstring.c.html#L_UTString">L_UTString</A> *)<A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L,
+                                (<A HREF="llimits.h.html#lint32">lint32</A>)sizeof(union <A HREF="lstring.c.html#L_UTString">L_UTString</A>)+s);
+  <A HREF="lobject.h.html#TString">TString</A> *ts = &amp;uts-&gt;ts;
+  ts-&gt;marked = 0;
+  ts-&gt;nexthash = NULL;
+  ts-&gt;len = s;
+  ts-&gt;u.d.tag = 0;
+  ts-&gt;u.d.value = (s &gt; 0) ? uts+1 : udata;
+  L-&gt;nblocks += <A HREF="lstring.h.html#sizestring">sizestring</A>(s);
+ /* insert it on table */
+  <A HREF="lstring.c.html#newentry">newentry</A>(L, &amp;L-&gt;udt, ts, <A HREF="llimits.h.html#IntPoint">IntPoint</A>(ts-&gt;u.d.value) &amp; (L-&gt;udt.size-1));
+  return ts;
+}
+
+
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_createudata"><SPAN CLASS="definition">luaS_createudata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *udata, int tag) {
+  int h1 = <A HREF="llimits.h.html#IntPoint">IntPoint</A>(udata) &amp; (L-&gt;udt.size-1);
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+  for (ts = L-&gt;udt.hash[h1]; ts; ts = ts-&gt;nexthash) {
+    if (udata == ts-&gt;u.d.value &amp;&amp; (tag == ts-&gt;u.d.tag || tag == <A HREF="lua.h.html#LUA_ANYTAG">LUA_ANYTAG</A>))
+      return ts;
+  }
+  /* not found */
+  ts = <A HREF="lstring.c.html#luaS_newudata">luaS_newudata</A>(L, 0, udata);
+  if (tag != <A HREF="lua.h.html#LUA_ANYTAG">LUA_ANYTAG</A>)
+    ts-&gt;u.d.tag = tag;
+  return ts;
+}
+
+
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_new"><SPAN CLASS="definition">luaS_new</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str) {
+  return <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, str, strlen(str));
+}
+
+
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_newfixed"><SPAN CLASS="definition">luaS_newfixed</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str) {
+  <A HREF="lobject.h.html#TString">TString</A> *ts = <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, str);
+  if (ts-&gt;marked == 0) ts-&gt;marked = <A HREF="lstring.h.html#FIXMARK">FIXMARK</A>;  /* avoid GC */
+  return ts;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

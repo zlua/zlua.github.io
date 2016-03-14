@@ -1,0 +1,247 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lbitlib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lbitlib.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lbitlib.c,v 1.18.1.2 2013/07/09 18:01:41 roberto Exp $
+** Standard library for bitwise operations
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lbitlib_c"><SPAN CLASS="definition">lbitlib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+/* number of bits to consider in a number */
+#if !defined(<A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A>)
+#define <A NAME="LUA_NBITS"><SPAN CLASS="definition">LUA_NBITS</SPAN></A>       32
+#endif
+
+
+#define <A NAME="ALLONES"><SPAN CLASS="definition">ALLONES</SPAN></A>         (~(((~(<A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A>)0) &lt;&lt; (<A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A> - 1)) &lt;&lt; 1))
+
+/* macro to <A HREF="lbitlib.c.html#trim">trim</A> extra bits */
+#define <A NAME="trim"><SPAN CLASS="definition">trim</SPAN></A>(x)         ((x) &amp; <A HREF="lbitlib.c.html#ALLONES">ALLONES</A>)
+
+
+/* builds a number with 'n' ones (1 &lt;= n &lt;= <A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A>) */
+#define <A NAME="mask"><SPAN CLASS="definition">mask</SPAN></A>(n)         (~((<A HREF="lbitlib.c.html#ALLONES">ALLONES</A> &lt;&lt; 1) &lt;&lt; ((n) - 1)))
+
+
+typedef <A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A> <A NAME="b_uint"><SPAN CLASS="definition">b_uint</SPAN></A>;
+
+
+
+static <A HREF="lbitlib.c.html#b_uint">b_uint</A> <A NAME="andaux"><SPAN CLASS="definition">andaux</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int i, n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = ~(<A HREF="lbitlib.c.html#b_uint">b_uint</A>)0;
+  for (i = 1; i &lt;= n; i++)
+    r &amp;= <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, i);
+  return <A HREF="lbitlib.c.html#trim">trim</A>(r);
+}
+
+
+static int <A NAME="b_and"><SPAN CLASS="definition">b_and</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = <A HREF="lbitlib.c.html#andaux">andaux</A>(L);
+  <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, r);
+  return 1;
+}
+
+
+static int <A NAME="b_test"><SPAN CLASS="definition">b_test</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = <A HREF="lbitlib.c.html#andaux">andaux</A>(L);
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, r != 0);
+  return 1;
+}
+
+
+static int <A NAME="b_or"><SPAN CLASS="definition">b_or</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int i, n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = 0;
+  for (i = 1; i &lt;= n; i++)
+    r |= <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, i);
+  <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, <A HREF="lbitlib.c.html#trim">trim</A>(r));
+  return 1;
+}
+
+
+static int <A NAME="b_xor"><SPAN CLASS="definition">b_xor</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int i, n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = 0;
+  for (i = 1; i &lt;= n; i++)
+    r ^= <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, i);
+  <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, <A HREF="lbitlib.c.html#trim">trim</A>(r));
+  return 1;
+}
+
+
+static int <A NAME="b_not"><SPAN CLASS="definition">b_not</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = ~<A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, 1);
+  <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, <A HREF="lbitlib.c.html#trim">trim</A>(r));
+  return 1;
+}
+
+
+static int <A NAME="b_shift"><SPAN CLASS="definition">b_shift</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lbitlib.c.html#b_uint">b_uint</A> r, int i) {
+  if (i &lt; 0) {  /* shift right? */
+    i = -i;
+    r = <A HREF="lbitlib.c.html#trim">trim</A>(r);
+    if (i &gt;= <A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A>) r = 0;
+    else r &gt;&gt;= i;
+  }
+  else {  /* shift left */
+    if (i &gt;= <A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A>) r = 0;
+    else r &lt;&lt;= i;
+    r = <A HREF="lbitlib.c.html#trim">trim</A>(r);
+  }
+  <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, r);
+  return 1;
+}
+
+
+static int <A NAME="b_lshift"><SPAN CLASS="definition">b_lshift</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="lbitlib.c.html#b_shift">b_shift</A>(L, <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, 1), <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2));
+}
+
+
+static int <A NAME="b_rshift"><SPAN CLASS="definition">b_rshift</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="lbitlib.c.html#b_shift">b_shift</A>(L, <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, 1), -<A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2));
+}
+
+
+static int <A NAME="b_arshift"><SPAN CLASS="definition">b_arshift</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, 1);
+  int i = <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2);
+  if (i &lt; 0 || !(r &amp; ((<A HREF="lbitlib.c.html#b_uint">b_uint</A>)1 &lt;&lt; (<A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A> - 1))))
+    return <A HREF="lbitlib.c.html#b_shift">b_shift</A>(L, r, -i);
+  else {  /* arithmetic shift for 'negative' number */
+    if (i &gt;= <A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A>) r = <A HREF="lbitlib.c.html#ALLONES">ALLONES</A>;
+    else
+      r = <A HREF="lbitlib.c.html#trim">trim</A>((r &gt;&gt; i) | ~(~(<A HREF="lbitlib.c.html#b_uint">b_uint</A>)0 &gt;&gt; i));  /* add signal bit */
+    <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, r);
+    return 1;
+  }
+}
+
+
+static int <A NAME="b_rot"><SPAN CLASS="definition">b_rot</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int i) {
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, 1);
+  i &amp;= (<A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A> - 1);  /* i = i % NBITS */
+  r = <A HREF="lbitlib.c.html#trim">trim</A>(r);
+  if (i != 0)  /* avoid undefined shift of <A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A> when i == 0 */
+    r = (r &lt;&lt; i) | (r &gt;&gt; (<A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A> - i));
+  <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, <A HREF="lbitlib.c.html#trim">trim</A>(r));
+  return 1;
+}
+
+
+static int <A NAME="b_lrot"><SPAN CLASS="definition">b_lrot</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="lbitlib.c.html#b_rot">b_rot</A>(L, <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2));
+}
+
+
+static int <A NAME="b_rrot"><SPAN CLASS="definition">b_rrot</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="lbitlib.c.html#b_rot">b_rot</A>(L, -<A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2));
+}
+
+
+/*
+** get field and width arguments for field-manipulation functions,
+** checking whether they are valid.
+** ('<A HREF="lauxlib.c.html#luaL_error">luaL_error</A>' called without 'return' to avoid later warnings about
+** 'width' being used uninitialized.)
+*/
+static int <A NAME="fieldargs"><SPAN CLASS="definition">fieldargs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int farg, int *width) {
+  int f = <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, farg);
+  int w = <A HREF="lauxlib.h.html#luaL_optint">luaL_optint</A>(L, farg + 1, 1);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, 0 &lt;= f, farg, "field cannot be negative");
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, 0 &lt; w, farg + 1, "width must be positive");
+  if (f + w &gt; <A HREF="lbitlib.c.html#LUA_NBITS">LUA_NBITS</A>)
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "trying to access non-existent bits");
+  *width = w;
+  return f;
+}
+
+
+static int <A NAME="b_extract"><SPAN CLASS="definition">b_extract</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int w;
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, 1);
+  int f = <A HREF="lbitlib.c.html#fieldargs">fieldargs</A>(L, 2, &amp;w);
+  r = (r &gt;&gt; f) &amp; <A HREF="lbitlib.c.html#mask">mask</A>(w);
+  <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, r);
+  return 1;
+}
+
+
+static int <A NAME="b_replace"><SPAN CLASS="definition">b_replace</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int w;
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> r = <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, 1);
+  <A HREF="lbitlib.c.html#b_uint">b_uint</A> v = <A HREF="lauxlib.c.html#luaL_checkunsigned">luaL_checkunsigned</A>(L, 2);
+  int f = <A HREF="lbitlib.c.html#fieldargs">fieldargs</A>(L, 3, &amp;w);
+  int m = <A HREF="lbitlib.c.html#mask">mask</A>(w);
+  v &amp;= m;  /* erase bits outside given width */
+  r = (r &amp; ~(m &lt;&lt; f)) | (v &lt;&lt; f);
+  <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>(L, r);
+  return 1;
+}
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="bitlib"><SPAN CLASS="definition">bitlib</SPAN></A>[] = {
+  {"arshift", <A HREF="lbitlib.c.html#b_arshift">b_arshift</A>},
+  {"band", <A HREF="lbitlib.c.html#b_and">b_and</A>},
+  {"bnot", <A HREF="lbitlib.c.html#b_not">b_not</A>},
+  {"bor", <A HREF="lbitlib.c.html#b_or">b_or</A>},
+  {"bxor", <A HREF="lbitlib.c.html#b_xor">b_xor</A>},
+  {"btest", <A HREF="lbitlib.c.html#b_test">b_test</A>},
+  {"extract", <A HREF="lbitlib.c.html#b_extract">b_extract</A>},
+  {"lrotate", <A HREF="lbitlib.c.html#b_lrot">b_lrot</A>},
+  {"lshift", <A HREF="lbitlib.c.html#b_lshift">b_lshift</A>},
+  {"replace", <A HREF="lbitlib.c.html#b_replace">b_replace</A>},
+  {"rrotate", <A HREF="lbitlib.c.html#b_rrot">b_rrot</A>},
+  {"rshift", <A HREF="lbitlib.c.html#b_rshift">b_rshift</A>},
+  {NULL, NULL}
+};
+
+
+
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int <A NAME="luaopen_bit32"><SPAN CLASS="definition">luaopen_bit32</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.h.html#luaL_newlib">luaL_newlib</A>(L, <A HREF="lbitlib.c.html#bitlib">bitlib</A>);
+  return 1;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

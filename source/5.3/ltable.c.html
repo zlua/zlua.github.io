@@ -1,0 +1,704 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - ltable.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ltable.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ltable.c,v 2.117 2015/11/19 19:16:22 roberto Exp $
+** Lua tables (hash)
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="ltable_c"><SPAN CLASS="definition">ltable_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+/*
+** Implementation of tables (aka arrays, objects, or hash tables).
+** Tables keep its elements in two parts: an array part and a hash part.
+** Non-negative integer keys are all candidates to be kept in the array
+** part. The actual size of the array is the largest 'n' such that
+** more than half the slots between 1 and n are in use.
+** Hash uses a mix of chained scatter table with Brent's variation.
+** A <A HREF="lua.c.html#main">main</A> invariant of these tables is that, if an element is not
+** in its <A HREF="lua.c.html#main">main</A> position (i.e. the 'original' position that its hash gives
+** to it), then the colliding element is in its own <A HREF="lua.c.html#main">main</A> position.
+** Hence even when the load factor reaches 100%, performance remains good.
+*/
+
+#include &lt;math.h&gt;
+#include &lt;limits.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+
+
+/*
+** Maximum size of array part (<A HREF="ltable.c.html#MAXASIZE">MAXASIZE</A>) is 2^<A HREF="ltable.c.html#MAXABITS">MAXABITS</A>. <A HREF="ltable.c.html#MAXABITS">MAXABITS</A> is
+** the largest integer such that <A HREF="ltable.c.html#MAXASIZE">MAXASIZE</A> fits in an unsigned int.
+*/
+#define <A NAME="MAXABITS"><SPAN CLASS="definition">MAXABITS</SPAN></A>        <A HREF="llimits.h.html#cast_int">cast_int</A>(sizeof(int) * CHAR_BIT - 1)
+#define <A NAME="MAXASIZE"><SPAN CLASS="definition">MAXASIZE</SPAN></A>        (1u &lt;&lt; <A HREF="ltable.c.html#MAXABITS">MAXABITS</A>)
+
+/*
+** Maximum size of hash part is 2^<A HREF="ltable.c.html#MAXHBITS">MAXHBITS</A>. <A HREF="ltable.c.html#MAXHBITS">MAXHBITS</A> is the largest
+** integer such that 2^<A HREF="ltable.c.html#MAXHBITS">MAXHBITS</A> fits in a signed int. (Note that the
+** maximum number of elements in a table, 2^<A HREF="ltable.c.html#MAXABITS">MAXABITS</A> + 2^<A HREF="ltable.c.html#MAXHBITS">MAXHBITS</A>, still
+** fits comfortably in an unsigned int.)
+*/
+#define <A NAME="MAXHBITS"><SPAN CLASS="definition">MAXHBITS</SPAN></A>        (<A HREF="ltable.c.html#MAXABITS">MAXABITS</A> - 1)
+
+
+#define <A NAME="hashpow2"><SPAN CLASS="definition">hashpow2</SPAN></A>(t,n)           (<A HREF="ltable.h.html#gnode">gnode</A>(t, <A HREF="lobject.h.html#lmod">lmod</A>((n), <A HREF="lobject.h.html#sizenode">sizenode</A>(t))))
+
+#define <A NAME="hashstr"><SPAN CLASS="definition">hashstr</SPAN></A>(t,str)          <A HREF="ltable.c.html#hashpow2">hashpow2</A>(t, (str)-&gt;hash)
+#define <A NAME="hashboolean"><SPAN CLASS="definition">hashboolean</SPAN></A>(t,p)        <A HREF="ltable.c.html#hashpow2">hashpow2</A>(t, p)
+#define <A NAME="hashint"><SPAN CLASS="definition">hashint</SPAN></A>(t,i)            <A HREF="ltable.c.html#hashpow2">hashpow2</A>(t, i)
+
+
+/*
+** for some types, it is better to avoid modulus by power of 2, as
+** they tend to have many 2 factors.
+*/
+#define <A NAME="hashmod"><SPAN CLASS="definition">hashmod</SPAN></A>(t,n)    (<A HREF="ltable.h.html#gnode">gnode</A>(t, ((n) % ((<A HREF="lobject.h.html#sizenode">sizenode</A>(t)-1)|1))))
+
+
+#define <A NAME="hashpointer"><SPAN CLASS="definition">hashpointer</SPAN></A>(t,p)        <A HREF="ltable.c.html#hashmod">hashmod</A>(t, <A HREF="llimits.h.html#point2uint">point2uint</A>(p))
+
+
+#define <A NAME="dummynode"><SPAN CLASS="definition">dummynode</SPAN></A>               (&amp;<A HREF="ltable.c.html#dummynode_">dummynode_</A>)
+
+#define <A NAME="isdummy"><SPAN CLASS="definition">isdummy</SPAN></A>(n)              ((n) == <A HREF="ltable.c.html#dummynode">dummynode</A>)
+
+static const <A HREF="lobject.h.html#Node">Node</A> <A NAME="dummynode_"><SPAN CLASS="definition">dummynode_</SPAN></A> = {
+  {<A HREF="lobject.h.html#NILCONSTANT">NILCONSTANT</A>},  /* value */
+  {{<A HREF="lobject.h.html#NILCONSTANT">NILCONSTANT</A>, 0}}  /* key */
+};
+
+
+/*
+** Hash for floating-point numbers.
+** The <A HREF="lua.c.html#main">main</A> computation should be just
+**     n = frexp(n, &amp;i); return (n * INT_MAX) + i
+** but there are some numerical subtleties.
+** In a two-complement representation, INT_MAX does not has an exact
+** representation as a float, but INT_MIN does; because the absolute
+** value of 'frexp' is smaller than 1 (unless 'n' is inf/NaN), the
+** absolute value of the product 'frexp * -INT_MIN' is smaller or equal
+** to INT_MAX. Next, the use of 'unsigned int' avoids overflows when
+** adding 'i'; the use of '~u' (instead of '-u') avoids problems with
+** INT_MIN.
+*/
+#if !defined(<A HREF="ltable.c.html#l_hashfloat">l_hashfloat</A>)
+static int <A NAME="l_hashfloat"><SPAN CLASS="definition">l_hashfloat</SPAN></A> (<A HREF="lua.h.html#lua_Number">lua_Number</A> n) {
+  int i;
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> ni;
+  n = <A HREF="luaconf.h.html#l_mathop">l_mathop</A>(frexp)(n, &amp;i) * -<A HREF="llimits.h.html#cast_num">cast_num</A>(INT_MIN);
+  if (!<A HREF="luaconf.h.html#lua_numbertointeger">lua_numbertointeger</A>(n, &amp;ni)) {  /* is 'n' inf/-inf/NaN? */
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="llimits.h.html#luai_numisnan">luai_numisnan</A>(n) || <A HREF="luaconf.h.html#l_mathop">l_mathop</A>(fabs)(n) == <A HREF="llimits.h.html#cast_num">cast_num</A>(HUGE_VAL));
+    return 0;
+  }
+  else {  /* normal case */
+    unsigned int u = <A HREF="llimits.h.html#cast">cast</A>(unsigned int, i) + <A HREF="llimits.h.html#cast">cast</A>(unsigned int, ni);
+    return <A HREF="llimits.h.html#cast_int">cast_int</A>(u &lt;= <A HREF="llimits.h.html#cast">cast</A>(unsigned int, INT_MAX) ? u : ~u);
+  }
+}
+#endif
+
+
+/*
+** returns the '<A HREF="lua.c.html#main">main</A>' position of an element in a table (that is, the index
+** of its hash value)
+*/
+static <A HREF="lobject.h.html#Node">Node</A> *<A NAME="mainposition"><SPAN CLASS="definition">mainposition</SPAN></A> (const <A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key) {
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(key)) {
+    case <A HREF="lobject.h.html#LUA_TNUMINT">LUA_TNUMINT</A>:
+      return <A HREF="ltable.c.html#hashint">hashint</A>(t, <A HREF="lobject.h.html#ivalue">ivalue</A>(key));
+    case <A HREF="lobject.h.html#LUA_TNUMFLT">LUA_TNUMFLT</A>:
+      return <A HREF="ltable.c.html#hashmod">hashmod</A>(t, <A HREF="ltable.c.html#l_hashfloat">l_hashfloat</A>(<A HREF="lobject.h.html#fltvalue">fltvalue</A>(key)));
+    case <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>:
+      return <A HREF="ltable.c.html#hashstr">hashstr</A>(t, <A HREF="lobject.h.html#tsvalue">tsvalue</A>(key));
+    case <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>:
+      return <A HREF="ltable.c.html#hashpow2">hashpow2</A>(t, <A HREF="lstring.c.html#luaS_hashlongstr">luaS_hashlongstr</A>(<A HREF="lobject.h.html#tsvalue">tsvalue</A>(key)));
+    case <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>:
+      return <A HREF="ltable.c.html#hashboolean">hashboolean</A>(t, <A HREF="lobject.h.html#bvalue">bvalue</A>(key));
+    case <A HREF="lua.h.html#LUA_TLIGHTUSERDATA">LUA_TLIGHTUSERDATA</A>:
+      return <A HREF="ltable.c.html#hashpointer">hashpointer</A>(t, <A HREF="lobject.h.html#pvalue">pvalue</A>(key));
+    case <A HREF="lobject.h.html#LUA_TLCF">LUA_TLCF</A>:
+      return <A HREF="ltable.c.html#hashpointer">hashpointer</A>(t, <A HREF="lobject.h.html#fvalue">fvalue</A>(key));
+    default:
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lobject.h.html#ttisdeadkey">ttisdeadkey</A>(key));
+      return <A HREF="ltable.c.html#hashpointer">hashpointer</A>(t, <A HREF="lobject.h.html#gcvalue">gcvalue</A>(key));
+  }
+}
+
+
+/*
+** returns the index for 'key' if 'key' is an appropriate key to live in
+** the array part of the table, 0 otherwise.
+*/
+static unsigned int <A NAME="arrayindex"><SPAN CLASS="definition">arrayindex</SPAN></A> (const <A HREF="lobject.h.html#TValue">TValue</A> *key) {
+  if (<A HREF="lobject.h.html#ttisinteger">ttisinteger</A>(key)) {
+    <A HREF="lua.h.html#lua_Integer">lua_Integer</A> k = <A HREF="lobject.h.html#ivalue">ivalue</A>(key);
+    if (0 &lt; k &amp;&amp; (<A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A>)k &lt;= <A HREF="ltable.c.html#MAXASIZE">MAXASIZE</A>)
+      return <A HREF="llimits.h.html#cast">cast</A>(unsigned int, k);  /* 'key' is an appropriate array index */
+  }
+  return 0;  /* 'key' did not match some condition */
+}
+
+
+/*
+** returns the index of a 'key' for table traversals. First goes all
+** elements in the array part, then elements in the hash part. The
+** beginning of a traversal is signaled by 0.
+*/
+static unsigned int <A NAME="findindex"><SPAN CLASS="definition">findindex</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lobject.h.html#StkId">StkId</A> key) {
+  unsigned int i;
+  if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(key)) return 0;  /* first iteration */
+  i = <A HREF="ltable.c.html#arrayindex">arrayindex</A>(key);
+  if (i != 0 &amp;&amp; i &lt;= t-&gt;sizearray)  /* is 'key' inside array part? */
+    return i;  /* yes; that's the index */
+  else {
+    int nx;
+    <A HREF="lobject.h.html#Node">Node</A> *n = <A HREF="ltable.c.html#mainposition">mainposition</A>(t, key);
+    for (;;) {  /* check whether 'key' is somewhere in the chain */
+      /* key may be dead already, but it is ok to use it in 'next' */
+      if (<A HREF="lvm.h.html#luaV_rawequalobj">luaV_rawequalobj</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n), key) ||
+            (<A HREF="lobject.h.html#ttisdeadkey">ttisdeadkey</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n)) &amp;&amp; <A HREF="lobject.h.html#iscollectable">iscollectable</A>(key) &amp;&amp;
+             <A HREF="lobject.h.html#deadvalue">deadvalue</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n)) == <A HREF="lobject.h.html#gcvalue">gcvalue</A>(key))) {
+        i = <A HREF="llimits.h.html#cast_int">cast_int</A>(n - <A HREF="ltable.h.html#gnode">gnode</A>(t, 0));  /* key index in hash table */
+        /* hash elements are numbered after array ones */
+        return (i + 1) + t-&gt;sizearray;
+      }
+      nx = <A HREF="ltable.h.html#gnext">gnext</A>(n);
+      if (nx == 0)
+        <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "invalid key to 'next'");  /* key not found */
+      else n += nx;
+    }
+  }
+}
+
+
+int <A NAME="luaH_next"><SPAN CLASS="definition">luaH_next</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lobject.h.html#StkId">StkId</A> key) {
+  unsigned int i = <A HREF="ltable.c.html#findindex">findindex</A>(L, t, key);  /* find original element */
+  for (; i &lt; t-&gt;sizearray; i++) {  /* try first array part */
+    if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(&amp;t-&gt;array[i])) {  /* a non-nil value? */
+      <A HREF="lobject.h.html#setivalue">setivalue</A>(key, i + 1);
+      <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, key+1, &amp;t-&gt;array[i]);
+      return 1;
+    }
+  }
+  for (i -= t-&gt;sizearray; <A HREF="llimits.h.html#cast_int">cast_int</A>(i) &lt; <A HREF="lobject.h.html#sizenode">sizenode</A>(t); i++) {  /* hash part */
+    if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(<A HREF="ltable.h.html#gnode">gnode</A>(t, i)))) {  /* a non-nil value? */
+      <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, key, <A HREF="ltable.h.html#gkey">gkey</A>(<A HREF="ltable.h.html#gnode">gnode</A>(t, i)));
+      <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, key+1, <A HREF="ltable.h.html#gval">gval</A>(<A HREF="ltable.h.html#gnode">gnode</A>(t, i)));
+      return 1;
+    }
+  }
+  return 0;  /* no more elements */
+}
+
+
+/*
+** {=============================================================
+** Rehash
+** ==============================================================
+*/
+
+/*
+** Compute the optimal size for the array part of table 't'. 'nums' is a
+** "count array" where 'nums[i]' is the number of integers in the table
+** between 2^(i - 1) + 1 and 2^i. 'pna' enters with the total number of
+** integer keys in the table and leaves with the number of keys that
+** will go to the array part; return the optimal size.
+*/
+static unsigned int <A NAME="computesizes"><SPAN CLASS="definition">computesizes</SPAN></A> (unsigned int nums[], unsigned int *pna) {
+  int i;
+  unsigned int twotoi;  /* 2^i (candidate for optimal size) */
+  unsigned int a = 0;  /* number of elements smaller than 2^i */
+  unsigned int na = 0;  /* number of elements to go to array part */
+  unsigned int optimal = 0;  /* optimal size for array part */
+  /* loop while keys can fill more than half of total size */
+  for (i = 0, twotoi = 1; *pna &gt; twotoi / 2; i++, twotoi *= 2) {
+    if (nums[i] &gt; 0) {
+      a += nums[i];
+      if (a &gt; twotoi/2) {  /* more than half elements present? */
+        optimal = twotoi;  /* optimal size (till now) */
+        na = a;  /* all elements up to 'optimal' will go to array part */
+      }
+    }
+  }
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>((optimal == 0 || optimal / 2 &lt; na) &amp;&amp; na &lt;= optimal);
+  *pna = na;
+  return optimal;
+}
+
+
+static int <A NAME="countint"><SPAN CLASS="definition">countint</SPAN></A> (const <A HREF="lobject.h.html#TValue">TValue</A> *key, unsigned int *nums) {
+  unsigned int k = <A HREF="ltable.c.html#arrayindex">arrayindex</A>(key);
+  if (k != 0) {  /* is 'key' an appropriate array index? */
+    nums[<A HREF="lobject.c.html#luaO_ceillog2">luaO_ceillog2</A>(k)]++;  /* count as such */
+    return 1;
+  }
+  else
+    return 0;
+}
+
+
+/*
+** Count keys in array part of table 't': Fill 'nums[i]' with
+** number of keys that will go into corresponding slice and return
+** total number of non-nil keys.
+*/
+static unsigned int <A NAME="numusearray"><SPAN CLASS="definition">numusearray</SPAN></A> (const <A HREF="lobject.h.html#Table">Table</A> *t, unsigned int *nums) {
+  int lg;
+  unsigned int ttlg;  /* 2^lg */
+  unsigned int ause = 0;  /* summation of 'nums' */
+  unsigned int i = 1;  /* count to traverse all array keys */
+  /* traverse each slice */
+  for (lg = 0, ttlg = 1; lg &lt;= <A HREF="ltable.c.html#MAXABITS">MAXABITS</A>; lg++, ttlg *= 2) {
+    unsigned int lc = 0;  /* counter */
+    unsigned int lim = ttlg;
+    if (lim &gt; t-&gt;sizearray) {
+      lim = t-&gt;sizearray;  /* adjust upper limit */
+      if (i &gt; lim)
+        break;  /* no more elements to count */
+    }
+    /* count elements in range (2^(lg - 1), 2^lg] */
+    for (; i &lt;= lim; i++) {
+      if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(&amp;t-&gt;array[i-1]))
+        lc++;
+    }
+    nums[lg] += lc;
+    ause += lc;
+  }
+  return ause;
+}
+
+
+static int <A NAME="numusehash"><SPAN CLASS="definition">numusehash</SPAN></A> (const <A HREF="lobject.h.html#Table">Table</A> *t, unsigned int *nums, unsigned int *pna) {
+  int totaluse = 0;  /* total number of elements */
+  int ause = 0;  /* elements added to 'nums' (can go to array part) */
+  int i = <A HREF="lobject.h.html#sizenode">sizenode</A>(t);
+  while (i--) {
+    <A HREF="lobject.h.html#Node">Node</A> *n = &amp;t-&gt;node[i];
+    if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(n))) {
+      ause += <A HREF="ltable.c.html#countint">countint</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n), nums);
+      totaluse++;
+    }
+  }
+  *pna += ause;
+  return totaluse;
+}
+
+
+static void <A NAME="setarrayvector"><SPAN CLASS="definition">setarrayvector</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, unsigned int size) {
+  unsigned int i;
+  <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, t-&gt;array, t-&gt;sizearray, size, <A HREF="lobject.h.html#TValue">TValue</A>);
+  for (i=t-&gt;sizearray; i&lt;size; i++)
+     <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(&amp;t-&gt;array[i]);
+  t-&gt;sizearray = size;
+}
+
+
+static void <A NAME="setnodevector"><SPAN CLASS="definition">setnodevector</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, unsigned int size) {
+  int lsize;
+  if (size == 0) {  /* no elements to hash part? */
+    t-&gt;node = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#Node">Node</A> *, <A HREF="ltable.c.html#dummynode">dummynode</A>);  /* use common '<A HREF="ltable.c.html#dummynode">dummynode</A>' */
+    lsize = 0;
+  }
+  else {
+    int i;
+    lsize = <A HREF="lobject.c.html#luaO_ceillog2">luaO_ceillog2</A>(size);
+    if (lsize &gt; <A HREF="ltable.c.html#MAXHBITS">MAXHBITS</A>)
+      <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "table overflow");
+    size = <A HREF="lobject.h.html#twoto">twoto</A>(lsize);
+    t-&gt;node = <A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L, size, <A HREF="lobject.h.html#Node">Node</A>);
+    for (i = 0; i &lt; (int)size; i++) {
+      <A HREF="lobject.h.html#Node">Node</A> *n = <A HREF="ltable.h.html#gnode">gnode</A>(t, i);
+      <A HREF="ltable.h.html#gnext">gnext</A>(n) = 0;
+      <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(<A HREF="ltable.h.html#wgkey">wgkey</A>(n));
+      <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(<A HREF="ltable.h.html#gval">gval</A>(n));
+    }
+  }
+  t-&gt;lsizenode = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(lsize);
+  t-&gt;lastfree = <A HREF="ltable.h.html#gnode">gnode</A>(t, size);  /* all positions are free */
+}
+
+
+void <A NAME="luaH_resize"><SPAN CLASS="definition">luaH_resize</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, unsigned int nasize,
+                                          unsigned int nhsize) {
+  unsigned int i;
+  int j;
+  unsigned int oldasize = t-&gt;sizearray;
+  int oldhsize = t-&gt;lsizenode;
+  <A HREF="lobject.h.html#Node">Node</A> *nold = t-&gt;node;  /* save old hash ... */
+  if (nasize &gt; oldasize)  /* array part must grow? */
+    <A HREF="ltable.c.html#setarrayvector">setarrayvector</A>(L, t, nasize);
+  /* create new hash part with appropriate size */
+  <A HREF="ltable.c.html#setnodevector">setnodevector</A>(L, t, nhsize);
+  if (nasize &lt; oldasize) {  /* array part must shrink? */
+    t-&gt;sizearray = nasize;
+    /* re-insert elements from vanishing slice */
+    for (i=nasize; i&lt;oldasize; i++) {
+      if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(&amp;t-&gt;array[i]))
+        <A HREF="ltable.c.html#luaH_setint">luaH_setint</A>(L, t, i + 1, &amp;t-&gt;array[i]);
+    }
+    /* shrink array */
+    <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, t-&gt;array, oldasize, nasize, <A HREF="lobject.h.html#TValue">TValue</A>);
+  }
+  /* re-insert elements from hash part */
+  for (j = <A HREF="lobject.h.html#twoto">twoto</A>(oldhsize) - 1; j &gt;= 0; j--) {
+    <A HREF="lobject.h.html#Node">Node</A> *old = nold + j;
+    if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(old))) {
+      /* doesn't need barrier/invalidate cache, as entry was
+         already present in the table */
+      <A HREF="lobject.h.html#setobjt2t">setobjt2t</A>(L, <A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, t, <A HREF="ltable.h.html#gkey">gkey</A>(old)), <A HREF="ltable.h.html#gval">gval</A>(old));
+    }
+  }
+  if (!<A HREF="ltable.c.html#isdummy">isdummy</A>(nold))
+    <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, nold, <A HREF="llimits.h.html#cast">cast</A>(size_t, <A HREF="lobject.h.html#twoto">twoto</A>(oldhsize))); /* free old hash */
+}
+
+
+void <A NAME="luaH_resizearray"><SPAN CLASS="definition">luaH_resizearray</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, unsigned int nasize) {
+  int nsize = <A HREF="ltable.c.html#isdummy">isdummy</A>(t-&gt;node) ? 0 : <A HREF="lobject.h.html#sizenode">sizenode</A>(t);
+  <A HREF="ltable.c.html#luaH_resize">luaH_resize</A>(L, t, nasize, nsize);
+}
+
+/*
+** nums[i] = number of keys 'k' where 2^(i - 1) &lt; k &lt;= 2^i
+*/
+static void <A NAME="rehash"><SPAN CLASS="definition">rehash</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *ek) {
+  unsigned int asize;  /* optimal size for array part */
+  unsigned int na;  /* number of keys in the array part */
+  unsigned int nums[<A HREF="ltable.c.html#MAXABITS">MAXABITS</A> + 1];
+  int i;
+  int totaluse;
+  for (i = 0; i &lt;= <A HREF="ltable.c.html#MAXABITS">MAXABITS</A>; i++) nums[i] = 0;  /* reset counts */
+  na = <A HREF="ltable.c.html#numusearray">numusearray</A>(t, nums);  /* count keys in array part */
+  totaluse = na;  /* all those keys are integer keys */
+  totaluse += <A HREF="ltable.c.html#numusehash">numusehash</A>(t, nums, &amp;na);  /* count keys in hash part */
+  /* count extra key */
+  na += <A HREF="ltable.c.html#countint">countint</A>(ek, nums);
+  totaluse++;
+  /* compute new size for array part */
+  asize = <A HREF="ltable.c.html#computesizes">computesizes</A>(nums, &amp;na);
+  /* resize the table to new computed sizes */
+  <A HREF="ltable.c.html#luaH_resize">luaH_resize</A>(L, t, asize, totaluse - na);
+}
+
+
+
+/*
+** }=============================================================
+*/
+
+
+<A HREF="lobject.h.html#Table">Table</A> *<A NAME="luaH_new"><SPAN CLASS="definition">luaH_new</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o = <A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>, sizeof(<A HREF="lobject.h.html#Table">Table</A>));
+  <A HREF="lobject.h.html#Table">Table</A> *t = <A HREF="lstate.h.html#gco2t">gco2t</A>(o);
+  t-&gt;metatable = NULL;
+  t-&gt;flags = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(~0);
+  t-&gt;array = NULL;
+  t-&gt;sizearray = 0;
+  <A HREF="ltable.c.html#setnodevector">setnodevector</A>(L, t, 0);
+  return t;
+}
+
+
+void <A NAME="luaH_free"><SPAN CLASS="definition">luaH_free</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t) {
+  if (!<A HREF="ltable.c.html#isdummy">isdummy</A>(t-&gt;node))
+    <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, t-&gt;node, <A HREF="llimits.h.html#cast">cast</A>(size_t, <A HREF="lobject.h.html#sizenode">sizenode</A>(t)));
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, t-&gt;array, t-&gt;sizearray);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, t);
+}
+
+
+static <A HREF="lobject.h.html#Node">Node</A> *<A NAME="getfreepos"><SPAN CLASS="definition">getfreepos</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *t) {
+  while (t-&gt;lastfree &gt; t-&gt;node) {
+    t-&gt;lastfree--;
+    if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gkey">gkey</A>(t-&gt;lastfree)))
+      return t-&gt;lastfree;
+  }
+  return NULL;  /* could not find a free place */
+}
+
+
+
+/*
+** inserts a new key into a hash table; first, check whether key's <A HREF="lua.c.html#main">main</A>
+** position is free. If not, check whether colliding node is in its <A HREF="lua.c.html#main">main</A>
+** position or not: if it is not, move colliding node to an empty place and
+** put new key in its <A HREF="lua.c.html#main">main</A> position; otherwise (colliding node is in its <A HREF="lua.c.html#main">main</A>
+** position), new key goes to an empty position.
+*/
+<A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="luaH_newkey"><SPAN CLASS="definition">luaH_newkey</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key) {
+  <A HREF="lobject.h.html#Node">Node</A> *mp;
+  <A HREF="lobject.h.html#TValue">TValue</A> aux;
+  if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(key)) <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "table index is nil");
+  else if (<A HREF="lobject.h.html#ttisfloat">ttisfloat</A>(key)) {
+    <A HREF="lua.h.html#lua_Integer">lua_Integer</A> k;
+    if (<A HREF="lvm.c.html#luaV_tointeger">luaV_tointeger</A>(key, &amp;k, 0)) {  /* index is int? */
+      <A HREF="lobject.h.html#setivalue">setivalue</A>(&amp;aux, k);
+      key = &amp;aux;  /* insert it as an integer */
+    }
+    else if (<A HREF="llimits.h.html#luai_numisnan">luai_numisnan</A>(<A HREF="lobject.h.html#fltvalue">fltvalue</A>(key)))
+      <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "table index is NaN");
+  }
+  mp = <A HREF="ltable.c.html#mainposition">mainposition</A>(t, key);
+  if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(mp)) || <A HREF="ltable.c.html#isdummy">isdummy</A>(mp)) {  /* <A HREF="lua.c.html#main">main</A> position is taken? */
+    <A HREF="lobject.h.html#Node">Node</A> *othern;
+    <A HREF="lobject.h.html#Node">Node</A> *f = <A HREF="ltable.c.html#getfreepos">getfreepos</A>(t);  /* get a free place */
+    if (f == NULL) {  /* cannot find a free place? */
+      <A HREF="ltable.c.html#rehash">rehash</A>(L, t, key);  /* grow table */
+      /* whatever called 'newkey' takes care of TM cache */
+      return <A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, t, key);  /* insert key into grown table */
+    }
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="ltable.c.html#isdummy">isdummy</A>(f));
+    othern = <A HREF="ltable.c.html#mainposition">mainposition</A>(t, <A HREF="ltable.h.html#gkey">gkey</A>(mp));
+    if (othern != mp) {  /* is colliding node out of its <A HREF="lua.c.html#main">main</A> position? */
+      /* yes; move colliding node into free position */
+      while (othern + <A HREF="ltable.h.html#gnext">gnext</A>(othern) != mp)  /* find previous */
+        othern += <A HREF="ltable.h.html#gnext">gnext</A>(othern);
+      <A HREF="ltable.h.html#gnext">gnext</A>(othern) = <A HREF="llimits.h.html#cast_int">cast_int</A>(f - othern);  /* rechain to point to 'f' */
+      *f = *mp;  /* copy colliding node into free pos. (mp-&gt;next also goes) */
+      if (<A HREF="ltable.h.html#gnext">gnext</A>(mp) != 0) {
+        <A HREF="ltable.h.html#gnext">gnext</A>(f) += <A HREF="llimits.h.html#cast_int">cast_int</A>(mp - f);  /* correct 'next' */
+        <A HREF="ltable.h.html#gnext">gnext</A>(mp) = 0;  /* now 'mp' is free */
+      }
+      <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(<A HREF="ltable.h.html#gval">gval</A>(mp));
+    }
+    else {  /* colliding node is in its own <A HREF="lua.c.html#main">main</A> position */
+      /* new node will go into free position */
+      if (<A HREF="ltable.h.html#gnext">gnext</A>(mp) != 0)
+        <A HREF="ltable.h.html#gnext">gnext</A>(f) = <A HREF="llimits.h.html#cast_int">cast_int</A>((mp + <A HREF="ltable.h.html#gnext">gnext</A>(mp)) - f);  /* chain new position */
+      else <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="ltable.h.html#gnext">gnext</A>(f) == 0);
+      <A HREF="ltable.h.html#gnext">gnext</A>(mp) = <A HREF="llimits.h.html#cast_int">cast_int</A>(f - mp);
+      mp = f;
+    }
+  }
+  <A HREF="lobject.h.html#setnodekey">setnodekey</A>(L, &amp;mp-&gt;i_key, key);
+  <A HREF="lgc.h.html#luaC_barrierback">luaC_barrierback</A>(L, t, key);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(mp)));
+  return <A HREF="ltable.h.html#gval">gval</A>(mp);
+}
+
+
+/*
+** search function for integers
+*/
+const <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="luaH_getint"><SPAN CLASS="definition">luaH_getint</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> key) {
+  /* (1 &lt;= key &amp;&amp; key &lt;= t-&gt;sizearray) */
+  if (<A HREF="llimits.h.html#l_castS2U">l_castS2U</A>(key) - 1 &lt; t-&gt;sizearray)
+    return &amp;t-&gt;array[key - 1];
+  else {
+    <A HREF="lobject.h.html#Node">Node</A> *n = <A HREF="ltable.c.html#hashint">hashint</A>(t, key);
+    for (;;) {  /* check whether 'key' is somewhere in the chain */
+      if (<A HREF="lobject.h.html#ttisinteger">ttisinteger</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n)) &amp;&amp; <A HREF="lobject.h.html#ivalue">ivalue</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n)) == key)
+        return <A HREF="ltable.h.html#gval">gval</A>(n);  /* that's it */
+      else {
+        int nx = <A HREF="ltable.h.html#gnext">gnext</A>(n);
+        if (nx == 0) break;
+        n += nx;
+      }
+    }
+    return <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>;
+  }
+}
+
+
+/*
+** search function for short strings
+*/
+const <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="luaH_getshortstr"><SPAN CLASS="definition">luaH_getshortstr</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lobject.h.html#TString">TString</A> *key) {
+  <A HREF="lobject.h.html#Node">Node</A> *n = <A HREF="ltable.c.html#hashstr">hashstr</A>(t, key);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(key-&gt;tt == <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>);
+  for (;;) {  /* check whether 'key' is somewhere in the chain */
+    const <A HREF="lobject.h.html#TValue">TValue</A> *k = <A HREF="ltable.h.html#gkey">gkey</A>(n);
+    if (<A HREF="lobject.h.html#ttisshrstring">ttisshrstring</A>(k) &amp;&amp; <A HREF="lstring.h.html#eqshrstr">eqshrstr</A>(<A HREF="lobject.h.html#tsvalue">tsvalue</A>(k), key))
+      return <A HREF="ltable.h.html#gval">gval</A>(n);  /* that's it */
+    else {
+      int nx = <A HREF="ltable.h.html#gnext">gnext</A>(n);
+      if (nx == 0)
+        return <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>;  /* not found */
+      n += nx;
+    }
+  }
+}
+
+
+/*
+** "Generic" get version. (Not that generic: not valid for integers,
+** which may be in array part, nor for floats with integral values.)
+*/
+static const <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="getgeneric"><SPAN CLASS="definition">getgeneric</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key) {
+  <A HREF="lobject.h.html#Node">Node</A> *n = <A HREF="ltable.c.html#mainposition">mainposition</A>(t, key);
+  for (;;) {  /* check whether 'key' is somewhere in the chain */
+    if (<A HREF="lvm.h.html#luaV_rawequalobj">luaV_rawequalobj</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n), key))
+      return <A HREF="ltable.h.html#gval">gval</A>(n);  /* that's it */
+    else {
+      int nx = <A HREF="ltable.h.html#gnext">gnext</A>(n);
+      if (nx == 0)
+        return <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>;  /* not found */
+      n += nx;
+    }
+  }
+}
+
+
+const <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="luaH_getstr"><SPAN CLASS="definition">luaH_getstr</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lobject.h.html#TString">TString</A> *key) {
+  if (key-&gt;tt == <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>)
+    return <A HREF="ltable.c.html#luaH_getshortstr">luaH_getshortstr</A>(t, key);
+  else {  /* for long strings, use generic case */
+    <A HREF="lobject.h.html#TValue">TValue</A> ko;
+    <A HREF="lobject.h.html#setsvalue">setsvalue</A>(<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lstate.h.html#lua_State">lua_State</A> *, NULL), &amp;ko, key);
+    return <A HREF="ltable.c.html#getgeneric">getgeneric</A>(t, &amp;ko);
+  }
+}
+
+
+/*
+** <A HREF="lua.c.html#main">main</A> search function
+*/
+const <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="luaH_get"><SPAN CLASS="definition">luaH_get</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key) {
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(key)) {
+    case <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>: return <A HREF="ltable.c.html#luaH_getshortstr">luaH_getshortstr</A>(t, <A HREF="lobject.h.html#tsvalue">tsvalue</A>(key));
+    case <A HREF="lobject.h.html#LUA_TNUMINT">LUA_TNUMINT</A>: return <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(t, <A HREF="lobject.h.html#ivalue">ivalue</A>(key));
+    case <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>: return <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>;
+    case <A HREF="lobject.h.html#LUA_TNUMFLT">LUA_TNUMFLT</A>: {
+      <A HREF="lua.h.html#lua_Integer">lua_Integer</A> k;
+      if (<A HREF="lvm.c.html#luaV_tointeger">luaV_tointeger</A>(key, &amp;k, 0)) /* index is int? */
+        return <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(t, k);  /* use specialized version */
+      /* else... */
+    }  /* FALLTHROUGH */
+    default:
+      return <A HREF="ltable.c.html#getgeneric">getgeneric</A>(t, key);
+  }
+}
+
+
+/*
+** beware: when using this function you probably need to check a GC
+** barrier and invalidate the TM cache.
+*/
+<A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="luaH_set"><SPAN CLASS="definition">luaH_set</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *p = <A HREF="ltable.c.html#luaH_get">luaH_get</A>(t, key);
+  if (p != <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>)
+    return <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#TValue">TValue</A> *, p);
+  else return <A HREF="ltable.c.html#luaH_newkey">luaH_newkey</A>(L, t, key);
+}
+
+
+void <A NAME="luaH_setint"><SPAN CLASS="definition">luaH_setint</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> key, <A HREF="lobject.h.html#TValue">TValue</A> *value) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *p = <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(t, key);
+  <A HREF="lobject.h.html#TValue">TValue</A> *cell;
+  if (p != <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>)
+    cell = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#TValue">TValue</A> *, p);
+  else {
+    <A HREF="lobject.h.html#TValue">TValue</A> k;
+    <A HREF="lobject.h.html#setivalue">setivalue</A>(&amp;k, key);
+    cell = <A HREF="ltable.c.html#luaH_newkey">luaH_newkey</A>(L, t, &amp;k);
+  }
+  <A HREF="lobject.h.html#setobj2t">setobj2t</A>(L, cell, value);
+}
+
+
+static int <A NAME="unbound_search"><SPAN CLASS="definition">unbound_search</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *t, unsigned int j) {
+  unsigned int i = j;  /* i is zero or a present index */
+  j++;
+  /* find 'i' and 'j' such that i is present and j is not */
+  while (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(t, j))) {
+    i = j;
+    if (j &gt; <A HREF="llimits.h.html#cast">cast</A>(unsigned int, <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>)/2) {  /* overflow? */
+      /* table was built with bad purposes: resort to linear search */
+      i = 1;
+      while (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(t, i))) i++;
+      return i - 1;
+    }
+    j *= 2;
+  }
+  /* now do a binary search between them */
+  while (j - i &gt; 1) {
+    unsigned int m = (i+j)/2;
+    if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(t, m))) j = m;
+    else i = m;
+  }
+  return i;
+}
+
+
+/*
+** Try to find a boundary in table 't'. A 'boundary' is an integer index
+** such that t[i] is non-nil and t[i+1] is nil (and 0 if t[1] is nil).
+*/
+int <A NAME="luaH_getn"><SPAN CLASS="definition">luaH_getn</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *t) {
+  unsigned int j = t-&gt;sizearray;
+  if (j &gt; 0 &amp;&amp; <A HREF="lobject.h.html#ttisnil">ttisnil</A>(&amp;t-&gt;array[j - 1])) {
+    /* there is a boundary in the array part: (binary) search for it */
+    unsigned int i = 0;
+    while (j - i &gt; 1) {
+      unsigned int m = (i+j)/2;
+      if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(&amp;t-&gt;array[m - 1])) j = m;
+      else i = m;
+    }
+    return i;
+  }
+  /* else must find a boundary in hash part */
+  else if (<A HREF="ltable.c.html#isdummy">isdummy</A>(t-&gt;node))  /* hash part is empty? */
+    return j;  /* that is easy... */
+  else return <A HREF="ltable.c.html#unbound_search">unbound_search</A>(t, j);
+}
+
+
+
+#if defined(LUA_DEBUG)
+
+<A HREF="lobject.h.html#Node">Node</A> *<A NAME="luaH_mainposition"><SPAN CLASS="definition">luaH_mainposition</SPAN></A> (const <A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key) {
+  return <A HREF="ltable.c.html#mainposition">mainposition</A>(t, key);
+}
+
+int <A NAME="luaH_isdummy"><SPAN CLASS="definition">luaH_isdummy</SPAN></A> (<A HREF="lobject.h.html#Node">Node</A> *n) { return <A HREF="ltable.c.html#isdummy">isdummy</A>(n); }
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:15 2015
+</P>
+
+</BODY>
+</HTML>

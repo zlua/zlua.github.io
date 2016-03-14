@@ -1,0 +1,262 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - print.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+print.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: print.c,v 1.55a 2006/05/31 13:30:05 lhf Exp $
+** print bytecodes
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+
+#define <A NAME="luac_c"><SPAN CLASS="definition">luac_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+
+#define <A NAME="PrintFunction"><SPAN CLASS="definition">PrintFunction</SPAN></A>   luaU_print
+
+#define <A NAME="Sizeof"><SPAN CLASS="definition">Sizeof</SPAN></A>(x)       ((int)sizeof(x))
+#define <A NAME="VOID"><SPAN CLASS="definition">VOID</SPAN></A>(p)         ((const void*)(p))
+
+static void <A NAME="PrintString"><SPAN CLASS="definition">PrintString</SPAN></A>(const <A HREF="lobject.h.html#TString">TString</A>* ts)
+{
+ const char* s=<A HREF="lobject.h.html#getstr">getstr</A>(ts);
+ size_t i,n=ts-&gt;tsv.len;
+ putchar('"');
+ for (i=0; i&lt;n; i++)
+ {
+  int c=s[i];
+  switch (c)
+  {
+   case '"': printf("\\\""); break;
+   case '\\': printf("\\\\"); break;
+   case '\a': printf("\\a"); break;
+   case '\b': printf("\\b"); break;
+   case '\f': printf("\\f"); break;
+   case '\n': printf("\\n"); break;
+   case '\r': printf("\\r"); break;
+   case '\t': printf("\\t"); break;
+   case '\v': printf("\\v"); break;
+   default:     if (isprint((unsigned char)c))
+                        putchar(c);
+                else
+                        printf("\\%03u",(unsigned char)c);
+  }
+ }
+ putchar('"');
+}
+
+static void <A NAME="PrintConstant"><SPAN CLASS="definition">PrintConstant</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f, int i)
+{
+ const <A HREF="lobject.h.html#TValue">TValue</A>* o=&amp;f-&gt;k[i];
+ switch (<A HREF="lobject.h.html#ttype">ttype</A>(o))
+ {
+  case <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>:
+        printf("nil");
+        break;
+  case <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>:
+        printf(<A HREF="lobject.h.html#bvalue">bvalue</A>(o) ? "true" : "false");
+        break;
+  case <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>:
+        printf(<A HREF="luaconf.h.html#LUA_NUMBER_FMT">LUA_NUMBER_FMT</A>,<A HREF="lobject.h.html#nvalue">nvalue</A>(o));
+        break;
+  case <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>:
+        <A HREF="print.c.html#PrintString">PrintString</A>(<A HREF="lobject.h.html#rawtsvalue">rawtsvalue</A>(o));
+        break;
+  default:                              /* cannot happen */
+        printf("? type=%d",<A HREF="lobject.h.html#ttype">ttype</A>(o));
+        break;
+ }
+}
+
+static void <A NAME="PrintCode"><SPAN CLASS="definition">PrintCode</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ const <A HREF="llimits.h.html#Instruction">Instruction</A>* code=f-&gt;code;
+ int pc,n=f-&gt;sizecode;
+ for (pc=0; pc&lt;n; pc++)
+ {
+  <A HREF="llimits.h.html#Instruction">Instruction</A> i=code[pc];
+  <A HREF="lopcodes.h.html#OpCode">OpCode</A> o=<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i);
+  int a=<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i);
+  int b=<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+  int c=<A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i);
+  int bx=<A HREF="lopcodes.h.html#GETARG_Bx">GETARG_Bx</A>(i);
+  int sbx=<A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(i);
+  int line=<A HREF="ldebug.h.html#getline">getline</A>(f,pc);
+  printf("\t%d\t",pc+1);
+  if (line&gt;0) printf("[%d]\t",line); else printf("[-]\t");
+  printf("%-9s\t",<A HREF="lopcodes.h.html#luaP_opnames">luaP_opnames</A>[o]);
+  switch (<A HREF="lopcodes.h.html#getOpMode">getOpMode</A>(o))
+  {
+   case <A HREF="lopcodes.h.html#iABC">iABC</A>:
+    printf("%d",a);
+    if (<A HREF="lopcodes.h.html#getBMode">getBMode</A>(o)!=<A HREF="lopcodes.h.html#OpArgN">OpArgN</A>) printf(" %d",<A HREF="lopcodes.h.html#ISK">ISK</A>(b) ? (-1-<A HREF="lopcodes.h.html#INDEXK">INDEXK</A>(b)) : b);
+    if (<A HREF="lopcodes.h.html#getCMode">getCMode</A>(o)!=<A HREF="lopcodes.h.html#OpArgN">OpArgN</A>) printf(" %d",<A HREF="lopcodes.h.html#ISK">ISK</A>(c) ? (-1-<A HREF="lopcodes.h.html#INDEXK">INDEXK</A>(c)) : c);
+    break;
+   case <A HREF="lopcodes.h.html#iABx">iABx</A>:
+    if (<A HREF="lopcodes.h.html#getBMode">getBMode</A>(o)==<A HREF="lopcodes.h.html#OpArgK">OpArgK</A>) printf("%d %d",a,-1-bx); else printf("%d %d",a,bx);
+    break;
+   case <A HREF="lopcodes.h.html#iAsBx">iAsBx</A>:
+    if (o==<A HREF="lopcodes.h.html#OP_JMP">OP_JMP</A>) printf("%d",sbx); else printf("%d %d",a,sbx);
+    break;
+  }
+  switch (o)
+  {
+   case <A HREF="lopcodes.h.html#OP_LOADK">OP_LOADK</A>:
+    printf("\t; "); <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,bx);
+    break;
+   case <A HREF="lopcodes.h.html#OP_GETUPVAL">OP_GETUPVAL</A>:
+   case <A HREF="lopcodes.h.html#OP_SETUPVAL">OP_SETUPVAL</A>:
+    printf("\t; %s", (f-&gt;sizeupvalues&gt;0) ? <A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;upvalues[b]) : "-");
+    break;
+   case <A HREF="lopcodes.h.html#OP_GETGLOBAL">OP_GETGLOBAL</A>:
+   case <A HREF="lopcodes.h.html#OP_SETGLOBAL">OP_SETGLOBAL</A>:
+    printf("\t; %s",<A HREF="lobject.h.html#svalue">svalue</A>(&amp;f-&gt;k[bx]));
+    break;
+   case <A HREF="lopcodes.h.html#OP_GETTABLE">OP_GETTABLE</A>:
+   case <A HREF="lopcodes.h.html#OP_SELF">OP_SELF</A>:
+    if (<A HREF="lopcodes.h.html#ISK">ISK</A>(c)) { printf("\t; "); <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,<A HREF="lopcodes.h.html#INDEXK">INDEXK</A>(c)); }
+    break;
+   case <A HREF="lopcodes.h.html#OP_SETTABLE">OP_SETTABLE</A>:
+   case <A HREF="lopcodes.h.html#OP_ADD">OP_ADD</A>:
+   case <A HREF="lopcodes.h.html#OP_SUB">OP_SUB</A>:
+   case <A HREF="lopcodes.h.html#OP_MUL">OP_MUL</A>:
+   case <A HREF="lopcodes.h.html#OP_DIV">OP_DIV</A>:
+   case <A HREF="lopcodes.h.html#OP_POW">OP_POW</A>:
+   case <A HREF="lopcodes.h.html#OP_EQ">OP_EQ</A>:
+   case <A HREF="lopcodes.h.html#OP_LT">OP_LT</A>:
+   case <A HREF="lopcodes.h.html#OP_LE">OP_LE</A>:
+    if (<A HREF="lopcodes.h.html#ISK">ISK</A>(b) || <A HREF="lopcodes.h.html#ISK">ISK</A>(c))
+    {
+     printf("\t; ");
+     if (<A HREF="lopcodes.h.html#ISK">ISK</A>(b)) <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,<A HREF="lopcodes.h.html#INDEXK">INDEXK</A>(b)); else printf("-");
+     printf(" ");
+     if (<A HREF="lopcodes.h.html#ISK">ISK</A>(c)) <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,<A HREF="lopcodes.h.html#INDEXK">INDEXK</A>(c)); else printf("-");
+    }
+    break;
+   case <A HREF="lopcodes.h.html#OP_JMP">OP_JMP</A>:
+   case <A HREF="lopcodes.h.html#OP_FORLOOP">OP_FORLOOP</A>:
+   case <A HREF="lopcodes.h.html#OP_FORPREP">OP_FORPREP</A>:
+    printf("\t; to %d",sbx+pc+2);
+    break;
+   case <A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A>:
+    printf("\t; %p",<A HREF="print.c.html#VOID">VOID</A>(f-&gt;p[bx]));
+    break;
+   case <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>:
+    if (c==0) printf("\t; %d",(int)code[++pc]);
+    else printf("\t; %d",c);
+    break;
+   default:
+    break;
+  }
+  printf("\n");
+ }
+}
+
+#define <A NAME="SS"><SPAN CLASS="definition">SS</SPAN></A>(x)   (x==1)?"":"s"
+#define <A NAME="S"><SPAN CLASS="definition">S</SPAN></A>(x)    x,<A HREF="print.c.html#SS">SS</A>(x)
+
+static void <A NAME="PrintHeader"><SPAN CLASS="definition">PrintHeader</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ const char* s=<A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;source);
+ if (*s=='@' || *s=='=')
+  s++;
+ else if (*s==<A HREF="lua.h.html#LUA_SIGNATURE">LUA_SIGNATURE</A>[0])
+  s="(bstring)";
+ else
+  s="(string)";
+ printf("\n%s &lt;%s:%d,%d&gt; (%d instruction%s, %d bytes at %p)\n",
+        (f-&gt;linedefined==0)?"<A HREF="lua.c.html#main">main</A>":"function",s,
+        f-&gt;linedefined,f-&gt;lastlinedefined,
+        <A HREF="print.c.html#S">S</A>(f-&gt;sizecode),f-&gt;sizecode*<A HREF="print.c.html#Sizeof">Sizeof</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>),<A HREF="print.c.html#VOID">VOID</A>(f));
+ printf("%d%s param%s, %d slot%s, %d upvalue%s, ",
+        f-&gt;numparams,f-&gt;is_vararg?"+":"",<A HREF="print.c.html#SS">SS</A>(f-&gt;numparams),
+        <A HREF="print.c.html#S">S</A>(f-&gt;maxstacksize),<A HREF="print.c.html#S">S</A>(f-&gt;nups));
+ printf("%d local%s, %d constant%s, %d function%s\n",
+        <A HREF="print.c.html#S">S</A>(f-&gt;sizelocvars),<A HREF="print.c.html#S">S</A>(f-&gt;sizek),<A HREF="print.c.html#S">S</A>(f-&gt;sizep));
+}
+
+static void <A NAME="PrintConstants"><SPAN CLASS="definition">PrintConstants</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n=f-&gt;sizek;
+ printf("constants (%d) for %p:\n",n,<A HREF="print.c.html#VOID">VOID</A>(f));
+ for (i=0; i&lt;n; i++)
+ {
+  printf("\t%d\t",i+1);
+  <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,i);
+  printf("\n");
+ }
+}
+
+static void <A NAME="PrintLocals"><SPAN CLASS="definition">PrintLocals</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n=f-&gt;sizelocvars;
+ printf("locals (%d) for %p:\n",n,<A HREF="print.c.html#VOID">VOID</A>(f));
+ for (i=0; i&lt;n; i++)
+ {
+  printf("\t%d\t%s\t%d\t%d\n",
+  i,<A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;locvars[i].varname),f-&gt;locvars[i].startpc+1,f-&gt;locvars[i].endpc+1);
+ }
+}
+
+static void <A NAME="PrintUpvalues"><SPAN CLASS="definition">PrintUpvalues</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n=f-&gt;sizeupvalues;
+ printf("upvalues (%d) for %p:\n",n,<A HREF="print.c.html#VOID">VOID</A>(f));
+ if (f-&gt;upvalues==NULL) return;
+ for (i=0; i&lt;n; i++)
+ {
+  printf("\t%d\t%s\n",i,<A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;upvalues[i]));
+ }
+}
+
+void <A HREF="print.c.html#PrintFunction">PrintFunction</A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f, int full)
+{
+ int i,n=f-&gt;sizep;
+ <A HREF="print.c.html#PrintHeader">PrintHeader</A>(f);
+ <A HREF="print.c.html#PrintCode">PrintCode</A>(f);
+ if (full)
+ {
+  <A HREF="print.c.html#PrintConstants">PrintConstants</A>(f);
+  <A HREF="print.c.html#PrintLocals">PrintLocals</A>(f);
+  <A HREF="print.c.html#PrintUpvalues">PrintUpvalues</A>(f);
+ }
+ for (i=0; i&lt;n; i++) <A HREF="print.c.html#PrintFunction">PrintFunction</A>(f-&gt;p[i],full);
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:56 2016
+</P>
+
+</BODY>
+</HTML>

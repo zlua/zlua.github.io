@@ -1,0 +1,121 @@
+<HTML>
+<HEAD>
+<TITLE>Lua: technical note 4</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+</HEAD>
+
+<BODY>
+
+<HR>
+<H1>
+<A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua" BORDER=0></A>
+Technical Note 4
+</H1>
+
+<H2>A thin API for interlanguage working, or Lua in Four Easy Calls</H2>
+by <A HREF="http://rrt.sc3d.org/">Reuben Thomas</A>
+
+<h2>Abstract</h2>
+
+<p>The obvious way to make Lua interwork with language L is to implement the Lua API in L, but this is daunting for the implementor, and burdens the L programmer with a verbose syntax. A simpler solution is to implement just <code>lua_open</code>, <code>lua_close</code>, <code>lua_dobuffer</code> and <code>lua_register</code> in L, expanding <code>lua_register</code> to do inter-language marshalling. Additional functionality can then be provided in Lua.
+
+
+<h2>The problem</h2>
+
+<p>The Lua API allows a Lua state to be completely controlled from C. But what if you want to interwork with another language, L? The obvious approach, assuming that L can interwork with C, is to reflect the C API into L. However, this is a rather daunting prospect, as the Lua API is quite large and has some hidden subtleties. Also, while it is a good medium for writing extension libraries and tools for Lua, it does not lead naturally to a convenient syntax for L programmers; the Lua manual shows (see section 5.12 on p. 26 in the 4.0 edition) how the Lua statement
+
+<p><code>a,b = f(&quot;how&quot;, t.x, 4)</code>
+
+<p>becomes ten calls to the Lua API.
+
+
+<h2>The solution</h2>
+
+<p>There is an easier way: using the first rule of Lua (&quot;Do it in Lua&quot;):
+
+<p><code>lua_dostring(S, &quot;a,b = f(\&quot;how\&quot;, t.x, 4)&quot;);</code>
+
+<p>where <code>S</code> is the state in which the code is to be executed. In fact, the only things you can't do with <code>lua_dostring</code> are get values back from Lua, and allow Lua to call L. These can both be achieved with <code>lua_register</code>.
+
+<p>Hence all that is needed for language interworking is <code>lua_dostring</code> and <code>lua_register</code>, plus <code>lua_open</code> and <code>lua_close</code> to allow Lua states to be created and destroyed. Also, it's better to use <code>lua_dobuffer</code> than <code>lua_dostring</code>, as it can handle pre-compiled code too.
+
+<p>But wait! In the C API, <code>lua_register</code> says nothing about the argument or result types of the function being registered; these have to be dealt with by inspection and manipulation of the Lua stack. A brutal but simple solution to this is to make <code>lua_register</code> specify the type and number of arguments and return values, and allow only such types as map naturally into L.
+
+<p>The final list of functions for the thin API is:
+
+<p>
+<ul>
+<li><code>lua_open</code> and <code>lua_close</code>, to allow Lua states to be created and destroyed
+<li><code>lua_dobuffer</code>, to allow Lua to be called from L
+<li><code>lua_register</code> (suitably specialised), to allow L to be called from Lua
+</ul>
+
+
+<h2>Case study: Lua to OPL</h2>
+
+<p>When porting Lua to <a href="http://www.symbiandevnet.com/">EPOC</a>, <a href="http://www.symbian.com/">Symbian's</a> OS for mobile devices such as PDAs, I wanted to provide hooks to OS features such as the Eikon GUI. EPOC is C++-based, which looks promising, but for space reasons its libraries contain no symbol information, so run-time dynamic linking by name is impossible. Not wanting to resort to <a href="http://www.tecgraf.puc-rio.br/~celes/tolua/">tolua</a>, I decided instead to bind Lua to OPL, EPOC's interpreted BASIC-like RAD language, which has both good support for EPOC, including a wide range of OPXs (OPL libraries implemented in C++), and allows procedures to be called dynamically by name.
+
+<p>OPL has four basic types: 16-bit and 32-bit integers, 64-bit floats, and strings. 16-bit integers are denoted <code>%</code>, 32-bit integers <code>&amp;</code>, strings <code>$</code>, and floats by nothing. OPL supports C-like function prototypes, for example:
+
+<p><code>foo&amp;:(a,b%,c$)</code>
+
+<p><code>foo</code> is the name of the function. The <code>&amp;</code> indicates that it returns a 32-bit integer (all OPL functions return a value, which defaults to zero or the empty string if there is no explicit <code>RETURN</code> statement). The colon indicates that <code>foo</code> is a function. Next comes the optional argument list; in this case, there are three arguments: a float <code>a</code>, a 16-bit integer <code>b%</code>, and a string <code>c$</code>. (Strings may be at most 255 characters long; in this API, longer strings may not be exchanged with Lua directly.)
+
+<p>Hence, I created a small OPX which provided the following OPL functions:
+
+<ul>
+<li><code>LuaOpen&amp;:</code> returns a pointer to the new state
+<li><code>LuaClose:(state&amp;)</code> closes the given state <li><code>Lua&amp;:(state&amp;,chunk$)</code> executes the given chunk (which may be precompiled, but this is unlikely to be useful as it can be at most 255 bytes long) in the given state
+<li><code>LuaRegister:(state&amp;,func$,name$)</code> registers the OPL function whose prototype is given by <code>func$</code> in the given Lua state with Lua name <code>name$</code>
+</ul>
+
+<code>Lua&amp;:</code> seemed a better name than <code>LuaDoBuffer&amp;:</code> as it is both apt (<code>Lua&amp;:</code> is the function that does some Lua) and a nice short name for what is likely to be the most widely used procedure by far out of the four. When an OPL function registered by <code>LuaRegister:</code> is called from Lua, the arguments are automatically translated to the OPL types, and the result type translated back. It is the programmer's responsibility to check that integer arguments are in range.
+
+
+<h2>Is a thin API enough?</h2>
+
+<p>At first sight, this interface may seem very limited. For example, there's no simple way to evaluate a Lua expression and return its result to OPL, nor is it possible to traverse Lua tables in OPL. This is intentional: adding these facilities would complicate the API, and omitting them encourages programmers to use OPL only to provide library routines to Lua. After all, the main motivation for linking Lua to OPL was to be able to access EPOC without needing to write lots of C++ libraries for Lua first.
+
+<p>However, in some cases I might want to write much of the application in the other language, because of its application domain properties (for example, SQL or Prolog). Also, I seem to be promoting Lua from its intended use as application extension language to the main language in which the application is written.
+
+<p>Actually, there is no conflict here. Think of Lua not so much as an 
+application extension language as a glue language, binding bits of programs 
+written in other languages together. The core of the application's 
+functionality will often be implemented in some other language L, perhaps C 
+for speed, or some domain-specific language. By structuring this core as a 
+library, the L programmer is free to concentrate on providing application 
+primitives in L, without worrying about tying them together; L may well not 
+be suitable for this. The application can then be implemented as a layer of 
+Lua on top of a series of libraries; this separates the different concerns 
+of programming the domain-specific primitives in L from configuring the 
+particular application, which makes the application easier to write, and 
+promotes reuse of both Lua and L code.
+
+<p>If it is really necessary to implement other parts of the Lua API in L, 
+then, provided it is not for performance reasons, the requisite 
+functionality can still be implemented in Lua with L callbacks. Indeed, it 
+would be possible to write a Lua implementation of the full Lua API which 
+would then work with any language to which Lua was interfaced by the thin 
+API.
+
+
+<h2>Conclusion</h2>
+
+<p>Lua can be connected to other languages with a very simple API, which is 
+mostly a subset of the standard C API. It is quick to implement, provided 
+that the target language can interwork with C, and provides all the 
+necessary functionality for writing applications in a mixture of Lua and the 
+target language. Some seeming restrictions in the thin API actually help to 
+write more reusable code.
+
+<p>
+
+<HR>
+<SMALL>
+Last update:
+Mon Aug 12 15:49:10 EST 2002
+by <A HREF="http://www.tecgraf.puc-rio.br/~lhf/">lhf</A>.
+</SMALL>
+
+</BODY>
+</HTML>

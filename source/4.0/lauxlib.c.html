@@ -1,0 +1,251 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lauxlib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lauxlib.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lauxlib.c,v 1.43 2000/10/30 13:07:48 roberto Exp $
+** Auxiliary functions for building Lua libraries
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+/* This file uses only the official API of Lua.
+** Any function declared here could be written as an application function.
+** With care, these functions can be used by other libraries.
+*/
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="luadebug.h.html">luadebug.h</A>"
+
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> int <A NAME="luaL_findstring"><SPAN CLASS="definition">luaL_findstring</SPAN></A> (const char *name, const char *const list[]) {
+  int i;
+  for (i=0; list[i]; i++)
+    if (strcmp(list[i], name) == 0)
+      return i;
+  return -1;  /* name not found */
+}
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_argerror"><SPAN CLASS="definition">luaL_argerror</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg, const char *extramsg) {
+  <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> ar;
+  <A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(L, 0, &amp;ar);
+  <A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>(L, "n", &amp;ar);
+  if (ar.name == NULL)
+    ar.name = "?";
+  <A HREF="lauxlib.c.html#luaL_verror">luaL_verror</A>(L, "bad argument #%d to `%.50s' (%.100s)",
+              narg, ar.name, extramsg);
+}
+
+
+static void <A NAME="type_error"><SPAN CLASS="definition">type_error</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg, int t) {
+  char buff[50];
+  sprintf(buff, "%.8s expected, got %.8s", <A HREF="lapi.c.html#lua_typename">lua_typename</A>(L, t),
+                                           <A HREF="lapi.c.html#lua_typename">lua_typename</A>(L, <A HREF="lapi.c.html#lua_type">lua_type</A>(L, narg)));
+  <A HREF="lauxlib.c.html#luaL_argerror">luaL_argerror</A>(L, narg, buff);
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_checkstack"><SPAN CLASS="definition">luaL_checkstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int space, const char *mes) {
+  if (space &gt; <A HREF="lapi.c.html#lua_stackspace">lua_stackspace</A>(L))
+    <A HREF="lauxlib.c.html#luaL_verror">luaL_verror</A>(L, "stack overflow (%.30s)", mes);
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_checktype"><SPAN CLASS="definition">luaL_checktype</SPAN></A>(<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg, int t) {
+  if (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, narg) != t)
+    <A HREF="lauxlib.c.html#type_error">type_error</A>(L, narg, t);
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_checkany"><SPAN CLASS="definition">luaL_checkany</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg) {
+  if (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, narg) == <A HREF="lua.h.html#LUA_TNONE">LUA_TNONE</A>)
+    <A HREF="lauxlib.c.html#luaL_argerror">luaL_argerror</A>(L, narg, "value expected");
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> const char *<A NAME="luaL_check_lstr"><SPAN CLASS="definition">luaL_check_lstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg, size_t *len) {
+  const char *s = <A HREF="lapi.c.html#lua_tostring">lua_tostring</A>(L, narg);
+  if (!s) <A HREF="lauxlib.c.html#type_error">type_error</A>(L, narg, <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>);
+  if (len) *len = <A HREF="lapi.c.html#lua_strlen">lua_strlen</A>(L, narg);
+  return s;
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> const char *<A NAME="luaL_opt_lstr"><SPAN CLASS="definition">luaL_opt_lstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg, const char *def, size_t *len) {
+  if (<A HREF="lua.h.html#lua_isnull">lua_isnull</A>(L, narg)) {
+    if (len)
+      *len = (def ? strlen(def) : 0);
+    return def;
+  }
+  else return <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, narg, len);
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> double <A NAME="luaL_check_number"><SPAN CLASS="definition">luaL_check_number</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg) {
+  double d = <A HREF="lapi.c.html#lua_tonumber">lua_tonumber</A>(L, narg);
+  if (d == 0 &amp;&amp; !<A HREF="lapi.c.html#lua_isnumber">lua_isnumber</A>(L, narg))  /* avoid extra test when d is not 0 */
+    <A HREF="lauxlib.c.html#type_error">type_error</A>(L, narg, <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>);
+  return d;
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> double <A NAME="luaL_opt_number"><SPAN CLASS="definition">luaL_opt_number</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg, double def) {
+  if (<A HREF="lua.h.html#lua_isnull">lua_isnull</A>(L, narg)) return def;
+  else return <A HREF="lauxlib.c.html#luaL_check_number">luaL_check_number</A>(L, narg);
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_openlib"><SPAN CLASS="definition">luaL_openlib</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const struct <A HREF="lauxlib.h.html#luaL_reg">luaL_reg</A> *l, int n) {
+  int i;
+  for (i=0; i&lt;n; i++)
+    <A HREF="lua.h.html#lua_register">lua_register</A>(L, l[i].name, l[i].func);
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_verror"><SPAN CLASS="definition">luaL_verror</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...) {
+  char buff[500];
+  va_list argp;
+  va_start(argp, fmt);
+  vsprintf(buff, fmt, argp);
+  va_end(argp);
+  <A HREF="ldo.c.html#lua_error">lua_error</A>(L, buff);
+}
+
+
+/*
+** {======================================================
+** Generic Buffer manipulation
+** =======================================================
+*/
+
+
+#define <A NAME="buffempty"><SPAN CLASS="definition">buffempty</SPAN></A>(B)    ((B)-&gt;p == (B)-&gt;buffer)
+#define <A NAME="bufflen"><SPAN CLASS="definition">bufflen</SPAN></A>(B)      ((B)-&gt;p - (B)-&gt;buffer)
+#define <A NAME="bufffree"><SPAN CLASS="definition">bufffree</SPAN></A>(B)     ((size_t)(<A HREF="lauxlib.h.html#LUAL_BUFFERSIZE">LUAL_BUFFERSIZE</A> - <A HREF="lauxlib.c.html#bufflen">bufflen</A>(B)))
+
+#define <A NAME="LIMIT"><SPAN CLASS="definition">LIMIT</SPAN></A>   (<A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>/2)
+
+
+static int <A NAME="emptybuffer"><SPAN CLASS="definition">emptybuffer</SPAN></A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B) {
+  size_t l = <A HREF="lauxlib.c.html#bufflen">bufflen</A>(B);
+  if (l == 0) return 0;  /* put nothing on stack */
+  else {
+    <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(B-&gt;L, B-&gt;buffer, l);
+    B-&gt;p = B-&gt;buffer;
+    B-&gt;level++;
+    return 1;
+  }
+}
+
+
+static void <A NAME="adjuststack"><SPAN CLASS="definition">adjuststack</SPAN></A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B) {
+  if (B-&gt;level &gt; 1) {
+    <A HREF="lstate.h.html#lua_State">lua_State</A> *L = B-&gt;L;
+    int toget = 1;  /* number of levels to concat */
+    size_t toplen = <A HREF="lapi.c.html#lua_strlen">lua_strlen</A>(L, -1);
+    do {
+      size_t l = <A HREF="lapi.c.html#lua_strlen">lua_strlen</A>(L, -(toget+1));
+      if (B-&gt;level - toget + 1 &gt;= <A HREF="lauxlib.c.html#LIMIT">LIMIT</A> || toplen &gt; l) {
+        toplen += l;
+        toget++;
+      }
+      else break;
+    } while (toget &lt; B-&gt;level);
+    if (toget &gt;= 2) {
+      <A HREF="lapi.c.html#lua_concat">lua_concat</A>(L, toget);
+      B-&gt;level = B-&gt;level - toget + 1;
+    }
+  }
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> char *<A NAME="luaL_prepbuffer"><SPAN CLASS="definition">luaL_prepbuffer</SPAN></A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B) {
+  if (<A HREF="lauxlib.c.html#emptybuffer">emptybuffer</A>(B))
+    <A HREF="lauxlib.c.html#adjuststack">adjuststack</A>(B);
+  return B-&gt;buffer;
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_addlstring"><SPAN CLASS="definition">luaL_addlstring</SPAN></A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B, const char *s, size_t l) {
+  while (l--)
+    <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(B, *s++);
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_addstring"><SPAN CLASS="definition">luaL_addstring</SPAN></A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B, const char *s) {
+  <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A>(B, s, strlen(s));
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_pushresult"><SPAN CLASS="definition">luaL_pushresult</SPAN></A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B) {
+  <A HREF="lauxlib.c.html#emptybuffer">emptybuffer</A>(B);
+  if (B-&gt;level == 0)
+    <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(B-&gt;L, NULL, 0);
+  else if (B-&gt;level &gt; 1)
+    <A HREF="lapi.c.html#lua_concat">lua_concat</A>(B-&gt;L, B-&gt;level);
+  B-&gt;level = 1;
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_addvalue"><SPAN CLASS="definition">luaL_addvalue</SPAN></A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L = B-&gt;L;
+  size_t vl = <A HREF="lapi.c.html#lua_strlen">lua_strlen</A>(L, -1);
+  if (vl &lt;= <A HREF="lauxlib.c.html#bufffree">bufffree</A>(B)) {  /* fit into buffer? */
+    memcpy(B-&gt;p, <A HREF="lapi.c.html#lua_tostring">lua_tostring</A>(L, -1), vl);  /* put it there */
+    B-&gt;p += vl;
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove from stack */
+  }
+  else {
+    if (<A HREF="lauxlib.c.html#emptybuffer">emptybuffer</A>(B))
+      <A HREF="lapi.c.html#lua_insert">lua_insert</A>(L, -2);  /* put buffer before new value */
+    B-&gt;level++;  /* add new value into B stack */
+    <A HREF="lauxlib.c.html#adjuststack">adjuststack</A>(B);
+  }
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_buffinit"><SPAN CLASS="definition">luaL_buffinit</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B) {
+  B-&gt;L = L;
+  B-&gt;p = B-&gt;buffer;
+  B-&gt;level = 0;
+}
+
+/* }====================================================== */
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

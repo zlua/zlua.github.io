@@ -1,0 +1,120 @@
+<HEAD>
+<TITLE>5.2 Converting Values between C and Lua</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=subsection3_5_3.html>5.3 Manipulating Lua Objects</A>
+<B>Up:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B> Previous:</B> <A HREF=subsection3_5_1.html>5.1 Executing Lua Code</A>
+<H2><A NAME=S0520>5.2 Converting Values between C and Lua</A></H2>
+ <A NAME=valuesCLua></A>
+Because Lua has no static type system,
+all values passed between Lua and C have type <TT><B><B>lua_Object</B></B></TT>,
+which works like an abstract type in C that can hold any Lua value.
+<P>
+Lua has automatic memory management, and garbage collection.
+Because of that, a <TT><B><B>lua_Object</B></B></TT> has a limited scope,
+and is only valid inside the <I>block</I> where it was created.
+A C function called from Lua is a block, and its parameters are valid
+only until its end.
+A good programming practice is to convert Lua objects to C values
+as soon as they are available,
+and never to store <TT><B><B>lua_Object</B></B></TT>s in global variables.
+<P>
+When C code calls Lua repeatedly, as in a loop,
+objects returned by there calls may accumulate,
+creating a memory problem.
+To avoid this,
+nested blocks can be defined with the functions:
+<TT><B><B><PRE>
+void           lua_beginblock           (void);
+void           lua_endblock             (void);</PRE></B></B></TT>
+After the end of the block,
+all <TT><B><B>lua_Object</B></B></TT>'s created inside it are released.
+<P>
+To check the type of a <TT><B><B>lua_Object</B></B></TT>,
+the following function is available:
+<TT><B><B><PRE>
+int            lua_type                 (lua_Object object);</PRE></B></B></TT>
+plus the following macros:
+<TT><B><B><PRE>
+int            lua_isnil                (lua_Object object);
+int            lua_isnumber             (lua_Object object);
+int            lua_isstring             (lua_Object object);
+int            lua_istable              (lua_Object object);
+int            lua_iscfunction          (lua_Object object);
+int            lua_isuserdata           (lua_Object object);</PRE></B></B></TT>
+All macros return 1 if the object has the given type,
+and 0 otherwise.
+<P>
+The function <TT><B><B>lua_type</B></B></TT> can be used to distinguish between
+different kinds of user data; see below.
+<P>
+To translate a value from type <TT><B><B>lua_Object</B></B></TT> to a specific C type,
+the programmer can use:
+<TT><B><B><PRE>
+double         lua_getnumber            (lua_Object object);
+char          *lua_getstring            (lua_Object object);
+lua_CFunction  lua_getcfunction         (lua_Object object);
+void          *lua_getuserdata          (lua_Object object);</PRE></B></B></TT>
+<TT><B><B>lua_getnumber</B></B></TT> converts a <TT><B><B>lua_Object</B></B></TT> to a float.
+This <TT><B><B>lua_Object</B></B></TT> must be a number or a string convertible to number
+(see Section <A HREF=subsection3_4_2.html#coercion>4.2</A>); otherwise, the function returns 0.
+<P>
+<TT><B><B>lua_getstring</B></B></TT> converts a <TT><B><B>lua_Object</B></B></TT> to a string (<TT><B><B>char *</B></B></TT>).
+This <TT><B><B>lua_Object</B></B></TT> must be a string or a number;
+otherwise, the function returns 0 (the null pointer).
+This function does not create a new string, but returns a pointer to
+a string inside the Lua environment.
+Because Lua has garbage collection, there is no guarantee that such
+pointer will be valid after the block ends.
+<P>
+<TT><B><B>lua_getcfunction</B></B></TT> converts a <TT><B><B>lua_Object</B></B></TT> to a C function.
+This <TT><B><B>lua_Object</B></B></TT> must have type <I>CFunction</I>;
+otherwise, the function returns 0 (the null pointer).
+The type <TT><B><B>lua_CFunction</B></B></TT> is explained in Section <A HREF=subsection3_5_5.html#LuacallC>5.5</A>.
+<P>
+<TT><B><B>lua_getuserdata</B></B></TT> converts a <TT><B><B>lua_Object</B></B></TT> to <TT><B><B>void*</B></B></TT>.
+This <TT><B><B>lua_Object</B></B></TT> must have type <I>userdata</I>;
+otherwise, the function returns 0 (the null pointer).
+<P>
+The reverse process, that is, passing a specific C value to Lua,
+is done by using the following functions:
+<TT><B><B><PRE>
+void           lua_pushnumber           (double n);
+void           lua_pushstring           (char *s);
+void           lua_pushliteral          (char *s);
+void           lua_pushcfunction        (lua_CFunction f);
+void           lua_pushusertag          (void *u, int tag);</PRE></B></B></TT>
+plus the macro:
+<TT><B><B><PRE>
+void           lua_pushuserdata         (void *u);</PRE></B></B></TT>
+All of them receive a C value,
+convert it to a <TT><B><B>lua_Object</B></B></TT>,
+and leave their results on the top of the Lua stack,
+where it can be assigned to a variable,
+passed as paramenter to a Lua function, etc (see below). <A NAME=pushing></A>
+<TT><B><B>lua_pushliteral</B></B></TT> is like <TT><B><B>lua_pushstring</B></B></TT>,
+but also puts the string in the Lua literal table.
+This avoids the string to be garbage collected,
+and therefore has a better overall performance.
+As a rule, when the string to be pushed is a literal,
+<TT><B><B>lua_pushliteral</B></B></TT> should be used.
+<P>
+User data can have different tags,
+whose semantics are defined by the host program.
+Any positive integer can be used to tag a user data.
+When a user data is retrieved,
+the function <TT><B><B>lua_type</B></B></TT> can be used to get its tag.
+<P>
+To complete the set,
+the value <B>nil</B> or a <TT><B><B>lua_Object</B></B></TT> can also be pushed onto the stack,
+with:
+<TT><B><B><PRE>
+void           lua_pushnil              (void);
+void           lua_pushobject           (lua_Object object);</PRE></B></B></TT>
+<P>
+<B> Next:</B> <A HREF=subsection3_5_3.html>5.3 Manipulating Lua Objects</A>
+<B>Up:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B> Previous:</B> <A HREF=subsection3_5_1.html>5.1 Executing Lua Code</A>
+
+</BODY>

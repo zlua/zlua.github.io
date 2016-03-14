@@ -1,0 +1,66 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - luac.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+luac.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: luac.h,v 1.18 2000/10/31 16:57:23 lhf Exp $
+** definitions for luac
+** See Copyright Notice in lua.h
+*/
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+
+extern <A HREF="lstate.h.html#lua_State">lua_State</A> *<A HREF="luac.c.html#lua_state">lua_state</A>;
+#define <A NAME="L"><SPAN CLASS="definition">L</SPAN></A>       <A HREF="luac.c.html#lua_state">lua_state</A>               /* lazy! */
+
+/* from dump.c */
+void <A HREF="dump.c.html#luaU_dumpchunk">luaU_dumpchunk</A>(const <A HREF="lobject.h.html#Proto">Proto</A>* Main, FILE* D);
+
+/* from opt.c */
+void luaU_optchunk(<A HREF="lobject.h.html#Proto">Proto</A>* Main);
+
+/* from print.c */
+void luaU_printchunk(const <A HREF="lobject.h.html#Proto">Proto</A>* Main);
+
+/* from test.c */
+void <A HREF="luac.c.html#luaU_testchunk">luaU_testchunk</A>(const <A HREF="lobject.h.html#Proto">Proto</A>* Main);
+
+#define <A NAME="Sizeof"><SPAN CLASS="definition">Sizeof</SPAN></A>(x)       ((int)sizeof(x))
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

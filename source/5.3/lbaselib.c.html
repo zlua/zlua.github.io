@@ -1,0 +1,534 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lbaselib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lbaselib.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lbaselib.c,v 1.312 2015/10/29 15:21:04 roberto Exp $
+** Basic library
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lbaselib_c"><SPAN CLASS="definition">lbaselib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+static int <A NAME="luaB_print"><SPAN CLASS="definition">luaB_print</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);  /* number of arguments */
+  int i;
+  <A HREF="lapi.c.html#lua_getglobal">lua_getglobal</A>(L, "tostring");
+  for (i=1; i&lt;=n; i++) {
+    const char *s;
+    size_t l;
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);  /* function to be called */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, i);   /* value to print */
+    <A HREF="lua.h.html#lua_call">lua_call</A>(L, 1, 1);
+    s = <A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>(L, -1, &amp;l);  /* get result */
+    if (s == NULL)
+      return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "'tostring' must return a string to 'print'");
+    if (i&gt;1) <A HREF="lauxlib.h.html#lua_writestring">lua_writestring</A>("\t", 1);
+    <A HREF="lauxlib.h.html#lua_writestring">lua_writestring</A>(s, l);
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* pop result */
+  }
+  <A HREF="lauxlib.h.html#lua_writeline">lua_writeline</A>();
+  return 0;
+}
+
+
+#define <A NAME="SPACECHARS"><SPAN CLASS="definition">SPACECHARS</SPAN></A>      " \f\n\r\t\v"
+
+static const char *<A NAME="b_str2int"><SPAN CLASS="definition">b_str2int</SPAN></A> (const char *s, int base, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> *pn) {
+  <A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A> n = 0;
+  int neg = 0;
+  s += strspn(s, <A HREF="lbaselib.c.html#SPACECHARS">SPACECHARS</A>);  /* skip initial spaces */
+  if (*s == '-') { s++; neg = 1; }  /* handle signal */
+  else if (*s == '+') s++;
+  if (!isalnum((unsigned char)*s))  /* no digit? */
+    return NULL;
+  do {
+    int digit = (isdigit((unsigned char)*s)) ? *s - '0'
+                   : (toupper((unsigned char)*s) - 'A') + 10;
+    if (digit &gt;= base) return NULL;  /* invalid numeral */
+    n = n * base + digit;
+    s++;
+  } while (isalnum((unsigned char)*s));
+  s += strspn(s, <A HREF="lbaselib.c.html#SPACECHARS">SPACECHARS</A>);  /* skip trailing spaces */
+  *pn = (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)((neg) ? (0u - n) : n);
+  return s;
+}
+
+
+static int <A NAME="luaB_tonumber"><SPAN CLASS="definition">luaB_tonumber</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  if (<A HREF="lua.h.html#lua_isnoneornil">lua_isnoneornil</A>(L, 2)) {  /* standard conversion? */
+    <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 1);
+    if (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, 1) == <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>) {  /* already a number? */
+      <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 1);  /* yes; return it */
+      return 1;
+    }
+    else {
+      size_t l;
+      const char *s = <A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>(L, 1, &amp;l);
+      if (s != NULL &amp;&amp; <A HREF="lapi.c.html#lua_stringtonumber">lua_stringtonumber</A>(L, s) == l + 1)
+        return 1;  /* successful conversion to number */
+      /* else not a number */
+    }
+  }
+  else {
+    size_t l;
+    const char *s;
+    <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n = 0;  /* to avoid warnings */
+    <A HREF="lua.h.html#lua_Integer">lua_Integer</A> base = <A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, 2);
+    <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>);  /* no numbers as strings */
+    s = <A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>(L, 1, &amp;l);
+    <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, 2 &lt;= base &amp;&amp; base &lt;= 36, 2, "base out of range");
+    if (<A HREF="lbaselib.c.html#b_str2int">b_str2int</A>(s, (int)base, &amp;n) == s + l) {
+      <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, n);
+      return 1;
+    }  /* else not a number */
+  }  /* else not a number */
+  <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);  /* not a number */
+  return 1;
+}
+
+
+static int <A NAME="luaB_error"><SPAN CLASS="definition">luaB_error</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int level = (int)<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, 2, 1);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 1);
+  if (<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>(L, 1) &amp;&amp; level &gt; 0) {  /* add extra information? */
+    <A HREF="lauxlib.c.html#luaL_where">luaL_where</A>(L, level);
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);
+    <A HREF="lapi.c.html#lua_concat">lua_concat</A>(L, 2);
+  }
+  return <A HREF="lapi.c.html#lua_error">lua_error</A>(L);
+}
+
+
+static int <A NAME="luaB_getmetatable"><SPAN CLASS="definition">luaB_getmetatable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 1);
+  if (!<A HREF="lapi.c.html#lua_getmetatable">lua_getmetatable</A>(L, 1)) {
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+    return 1;  /* no metatable */
+  }
+  <A HREF="lauxlib.c.html#luaL_getmetafield">luaL_getmetafield</A>(L, 1, "__metatable");
+  return 1;  /* returns either __metatable field (if present) or metatable */
+}
+
+
+static int <A NAME="luaB_setmetatable"><SPAN CLASS="definition">luaB_setmetatable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int t = <A HREF="lapi.c.html#lua_type">lua_type</A>(L, 2);
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, t == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A> || t == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>, 2,
+                    "nil or table expected");
+  if (<A HREF="lauxlib.c.html#luaL_getmetafield">luaL_getmetafield</A>(L, 1, "__metatable") != <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>)
+    return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "cannot change a protected metatable");
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 2);
+  <A HREF="lapi.c.html#lua_setmetatable">lua_setmetatable</A>(L, 1);
+  return 1;
+}
+
+
+static int <A NAME="luaB_rawequal"><SPAN CLASS="definition">luaB_rawequal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 1);
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 2);
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, <A HREF="lapi.c.html#lua_rawequal">lua_rawequal</A>(L, 1, 2));
+  return 1;
+}
+
+
+static int <A NAME="luaB_rawlen"><SPAN CLASS="definition">luaB_rawlen</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int t = <A HREF="lapi.c.html#lua_type">lua_type</A>(L, 1);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, t == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A> || t == <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>, 1,
+                   "table or string expected");
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, <A HREF="lapi.c.html#lua_rawlen">lua_rawlen</A>(L, 1));
+  return 1;
+}
+
+
+static int <A NAME="luaB_rawget"><SPAN CLASS="definition">luaB_rawget</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 2);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 2);
+  <A HREF="lapi.c.html#lua_rawget">lua_rawget</A>(L, 1);
+  return 1;
+}
+
+static int <A NAME="luaB_rawset"><SPAN CLASS="definition">luaB_rawset</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 2);
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 3);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 3);
+  <A HREF="lapi.c.html#lua_rawset">lua_rawset</A>(L, 1);
+  return 1;
+}
+
+
+static int <A NAME="luaB_collectgarbage"><SPAN CLASS="definition">luaB_collectgarbage</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  static const char *const opts[] = {"stop", "restart", "collect",
+    "count", "step", "setpause", "setstepmul",
+    "isrunning", NULL};
+  static const int optsnum[] = {<A HREF="lua.h.html#LUA_GCSTOP">LUA_GCSTOP</A>, <A HREF="lua.h.html#LUA_GCRESTART">LUA_GCRESTART</A>, <A HREF="lua.h.html#LUA_GCCOLLECT">LUA_GCCOLLECT</A>,
+    <A HREF="lua.h.html#LUA_GCCOUNT">LUA_GCCOUNT</A>, <A HREF="lua.h.html#LUA_GCSTEP">LUA_GCSTEP</A>, <A HREF="lua.h.html#LUA_GCSETPAUSE">LUA_GCSETPAUSE</A>, <A HREF="lua.h.html#LUA_GCSETSTEPMUL">LUA_GCSETSTEPMUL</A>,
+    <A HREF="lua.h.html#LUA_GCISRUNNING">LUA_GCISRUNNING</A>};
+  int o = optsnum[<A HREF="lauxlib.c.html#luaL_checkoption">luaL_checkoption</A>(L, 1, "collect", opts)];
+  int ex = (int)<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, 2, 0);
+  int res = <A HREF="lapi.c.html#lua_gc">lua_gc</A>(L, o, ex);
+  switch (o) {
+    case <A HREF="lua.h.html#LUA_GCCOUNT">LUA_GCCOUNT</A>: {
+      int b = <A HREF="lapi.c.html#lua_gc">lua_gc</A>(L, <A HREF="lua.h.html#LUA_GCCOUNTB">LUA_GCCOUNTB</A>, 0);
+      <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, (<A HREF="lua.h.html#lua_Number">lua_Number</A>)res + ((<A HREF="lua.h.html#lua_Number">lua_Number</A>)b/1024));
+      return 1;
+    }
+    case <A HREF="lua.h.html#LUA_GCSTEP">LUA_GCSTEP</A>: case <A HREF="lua.h.html#LUA_GCISRUNNING">LUA_GCISRUNNING</A>: {
+      <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, res);
+      return 1;
+    }
+    default: {
+      <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, res);
+      return 1;
+    }
+  }
+}
+
+
+static int <A NAME="luaB_type"><SPAN CLASS="definition">luaB_type</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int t = <A HREF="lapi.c.html#lua_type">lua_type</A>(L, 1);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, t != <A HREF="lua.h.html#LUA_TNONE">LUA_TNONE</A>, 1, "value expected");
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, <A HREF="lapi.c.html#lua_typename">lua_typename</A>(L, t));
+  return 1;
+}
+
+
+static int <A NAME="pairsmeta"><SPAN CLASS="definition">pairsmeta</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *method, int iszero,
+                      <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> iter) {
+  if (<A HREF="lauxlib.c.html#luaL_getmetafield">luaL_getmetafield</A>(L, 1, method) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) {  /* no metamethod? */
+    <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);  /* argument must be a table */
+    <A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, iter);  /* will return generator, */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);  /* state, */
+    if (iszero) <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, 0);  /* and initial value */
+    else <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+  }
+  else {
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);  /* argument 'self' to metamethod */
+    <A HREF="lua.h.html#lua_call">lua_call</A>(L, 1, 3);  /* get 3 values from metamethod */
+  }
+  return 3;
+}
+
+
+static int <A NAME="luaB_next"><SPAN CLASS="definition">luaB_next</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 2);  /* create a 2nd argument if there isn't one */
+  if (<A HREF="lapi.c.html#lua_next">lua_next</A>(L, 1))
+    return 2;
+  else {
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+    return 1;
+  }
+}
+
+
+static int <A NAME="luaB_pairs"><SPAN CLASS="definition">luaB_pairs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="lbaselib.c.html#pairsmeta">pairsmeta</A>(L, "__pairs", 0, <A HREF="lbaselib.c.html#luaB_next">luaB_next</A>);
+}
+
+
+/*
+** Traversal function for 'ipairs'
+*/
+static int <A NAME="ipairsaux"><SPAN CLASS="definition">ipairsaux</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> i = <A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, 2) + 1;
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, i);
+  return (<A HREF="lapi.c.html#lua_geti">lua_geti</A>(L, 1, i) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) ? 1 : 2;
+}
+
+
+/*
+** This function will use either '<A HREF="lbaselib.c.html#ipairsaux">ipairsaux</A>' or 'ipairsaux_raw' to
+** traverse a table, depending on whether the table has metamethods
+** that can affect the traversal.
+*/
+static int <A NAME="luaB_ipairs"><SPAN CLASS="definition">luaB_ipairs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+#if defined(<A HREF="luaconf.h.html#LUA_COMPAT_IPAIRS">LUA_COMPAT_IPAIRS</A>)
+  return <A HREF="lbaselib.c.html#pairsmeta">pairsmeta</A>(L, "__ipairs", 1, <A HREF="lbaselib.c.html#ipairsaux">ipairsaux</A>);
+#else
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 1);
+  <A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, <A HREF="lbaselib.c.html#ipairsaux">ipairsaux</A>);  /* iteration function */
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);  /* state */
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, 0);  /* initial value */
+  return 3;
+#endif
+}
+
+
+static int <A NAME="load_aux"><SPAN CLASS="definition">load_aux</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int status, int envidx) {
+  if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) {
+    if (envidx != 0) {  /* 'env' parameter? */
+      <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, envidx);  /* environment for loaded function */
+      if (!<A HREF="lapi.c.html#lua_setupvalue">lua_setupvalue</A>(L, -2, 1))  /* set it as 1st upvalue */
+        <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove 'env' if not used by previous call */
+    }
+    return 1;
+  }
+  else {  /* error (message is on top of the stack) */
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+    <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, -2);  /* put before error message */
+    return 2;  /* return nil plus error message */
+  }
+}
+
+
+static int <A NAME="luaB_loadfile"><SPAN CLASS="definition">luaB_loadfile</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *fname = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 1, NULL);
+  const char *mode = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 2, NULL);
+  int env = (!<A HREF="lua.h.html#lua_isnone">lua_isnone</A>(L, 3) ? 3 : 0);  /* 'env' index or 0 if no 'env' */
+  int status = <A HREF="lauxlib.c.html#luaL_loadfilex">luaL_loadfilex</A>(L, fname, mode);
+  return <A HREF="lbaselib.c.html#load_aux">load_aux</A>(L, status, env);
+}
+
+
+/*
+** {======================================================
+** Generic Read function
+** =======================================================
+*/
+
+
+/*
+** reserved slot, above all arguments, to hold a copy of the returned
+** string to avoid it being collected while parsed. 'load' has four
+** optional arguments (chunk, source name, mode, and environment).
+*/
+#define <A NAME="RESERVEDSLOT"><SPAN CLASS="definition">RESERVEDSLOT</SPAN></A>    5
+
+
+/*
+** Reader for generic 'load' function: '<A HREF="lapi.c.html#lua_load">lua_load</A>' uses the
+** stack for internal stuff, so the reader cannot change the
+** stack top. Instead, it keeps its resulting string in a
+** reserved slot inside the stack.
+*/
+static const char *<A NAME="generic_reader"><SPAN CLASS="definition">generic_reader</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud, size_t *size) {
+  (void)(ud);  /* not used */
+  <A HREF="lauxlib.c.html#luaL_checkstack">luaL_checkstack</A>(L, 2, "too many nested functions");
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);  /* get function */
+  <A HREF="lua.h.html#lua_call">lua_call</A>(L, 0, 1);  /* call it */
+  if (<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1)) {
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* pop result */
+    *size = 0;
+    return NULL;
+  }
+  else if (!<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>(L, -1))
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "reader function must return a string");
+  <A HREF="lua.h.html#lua_replace">lua_replace</A>(L, <A HREF="lbaselib.c.html#RESERVEDSLOT">RESERVEDSLOT</A>);  /* save string in reserved slot */
+  return <A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>(L, <A HREF="lbaselib.c.html#RESERVEDSLOT">RESERVEDSLOT</A>, size);
+}
+
+
+static int <A NAME="luaB_load"><SPAN CLASS="definition">luaB_load</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int status;
+  size_t l;
+  const char *s = <A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>(L, 1, &amp;l);
+  const char *mode = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 3, "bt");
+  int env = (!<A HREF="lua.h.html#lua_isnone">lua_isnone</A>(L, 4) ? 4 : 0);  /* 'env' index or 0 if no 'env' */
+  if (s != NULL) {  /* loading a string? */
+    const char *chunkname = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 2, s);
+    status = <A HREF="lauxlib.c.html#luaL_loadbufferx">luaL_loadbufferx</A>(L, s, l, chunkname, mode);
+  }
+  else {  /* loading from a reader function */
+    const char *chunkname = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 2, "=(load)");
+    <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);
+    <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, <A HREF="lbaselib.c.html#RESERVEDSLOT">RESERVEDSLOT</A>);  /* create reserved slot */
+    status = <A HREF="lapi.c.html#lua_load">lua_load</A>(L, <A HREF="lbaselib.c.html#generic_reader">generic_reader</A>, NULL, chunkname, mode);
+  }
+  return <A HREF="lbaselib.c.html#load_aux">load_aux</A>(L, status, env);
+}
+
+/* }====================================================== */
+
+
+static int <A NAME="dofilecont"><SPAN CLASS="definition">dofilecont</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int d1, <A HREF="lua.h.html#lua_KContext">lua_KContext</A> d2) {
+  (void)d1;  (void)d2;  /* only to match 'lua_Kfunction' prototype */
+  return <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) - 1;
+}
+
+
+static int <A NAME="luaB_dofile"><SPAN CLASS="definition">luaB_dofile</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *fname = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 1, NULL);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 1);
+  if (<A HREF="lauxlib.h.html#luaL_loadfile">luaL_loadfile</A>(L, fname) != <A HREF="lua.h.html#LUA_OK">LUA_OK</A>)
+    return <A HREF="lapi.c.html#lua_error">lua_error</A>(L);
+  <A HREF="lapi.c.html#lua_callk">lua_callk</A>(L, 0, <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>, 0, <A HREF="lbaselib.c.html#dofilecont">dofilecont</A>);
+  return <A HREF="lbaselib.c.html#dofilecont">dofilecont</A>(L, 0, 0);
+}
+
+
+static int <A NAME="luaB_assert"><SPAN CLASS="definition">luaB_assert</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  if (<A HREF="lapi.c.html#lua_toboolean">lua_toboolean</A>(L, 1))  /* condition is true? */
+    return <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);  /* return all arguments */
+  else {  /* error */
+    <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 1);  /* there must be a condition */
+    <A HREF="lua.h.html#lua_remove">lua_remove</A>(L, 1);  /* remove it */
+    <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "assertion failed!");  /* default message */
+    <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 1);  /* leave only message (default if no other one) */
+    return <A HREF="lbaselib.c.html#luaB_error">luaB_error</A>(L);  /* call 'error' */
+  }
+}
+
+
+static int <A NAME="luaB_select"><SPAN CLASS="definition">luaB_select</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);
+  if (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, 1) == <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A> &amp;&amp; *<A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, 1) == '#') {
+    <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, n-1);
+    return 1;
+  }
+  else {
+    <A HREF="lua.h.html#lua_Integer">lua_Integer</A> i = <A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, 1);
+    if (i &lt; 0) i = n + i;
+    else if (i &gt; n) i = n;
+    <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, 1 &lt;= i, 1, "index out of range");
+    return n - (int)i;
+  }
+}
+
+
+/*
+** Continuation function for 'pcall' and 'xpcall'. Both functions
+** already pushed a 'true' before doing the call, so in case of success
+** '<A HREF="lbaselib.c.html#finishpcall">finishpcall</A>' only has to return everything in the stack minus
+** 'extra' values (where 'extra' is exactly the number of items to be
+** ignored).
+*/
+static int <A NAME="finishpcall"><SPAN CLASS="definition">finishpcall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int status, <A HREF="lua.h.html#lua_KContext">lua_KContext</A> extra) {
+  if (status != <A HREF="lua.h.html#LUA_OK">LUA_OK</A> &amp;&amp; status != <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>) {  /* error? */
+    <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 0);  /* first result (false) */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -2);  /* error message */
+    return 2;  /* return false, msg */
+  }
+  else
+    return <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) - (int)extra;  /* return all results */
+}
+
+
+static int <A NAME="luaB_pcall"><SPAN CLASS="definition">luaB_pcall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int status;
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 1);
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 1);  /* first result if no errors */
+  <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, 1);  /* put it in place */
+  status = <A HREF="lapi.c.html#lua_pcallk">lua_pcallk</A>(L, <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) - 2, <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>, 0, 0, <A HREF="lbaselib.c.html#finishpcall">finishpcall</A>);
+  return <A HREF="lbaselib.c.html#finishpcall">finishpcall</A>(L, status, 0);
+}
+
+
+/*
+** Do a protected call with error handling. After '<A HREF="lapi.c.html#lua_rotate">lua_rotate</A>', the
+** stack will have &lt;f, err, true, f, [args...]&gt;; so, the function passes
+** 2 to '<A HREF="lbaselib.c.html#finishpcall">finishpcall</A>' to skip the 2 first values when returning results.
+*/
+static int <A NAME="luaB_xpcall"><SPAN CLASS="definition">luaB_xpcall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int status;
+  int n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 2, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);  /* check error function */
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 1);  /* first result */
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);  /* function */
+  <A HREF="lapi.c.html#lua_rotate">lua_rotate</A>(L, 3, 2);  /* move them below function's arguments */
+  status = <A HREF="lapi.c.html#lua_pcallk">lua_pcallk</A>(L, n - 2, <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>, 2, 2, <A HREF="lbaselib.c.html#finishpcall">finishpcall</A>);
+  return <A HREF="lbaselib.c.html#finishpcall">finishpcall</A>(L, status, 2);
+}
+
+
+static int <A NAME="luaB_tostring"><SPAN CLASS="definition">luaB_tostring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 1);
+  <A HREF="lauxlib.c.html#luaL_tolstring">luaL_tolstring</A>(L, 1, NULL);
+  return 1;
+}
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="base_funcs"><SPAN CLASS="definition">base_funcs</SPAN></A>[] = {
+  {"assert", <A HREF="lbaselib.c.html#luaB_assert">luaB_assert</A>},
+  {"collectgarbage", <A HREF="lbaselib.c.html#luaB_collectgarbage">luaB_collectgarbage</A>},
+  {"dofile", <A HREF="lbaselib.c.html#luaB_dofile">luaB_dofile</A>},
+  {"error", <A HREF="lbaselib.c.html#luaB_error">luaB_error</A>},
+  {"getmetatable", <A HREF="lbaselib.c.html#luaB_getmetatable">luaB_getmetatable</A>},
+  {"ipairs", <A HREF="lbaselib.c.html#luaB_ipairs">luaB_ipairs</A>},
+  {"loadfile", <A HREF="lbaselib.c.html#luaB_loadfile">luaB_loadfile</A>},
+  {"load", <A HREF="lbaselib.c.html#luaB_load">luaB_load</A>},
+#if defined(<A HREF="luaconf.h.html#LUA_COMPAT_LOADSTRING">LUA_COMPAT_LOADSTRING</A>)
+  {"loadstring", <A HREF="lbaselib.c.html#luaB_load">luaB_load</A>},
+#endif
+  {"next", <A HREF="lbaselib.c.html#luaB_next">luaB_next</A>},
+  {"pairs", <A HREF="lbaselib.c.html#luaB_pairs">luaB_pairs</A>},
+  {"pcall", <A HREF="lbaselib.c.html#luaB_pcall">luaB_pcall</A>},
+  {"print", <A HREF="lbaselib.c.html#luaB_print">luaB_print</A>},
+  {"rawequal", <A HREF="lbaselib.c.html#luaB_rawequal">luaB_rawequal</A>},
+  {"rawlen", <A HREF="lbaselib.c.html#luaB_rawlen">luaB_rawlen</A>},
+  {"rawget", <A HREF="lbaselib.c.html#luaB_rawget">luaB_rawget</A>},
+  {"rawset", <A HREF="lbaselib.c.html#luaB_rawset">luaB_rawset</A>},
+  {"select", <A HREF="lbaselib.c.html#luaB_select">luaB_select</A>},
+  {"setmetatable", <A HREF="lbaselib.c.html#luaB_setmetatable">luaB_setmetatable</A>},
+  {"<A HREF="lvm.h.html#tonumber">tonumber</A>", <A HREF="lbaselib.c.html#luaB_tonumber">luaB_tonumber</A>},
+  {"tostring", <A HREF="lbaselib.c.html#luaB_tostring">luaB_tostring</A>},
+  {"type", <A HREF="lbaselib.c.html#luaB_type">luaB_type</A>},
+  {"xpcall", <A HREF="lbaselib.c.html#luaB_xpcall">luaB_xpcall</A>},
+  /* placeholders */
+  {"_G", NULL},
+  {"_VERSION", NULL},
+  {NULL, NULL}
+};
+
+
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int <A NAME="luaopen_base"><SPAN CLASS="definition">luaopen_base</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  /* open lib into global table */
+  <A HREF="lua.h.html#lua_pushglobaltable">lua_pushglobaltable</A>(L);
+  <A HREF="lauxlib.c.html#luaL_setfuncs">luaL_setfuncs</A>(L, <A HREF="lbaselib.c.html#base_funcs">base_funcs</A>, 0);
+  /* set global _G */
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "_G");
+  /* set global _VERSION */
+  <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, <A HREF="lua.h.html#LUA_VERSION">LUA_VERSION</A>);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "_VERSION");
+  return 1;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:13 2015
+</P>
+
+</BODY>
+</HTML>

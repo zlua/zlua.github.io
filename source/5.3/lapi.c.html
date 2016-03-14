@@ -1,0 +1,1333 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lapi.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lapi.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lapi.c,v 2.257 2015/11/02 18:48:07 roberto Exp $
+** Lua API
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lapi_c"><SPAN CLASS="definition">lapi_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;stdarg.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lapi.h.html">lapi.h</A>"
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+
+
+
+const char <A NAME="lua_ident"><SPAN CLASS="definition">lua_ident</SPAN></A>[] =
+  "$LuaVersion: " <A HREF="lua.h.html#LUA_COPYRIGHT">LUA_COPYRIGHT</A> " $"
+  "$LuaAuthors: " <A HREF="lua.h.html#LUA_AUTHORS">LUA_AUTHORS</A> " $";
+
+
+/* value at a non-valid index */
+#define <A NAME="NONVALIDVALUE"><SPAN CLASS="definition">NONVALIDVALUE</SPAN></A>           <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#TValue">TValue</A> *, <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>)
+
+/* corresponding test */
+#define <A NAME="isvalid"><SPAN CLASS="definition">isvalid</SPAN></A>(o)      ((o) != <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>)
+
+/* test for pseudo index */
+#define <A NAME="ispseudo"><SPAN CLASS="definition">ispseudo</SPAN></A>(i)             ((i) &lt;= <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>)
+
+/* test for upvalue */
+#define <A NAME="isupvalue"><SPAN CLASS="definition">isupvalue</SPAN></A>(i)            ((i) &lt; <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>)
+
+/* test for valid but not pseudo index */
+#define <A NAME="isstackindex"><SPAN CLASS="definition">isstackindex</SPAN></A>(i, o)      (<A HREF="lapi.c.html#isvalid">isvalid</A>(o) &amp;&amp; !<A HREF="lapi.c.html#ispseudo">ispseudo</A>(i))
+
+#define <A NAME="api_checkvalidindex"><SPAN CLASS="definition">api_checkvalidindex</SPAN></A>(l,o)  <A HREF="llimits.h.html#api_check">api_check</A>(l, <A HREF="lapi.c.html#isvalid">isvalid</A>(o), "invalid index")
+
+#define <A NAME="api_checkstackindex"><SPAN CLASS="definition">api_checkstackindex</SPAN></A>(l, i, o)  \
+        <A HREF="llimits.h.html#api_check">api_check</A>(l, <A HREF="lapi.c.html#isstackindex">isstackindex</A>(i, o), "index not in the stack")
+
+
+static <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="index2addr"><SPAN CLASS="definition">index2addr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci;
+  if (idx &gt; 0) {
+    <A HREF="lobject.h.html#TValue">TValue</A> *o = ci-&gt;func + idx;
+    <A HREF="llimits.h.html#api_check">api_check</A>(L, idx &lt;= ci-&gt;top - (ci-&gt;func + 1), "unacceptable index");
+    if (o &gt;= L-&gt;top) return <A HREF="lapi.c.html#NONVALIDVALUE">NONVALIDVALUE</A>;
+    else return o;
+  }
+  else if (!<A HREF="lapi.c.html#ispseudo">ispseudo</A>(idx)) {  /* negative index */
+    <A HREF="llimits.h.html#api_check">api_check</A>(L, idx != 0 &amp;&amp; -idx &lt;= L-&gt;top - (ci-&gt;func + 1), "invalid index");
+    return L-&gt;top + idx;
+  }
+  else if (idx == <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>)
+    return &amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;l_registry;
+  else {  /* upvalues */
+    idx = <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A> - idx;
+    <A HREF="llimits.h.html#api_check">api_check</A>(L, idx &lt;= <A HREF="lfunc.h.html#MAXUPVAL">MAXUPVAL</A> + 1, "upvalue index too large");
+    if (<A HREF="lobject.h.html#ttislcf">ttislcf</A>(ci-&gt;func))  /* light C function? */
+      return <A HREF="lapi.c.html#NONVALIDVALUE">NONVALIDVALUE</A>;  /* it has no upvalues */
+    else {
+      <A HREF="lobject.h.html#CClosure">CClosure</A> *func = <A HREF="lobject.h.html#clCvalue">clCvalue</A>(ci-&gt;func);
+      return (idx &lt;= func-&gt;nupvalues) ? &amp;func-&gt;upvalue[idx-1] : <A HREF="lapi.c.html#NONVALIDVALUE">NONVALIDVALUE</A>;
+    }
+  }
+}
+
+
+/*
+** to be called by '<A HREF="lapi.c.html#lua_checkstack">lua_checkstack</A>' in protected mode, to grow stack
+** capturing memory errors
+*/
+static void <A NAME="growstack"><SPAN CLASS="definition">growstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  int size = *(int *)ud;
+  <A HREF="ldo.c.html#luaD_growstack">luaD_growstack</A>(L, size);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_checkstack"><SPAN CLASS="definition">lua_checkstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  int res;
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, n &gt;= 0, "negative 'n'");
+  if (L-&gt;stack_last - L-&gt;top &gt; n)  /* stack large enough? */
+    res = 1;  /* yes; check is OK */
+  else {  /* no; need to grow stack */
+    int inuse = <A HREF="llimits.h.html#cast_int">cast_int</A>(L-&gt;top - L-&gt;stack) + <A HREF="lstate.h.html#EXTRA_STACK">EXTRA_STACK</A>;
+    if (inuse &gt; <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A> - n)  /* can grow without overflow? */
+      res = 0;  /* no */
+    else  /* try to grow stack */
+      res = (<A HREF="ldo.c.html#luaD_rawrunprotected">luaD_rawrunprotected</A>(L, &amp;<A HREF="lapi.c.html#growstack">growstack</A>, &amp;n) == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>);
+  }
+  if (res &amp;&amp; ci-&gt;top &lt; L-&gt;top + n)
+    ci-&gt;top = L-&gt;top + n;  /* adjust frame top */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return res;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_xmove"><SPAN CLASS="definition">lua_xmove</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *from, <A HREF="lstate.h.html#lua_State">lua_State</A> *to, int n) {
+  int i;
+  if (from == to) return;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(to);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(from, n);
+  <A HREF="llimits.h.html#api_check">api_check</A>(from, <A HREF="lstate.h.html#G">G</A>(from) == <A HREF="lstate.h.html#G">G</A>(to), "moving among independent states");
+  <A HREF="llimits.h.html#api_check">api_check</A>(from, to-&gt;ci-&gt;top - to-&gt;top &gt;= n, "stack overflow");
+  from-&gt;top -= n;
+  for (i = 0; i &lt; n; i++) {
+    <A HREF="lobject.h.html#setobj2s">setobj2s</A>(to, to-&gt;top, from-&gt;top + i);
+    to-&gt;top++;  /* stack already checked by previous '<A HREF="llimits.h.html#api_check">api_check</A>' */
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(to);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> <A NAME="lua_atpanic"><SPAN CLASS="definition">lua_atpanic</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> panicf) {
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> old;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  old = <A HREF="lstate.h.html#G">G</A>(L)-&gt;panic;
+  <A HREF="lstate.h.html#G">G</A>(L)-&gt;panic = panicf;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return old;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const <A HREF="lua.h.html#lua_Number">lua_Number</A> *<A NAME="lua_version"><SPAN CLASS="definition">lua_version</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  static const <A HREF="lua.h.html#lua_Number">lua_Number</A> version = <A HREF="lua.h.html#LUA_VERSION_NUM">LUA_VERSION_NUM</A>;
+  if (L == NULL) return &amp;version;
+  else return <A HREF="lstate.h.html#G">G</A>(L)-&gt;version;
+}
+
+
+
+/*
+** basic stack manipulation
+*/
+
+
+/*
+** convert an acceptable stack index into an absolute index
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_absindex"><SPAN CLASS="definition">lua_absindex</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  return (idx &gt; 0 || <A HREF="lapi.c.html#ispseudo">ispseudo</A>(idx))
+         ? idx
+         : <A HREF="llimits.h.html#cast_int">cast_int</A>(L-&gt;top - L-&gt;ci-&gt;func) + idx;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_gettop"><SPAN CLASS="definition">lua_gettop</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="llimits.h.html#cast_int">cast_int</A>(L-&gt;top - (L-&gt;ci-&gt;func + 1));
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_settop"><SPAN CLASS="definition">lua_settop</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> func = L-&gt;ci-&gt;func;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  if (idx &gt;= 0) {
+    <A HREF="llimits.h.html#api_check">api_check</A>(L, idx &lt;= L-&gt;stack_last - (func + 1), "new top too large");
+    while (L-&gt;top &lt; (func + 1) + idx)
+      <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(L-&gt;top++);
+    L-&gt;top = (func + 1) + idx;
+  }
+  else {
+    <A HREF="llimits.h.html#api_check">api_check</A>(L, -(idx+1) &lt;= (L-&gt;top - (func + 1)), "invalid new top");
+    L-&gt;top += idx+1;  /* 'subtract' index (index is negative) */
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+/*
+** Reverse the stack segment from 'from' to 'to'
+** (auxiliary to '<A HREF="lapi.c.html#lua_rotate">lua_rotate</A>')
+*/
+static void <A NAME="reverse"><SPAN CLASS="definition">reverse</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> from, <A HREF="lobject.h.html#StkId">StkId</A> to) {
+  for (; from &lt; to; from++, to--) {
+    <A HREF="lobject.h.html#TValue">TValue</A> temp;
+    <A HREF="lobject.h.html#setobj">setobj</A>(L, &amp;temp, from);
+    <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, from, to);
+    <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, to, &amp;temp);
+  }
+}
+
+
+/*
+** Let x = AB, where A is a prefix of length 'n'. Then,
+** rotate x n == BA. But BA == (A^r . B^r)^r.
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_rotate"><SPAN CLASS="definition">lua_rotate</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, int n) {
+  <A HREF="lobject.h.html#StkId">StkId</A> p, t, m;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  t = L-&gt;top - 1;  /* end of stack segment being rotated */
+  p = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);  /* start of segment */
+  <A HREF="lapi.c.html#api_checkstackindex">api_checkstackindex</A>(L, idx, p);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, (n &gt;= 0 ? n : -n) &lt;= (t - p + 1), "invalid 'n'");
+  m = (n &gt;= 0 ? t - n : p - n - 1);  /* end of prefix */
+  <A HREF="lapi.c.html#reverse">reverse</A>(L, p, m);  /* <A HREF="lapi.c.html#reverse">reverse</A> the prefix with length 'n' */
+  <A HREF="lapi.c.html#reverse">reverse</A>(L, m + 1, t);  /* <A HREF="lapi.c.html#reverse">reverse</A> the suffix */
+  <A HREF="lapi.c.html#reverse">reverse</A>(L, p, t);  /* <A HREF="lapi.c.html#reverse">reverse</A> the entire segment */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_copy"><SPAN CLASS="definition">lua_copy</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int fromidx, int toidx) {
+  <A HREF="lobject.h.html#TValue">TValue</A> *fr, *to;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  fr = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, fromidx);
+  to = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, toidx);
+  <A HREF="lapi.c.html#api_checkvalidindex">api_checkvalidindex</A>(L, to);
+  <A HREF="lobject.h.html#setobj">setobj</A>(L, to, fr);
+  if (<A HREF="lapi.c.html#isupvalue">isupvalue</A>(toidx))  /* function upvalue? */
+    <A HREF="lgc.h.html#luaC_barrier">luaC_barrier</A>(L, <A HREF="lobject.h.html#clCvalue">clCvalue</A>(L-&gt;ci-&gt;func), fr);
+  /* <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A> does not need gc barrier
+     (collector revisits it before finishing collection) */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_pushvalue"><SPAN CLASS="definition">lua_pushvalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top, <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx));
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+
+/*
+** access functions (stack -&gt; C)
+*/
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_type"><SPAN CLASS="definition">lua_type</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  return (<A HREF="lapi.c.html#isvalid">isvalid</A>(o) ? <A HREF="lobject.h.html#ttnov">ttnov</A>(o) : <A HREF="lua.h.html#LUA_TNONE">LUA_TNONE</A>);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_typename"><SPAN CLASS="definition">lua_typename</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int t) {
+  <A HREF="llimits.h.html#UNUSED">UNUSED</A>(L);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lua.h.html#LUA_TNONE">LUA_TNONE</A> &lt;= t &amp;&amp; t &lt; <A HREF="lua.h.html#LUA_NUMTAGS">LUA_NUMTAGS</A>, "invalid tag");
+  return <A HREF="ltm.h.html#ttypename">ttypename</A>(t);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_iscfunction"><SPAN CLASS="definition">lua_iscfunction</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  return (<A HREF="lobject.h.html#ttislcf">ttislcf</A>(o) || (<A HREF="lobject.h.html#ttisCclosure">ttisCclosure</A>(o)));
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_isinteger"><SPAN CLASS="definition">lua_isinteger</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  return <A HREF="lobject.h.html#ttisinteger">ttisinteger</A>(o);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_isnumber"><SPAN CLASS="definition">lua_isnumber</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> n;
+  const <A HREF="lobject.h.html#TValue">TValue</A> *o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  return <A HREF="lvm.h.html#tonumber">tonumber</A>(o, &amp;n);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_isstring"><SPAN CLASS="definition">lua_isstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  return (<A HREF="lobject.h.html#ttisstring">ttisstring</A>(o) || <A HREF="lvm.h.html#cvt2str">cvt2str</A>(o));
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_isuserdata"><SPAN CLASS="definition">lua_isuserdata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  return (<A HREF="lobject.h.html#ttisfulluserdata">ttisfulluserdata</A>(o) || <A HREF="lobject.h.html#ttislightuserdata">ttislightuserdata</A>(o));
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_rawequal"><SPAN CLASS="definition">lua_rawequal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int index1, int index2) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o1 = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, index1);
+  <A HREF="lobject.h.html#StkId">StkId</A> o2 = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, index2);
+  return (<A HREF="lapi.c.html#isvalid">isvalid</A>(o1) &amp;&amp; <A HREF="lapi.c.html#isvalid">isvalid</A>(o2)) ? <A HREF="lvm.h.html#luaV_rawequalobj">luaV_rawequalobj</A>(o1, o2) : 0;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_arith"><SPAN CLASS="definition">lua_arith</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int op) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  if (op != <A HREF="lua.h.html#LUA_OPUNM">LUA_OPUNM</A> &amp;&amp; op != <A HREF="lua.h.html#LUA_OPBNOT">LUA_OPBNOT</A>)
+    <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 2);  /* all other operations expect two operands */
+  else {  /* for unary operations, add fake 2nd operand */
+    <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+    <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, L-&gt;top, L-&gt;top - 1);
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  }
+  /* first operand at top - 2, second at top - 1; result go to top - 2 */
+  <A HREF="lobject.c.html#luaO_arith">luaO_arith</A>(L, op, L-&gt;top - 2, L-&gt;top - 1, L-&gt;top - 2);
+  L-&gt;top--;  /* remove second operand */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_compare"><SPAN CLASS="definition">lua_compare</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int index1, int index2, int op) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o1, o2;
+  int i = 0;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);  /* may call tag method */
+  o1 = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, index1);
+  o2 = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, index2);
+  if (<A HREF="lapi.c.html#isvalid">isvalid</A>(o1) &amp;&amp; <A HREF="lapi.c.html#isvalid">isvalid</A>(o2)) {
+    switch (op) {
+      case <A HREF="lua.h.html#LUA_OPEQ">LUA_OPEQ</A>: i = <A HREF="lvm.c.html#luaV_equalobj">luaV_equalobj</A>(L, o1, o2); break;
+      case <A HREF="lua.h.html#LUA_OPLT">LUA_OPLT</A>: i = <A HREF="lvm.c.html#luaV_lessthan">luaV_lessthan</A>(L, o1, o2); break;
+      case <A HREF="lua.h.html#LUA_OPLE">LUA_OPLE</A>: i = <A HREF="lvm.c.html#luaV_lessequal">luaV_lessequal</A>(L, o1, o2); break;
+      default: <A HREF="llimits.h.html#api_check">api_check</A>(L, 0, "invalid option");
+    }
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return i;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> size_t <A NAME="lua_stringtonumber"><SPAN CLASS="definition">lua_stringtonumber</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s) {
+  size_t sz = <A HREF="lobject.c.html#luaO_str2num">luaO_str2num</A>(s, L-&gt;top);
+  if (sz != 0)
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  return sz;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_Number">lua_Number</A> <A NAME="lua_tonumberx"><SPAN CLASS="definition">lua_tonumberx</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, int *pisnum) {
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> n;
+  const <A HREF="lobject.h.html#TValue">TValue</A> *o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  int isnum = <A HREF="lvm.h.html#tonumber">tonumber</A>(o, &amp;n);
+  if (!isnum)
+    n = 0;  /* call to '<A HREF="lvm.h.html#tonumber">tonumber</A>' may change 'n' even if it fails */
+  if (pisnum) *pisnum = isnum;
+  return n;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_Integer">lua_Integer</A> <A NAME="lua_tointegerx"><SPAN CLASS="definition">lua_tointegerx</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, int *pisnum) {
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> res;
+  const <A HREF="lobject.h.html#TValue">TValue</A> *o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  int isnum = <A HREF="lvm.h.html#tointeger">tointeger</A>(o, &amp;res);
+  if (!isnum)
+    res = 0;  /* call to '<A HREF="lvm.h.html#tointeger">tointeger</A>' may change 'n' even if it fails */
+  if (pisnum) *pisnum = isnum;
+  return res;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_toboolean"><SPAN CLASS="definition">lua_toboolean</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  return !<A HREF="lobject.h.html#l_isfalse">l_isfalse</A>(o);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_tolstring"><SPAN CLASS="definition">lua_tolstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, size_t *len) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  if (!<A HREF="lobject.h.html#ttisstring">ttisstring</A>(o)) {
+    if (!<A HREF="lvm.h.html#cvt2str">cvt2str</A>(o)) {  /* not convertible? */
+      if (len != NULL) *len = 0;
+      return NULL;
+    }
+    <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);  /* '<A HREF="lobject.c.html#luaO_tostring">luaO_tostring</A>' may create a new string */
+    <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+    o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);  /* previous call may reallocate the stack */
+    <A HREF="lobject.c.html#luaO_tostring">luaO_tostring</A>(L, o);
+    <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  }
+  if (len != NULL)
+    *len = <A HREF="lobject.h.html#vslen">vslen</A>(o);
+  return <A HREF="lobject.h.html#svalue">svalue</A>(o);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> size_t <A NAME="lua_rawlen"><SPAN CLASS="definition">lua_rawlen</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(o)) {
+    case <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>: return <A HREF="lobject.h.html#tsvalue">tsvalue</A>(o)-&gt;shrlen;
+    case <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>: return <A HREF="lobject.h.html#tsvalue">tsvalue</A>(o)-&gt;u.lnglen;
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>: return <A HREF="lobject.h.html#uvalue">uvalue</A>(o)-&gt;len;
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: return <A HREF="ltable.c.html#luaH_getn">luaH_getn</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(o));
+    default: return 0;
+  }
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> <A NAME="lua_tocfunction"><SPAN CLASS="definition">lua_tocfunction</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  if (<A HREF="lobject.h.html#ttislcf">ttislcf</A>(o)) return <A HREF="lobject.h.html#fvalue">fvalue</A>(o);
+  else if (<A HREF="lobject.h.html#ttisCclosure">ttisCclosure</A>(o))
+    return <A HREF="lobject.h.html#clCvalue">clCvalue</A>(o)-&gt;f;
+  else return NULL;  /* not a C function */
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void *<A NAME="lua_touserdata"><SPAN CLASS="definition">lua_touserdata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  switch (<A HREF="lobject.h.html#ttnov">ttnov</A>(o)) {
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>: return <A HREF="lobject.h.html#getudatamem">getudatamem</A>(<A HREF="lobject.h.html#uvalue">uvalue</A>(o));
+    case <A HREF="lua.h.html#LUA_TLIGHTUSERDATA">LUA_TLIGHTUSERDATA</A>: return <A HREF="lobject.h.html#pvalue">pvalue</A>(o);
+    default: return NULL;
+  }
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lstate.h.html#lua_State">lua_State</A> *<A NAME="lua_tothread"><SPAN CLASS="definition">lua_tothread</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  return (!<A HREF="lobject.h.html#ttisthread">ttisthread</A>(o)) ? NULL : <A HREF="lobject.h.html#thvalue">thvalue</A>(o);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const void *<A NAME="lua_topointer"><SPAN CLASS="definition">lua_topointer</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(o)) {
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: return <A HREF="lobject.h.html#hvalue">hvalue</A>(o);
+    case <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>: return <A HREF="lobject.h.html#clLvalue">clLvalue</A>(o);
+    case <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>: return <A HREF="lobject.h.html#clCvalue">clCvalue</A>(o);
+    case <A HREF="lobject.h.html#LUA_TLCF">LUA_TLCF</A>: return <A HREF="llimits.h.html#cast">cast</A>(void *, <A HREF="llimits.h.html#cast">cast</A>(size_t, <A HREF="lobject.h.html#fvalue">fvalue</A>(o)));
+    case <A HREF="lua.h.html#LUA_TTHREAD">LUA_TTHREAD</A>: return <A HREF="lobject.h.html#thvalue">thvalue</A>(o);
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>: return <A HREF="lobject.h.html#getudatamem">getudatamem</A>(<A HREF="lobject.h.html#uvalue">uvalue</A>(o));
+    case <A HREF="lua.h.html#LUA_TLIGHTUSERDATA">LUA_TLIGHTUSERDATA</A>: return <A HREF="lobject.h.html#pvalue">pvalue</A>(o);
+    default: return NULL;
+  }
+}
+
+
+
+/*
+** push functions (C -&gt; stack)
+*/
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_pushnil"><SPAN CLASS="definition">lua_pushnil</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(L-&gt;top);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_pushnumber"><SPAN CLASS="definition">lua_pushnumber</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Number">lua_Number</A> n) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lobject.h.html#setfltvalue">setfltvalue</A>(L-&gt;top, n);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_pushinteger"><SPAN CLASS="definition">lua_pushinteger</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lobject.h.html#setivalue">setivalue</A>(L-&gt;top, n);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+/*
+** Pushes on the stack a string with given length. Avoid using 's' when
+** 'len' == 0 (as 's' can be NULL in that case), due to later use of
+** 'memcmp' and 'memcpy'.
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_pushlstring"><SPAN CLASS="definition">lua_pushlstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, size_t len) {
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+  ts = (len == 0) ? <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, "") : <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, s, len);
+  <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, ts);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#getstr">getstr</A>(ts);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_pushstring"><SPAN CLASS="definition">lua_pushstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  if (s == NULL)
+    <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(L-&gt;top);
+  else {
+    <A HREF="lobject.h.html#TString">TString</A> *ts;
+    <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+    ts = <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, s);
+    <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, ts);
+    s = <A HREF="lobject.h.html#getstr">getstr</A>(ts);  /* internal copy's address */
+  }
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return s;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_pushvfstring"><SPAN CLASS="definition">lua_pushvfstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt,
+                                      va_list argp) {
+  const char *ret;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+  ret = <A HREF="lobject.c.html#luaO_pushvfstring">luaO_pushvfstring</A>(L, fmt, argp);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return ret;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_pushfstring"><SPAN CLASS="definition">lua_pushfstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...) {
+  const char *ret;
+  va_list argp;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+  va_start(argp, fmt);
+  ret = <A HREF="lobject.c.html#luaO_pushvfstring">luaO_pushvfstring</A>(L, fmt, argp);
+  va_end(argp);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return ret;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_pushcclosure"><SPAN CLASS="definition">lua_pushcclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> fn, int n) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  if (n == 0) {
+    <A HREF="lobject.h.html#setfvalue">setfvalue</A>(L-&gt;top, fn);
+  }
+  else {
+    <A HREF="lobject.h.html#CClosure">CClosure</A> *cl;
+    <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, n);
+    <A HREF="llimits.h.html#api_check">api_check</A>(L, n &lt;= <A HREF="lfunc.h.html#MAXUPVAL">MAXUPVAL</A>, "upvalue index too large");
+    <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+    cl = <A HREF="lfunc.c.html#luaF_newCclosure">luaF_newCclosure</A>(L, n);
+    cl-&gt;f = fn;
+    L-&gt;top -= n;
+    while (n--) {
+      <A HREF="lobject.h.html#setobj2n">setobj2n</A>(L, &amp;cl-&gt;upvalue[n], L-&gt;top + n);
+      /* does not need barrier because closure is white */
+    }
+    <A HREF="lobject.h.html#setclCvalue">setclCvalue</A>(L, L-&gt;top, cl);
+  }
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_pushboolean"><SPAN CLASS="definition">lua_pushboolean</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int b) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lobject.h.html#setbvalue">setbvalue</A>(L-&gt;top, (b != 0));  /* ensure that true is 1 */
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_pushlightuserdata"><SPAN CLASS="definition">lua_pushlightuserdata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *p) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lobject.h.html#setpvalue">setpvalue</A>(L-&gt;top, p);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_pushthread"><SPAN CLASS="definition">lua_pushthread</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lobject.h.html#setthvalue">setthvalue</A>(L, L-&gt;top, L);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return (<A HREF="lstate.h.html#G">G</A>(L)-&gt;mainthread == L);
+}
+
+
+
+/*
+** get functions (Lua -&gt; stack)
+*/
+
+
+static int <A NAME="auxgetstr"><SPAN CLASS="definition">auxgetstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *t, const char *k) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *aux;
+  <A HREF="lobject.h.html#TString">TString</A> *str = <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, k);
+  if (<A HREF="lvm.h.html#luaV_fastget">luaV_fastget</A>(L, t, str, aux, <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>)) {
+    <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top, aux);
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  }
+  else {
+    <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, str);
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+    <A HREF="lvm.c.html#luaV_finishget">luaV_finishget</A>(L, t, L-&gt;top - 1, L-&gt;top - 1, aux);
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#ttnov">ttnov</A>(L-&gt;top - 1);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_getglobal"><SPAN CLASS="definition">lua_getglobal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *name) {
+  <A HREF="lobject.h.html#Table">Table</A> *reg = <A HREF="lobject.h.html#hvalue">hvalue</A>(&amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;l_registry);
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  return <A HREF="lapi.c.html#auxgetstr">auxgetstr</A>(L, <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(reg, <A HREF="lua.h.html#LUA_RIDX_GLOBALS">LUA_RIDX_GLOBALS</A>), name);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_gettable"><SPAN CLASS="definition">lua_gettable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="lvm.h.html#luaV_gettable">luaV_gettable</A>(L, t, L-&gt;top - 1, L-&gt;top - 1);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#ttnov">ttnov</A>(L-&gt;top - 1);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_getfield"><SPAN CLASS="definition">lua_getfield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, const char *k) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  return <A HREF="lapi.c.html#auxgetstr">auxgetstr</A>(L, <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx), k);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_geti"><SPAN CLASS="definition">lua_geti</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  const <A HREF="lobject.h.html#TValue">TValue</A> *aux;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  if (<A HREF="lvm.h.html#luaV_fastget">luaV_fastget</A>(L, t, n, aux, <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>)) {
+    <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top, aux);
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  }
+  else {
+    <A HREF="lobject.h.html#setivalue">setivalue</A>(L-&gt;top, n);
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+    <A HREF="lvm.c.html#luaV_finishget">luaV_finishget</A>(L, t, L-&gt;top - 1, L-&gt;top - 1, aux);
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#ttnov">ttnov</A>(L-&gt;top - 1);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_rawget"><SPAN CLASS="definition">lua_rawget</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(t), "table expected");
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top - 1, <A HREF="ltable.c.html#luaH_get">luaH_get</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(t), L-&gt;top - 1));
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#ttnov">ttnov</A>(L-&gt;top - 1);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_rawgeti"><SPAN CLASS="definition">lua_rawgeti</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(t), "table expected");
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top, <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(t), n));
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#ttnov">ttnov</A>(L-&gt;top - 1);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_rawgetp"><SPAN CLASS="definition">lua_rawgetp</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, const void *p) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  <A HREF="lobject.h.html#TValue">TValue</A> k;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(t), "table expected");
+  <A HREF="lobject.h.html#setpvalue">setpvalue</A>(&amp;k, <A HREF="llimits.h.html#cast">cast</A>(void *, p));
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top, <A HREF="ltable.c.html#luaH_get">luaH_get</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(t), &amp;k));
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#ttnov">ttnov</A>(L-&gt;top - 1);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_createtable"><SPAN CLASS="definition">lua_createtable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narray, int nrec) {
+  <A HREF="lobject.h.html#Table">Table</A> *t;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+  t = <A HREF="ltable.c.html#luaH_new">luaH_new</A>(L);
+  <A HREF="lobject.h.html#sethvalue">sethvalue</A>(L, L-&gt;top, t);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  if (narray &gt; 0 || nrec &gt; 0)
+    <A HREF="ltable.c.html#luaH_resize">luaH_resize</A>(L, t, narray, nrec);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_getmetatable"><SPAN CLASS="definition">lua_getmetatable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int objindex) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *obj;
+  <A HREF="lobject.h.html#Table">Table</A> *mt;
+  int res = 0;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  obj = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, objindex);
+  switch (<A HREF="lobject.h.html#ttnov">ttnov</A>(obj)) {
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>:
+      mt = <A HREF="lobject.h.html#hvalue">hvalue</A>(obj)-&gt;metatable;
+      break;
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>:
+      mt = <A HREF="lobject.h.html#uvalue">uvalue</A>(obj)-&gt;metatable;
+      break;
+    default:
+      mt = <A HREF="lstate.h.html#G">G</A>(L)-&gt;mt[<A HREF="lobject.h.html#ttnov">ttnov</A>(obj)];
+      break;
+  }
+  if (mt != NULL) {
+    <A HREF="lobject.h.html#sethvalue">sethvalue</A>(L, L-&gt;top, mt);
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+    res = 1;
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return res;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_getuservalue"><SPAN CLASS="definition">lua_getuservalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttisfulluserdata">ttisfulluserdata</A>(o), "full userdata expected");
+  <A HREF="lobject.h.html#getuservalue">getuservalue</A>(L, <A HREF="lobject.h.html#uvalue">uvalue</A>(o), L-&gt;top);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#ttnov">ttnov</A>(L-&gt;top - 1);
+}
+
+
+/*
+** set functions (stack -&gt; Lua)
+*/
+
+/*
+** t[k] = value at the top of the stack (where 'k' is a string)
+*/
+static void <A NAME="auxsetstr"><SPAN CLASS="definition">auxsetstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *t, const char *k) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *aux;
+  <A HREF="lobject.h.html#TString">TString</A> *str = <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, k);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  if (<A HREF="lvm.h.html#luaV_fastset">luaV_fastset</A>(L, t, str, aux, <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>, L-&gt;top - 1))
+    L-&gt;top--;  /* pop value */
+  else {
+    <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, str);  /* push 'str' (to make it a <A HREF="lobject.h.html#TValue">TValue</A>) */
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+    <A HREF="lvm.c.html#luaV_finishset">luaV_finishset</A>(L, t, L-&gt;top - 1, L-&gt;top - 2, aux);
+    L-&gt;top -= 2;  /* pop value and key */
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);  /* lock done by caller */
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_setglobal"><SPAN CLASS="definition">lua_setglobal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *name) {
+  <A HREF="lobject.h.html#Table">Table</A> *reg = <A HREF="lobject.h.html#hvalue">hvalue</A>(&amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;l_registry);
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);  /* unlock done in '<A HREF="lapi.c.html#auxsetstr">auxsetstr</A>' */
+  <A HREF="lapi.c.html#auxsetstr">auxsetstr</A>(L, <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(reg, <A HREF="lua.h.html#LUA_RIDX_GLOBALS">LUA_RIDX_GLOBALS</A>), name);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_settable"><SPAN CLASS="definition">lua_settable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 2);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="lvm.h.html#luaV_settable">luaV_settable</A>(L, t, L-&gt;top - 2, L-&gt;top - 1);
+  L-&gt;top -= 2;  /* pop index and value */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_setfield"><SPAN CLASS="definition">lua_setfield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, const char *k) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);  /* unlock done in '<A HREF="lapi.c.html#auxsetstr">auxsetstr</A>' */
+  <A HREF="lapi.c.html#auxsetstr">auxsetstr</A>(L, <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx), k);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_seti"><SPAN CLASS="definition">lua_seti</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  const <A HREF="lobject.h.html#TValue">TValue</A> *aux;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  if (<A HREF="lvm.h.html#luaV_fastset">luaV_fastset</A>(L, t, n, aux, <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>, L-&gt;top - 1))
+    L-&gt;top--;  /* pop value */
+  else {
+    <A HREF="lobject.h.html#setivalue">setivalue</A>(L-&gt;top, n);
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+    <A HREF="lvm.c.html#luaV_finishset">luaV_finishset</A>(L, t, L-&gt;top - 1, L-&gt;top - 2, aux);
+    L-&gt;top -= 2;  /* pop value and key */
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_rawset"><SPAN CLASS="definition">lua_rawset</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o;
+  <A HREF="lobject.h.html#TValue">TValue</A> *slot;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 2);
+  o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(o), "table expected");
+  slot = <A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(o), L-&gt;top - 2);
+  <A HREF="lobject.h.html#setobj2t">setobj2t</A>(L, slot, L-&gt;top - 1);
+  <A HREF="ltable.h.html#invalidateTMcache">invalidateTMcache</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(o));
+  <A HREF="lgc.h.html#luaC_barrierback">luaC_barrierback</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(o), L-&gt;top-1);
+  L-&gt;top -= 2;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_rawseti"><SPAN CLASS="definition">lua_rawseti</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(o), "table expected");
+  <A HREF="ltable.c.html#luaH_setint">luaH_setint</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(o), n, L-&gt;top - 1);
+  <A HREF="lgc.h.html#luaC_barrierback">luaC_barrierback</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(o), L-&gt;top-1);
+  L-&gt;top--;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_rawsetp"><SPAN CLASS="definition">lua_rawsetp</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, const void *p) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o;
+  <A HREF="lobject.h.html#TValue">TValue</A> k, *slot;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(o), "table expected");
+  <A HREF="lobject.h.html#setpvalue">setpvalue</A>(&amp;k, <A HREF="llimits.h.html#cast">cast</A>(void *, p));
+  slot = <A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(o), &amp;k);
+  <A HREF="lobject.h.html#setobj2t">setobj2t</A>(L, slot, L-&gt;top - 1);
+  <A HREF="lgc.h.html#luaC_barrierback">luaC_barrierback</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(o), L-&gt;top - 1);
+  L-&gt;top--;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_setmetatable"><SPAN CLASS="definition">lua_setmetatable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int objindex) {
+  <A HREF="lobject.h.html#TValue">TValue</A> *obj;
+  <A HREF="lobject.h.html#Table">Table</A> *mt;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  obj = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, objindex);
+  if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(L-&gt;top - 1))
+    mt = NULL;
+  else {
+    <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(L-&gt;top - 1), "table expected");
+    mt = <A HREF="lobject.h.html#hvalue">hvalue</A>(L-&gt;top - 1);
+  }
+  switch (<A HREF="lobject.h.html#ttnov">ttnov</A>(obj)) {
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: {
+      <A HREF="lobject.h.html#hvalue">hvalue</A>(obj)-&gt;metatable = mt;
+      if (mt) {
+        <A HREF="lgc.h.html#luaC_objbarrier">luaC_objbarrier</A>(L, <A HREF="lobject.h.html#gcvalue">gcvalue</A>(obj), mt);
+        <A HREF="lgc.c.html#luaC_checkfinalizer">luaC_checkfinalizer</A>(L, <A HREF="lobject.h.html#gcvalue">gcvalue</A>(obj), mt);
+      }
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>: {
+      <A HREF="lobject.h.html#uvalue">uvalue</A>(obj)-&gt;metatable = mt;
+      if (mt) {
+        <A HREF="lgc.h.html#luaC_objbarrier">luaC_objbarrier</A>(L, <A HREF="lobject.h.html#uvalue">uvalue</A>(obj), mt);
+        <A HREF="lgc.c.html#luaC_checkfinalizer">luaC_checkfinalizer</A>(L, <A HREF="lobject.h.html#gcvalue">gcvalue</A>(obj), mt);
+      }
+      break;
+    }
+    default: {
+      <A HREF="lstate.h.html#G">G</A>(L)-&gt;mt[<A HREF="lobject.h.html#ttnov">ttnov</A>(obj)] = mt;
+      break;
+    }
+  }
+  L-&gt;top--;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return 1;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_setuservalue"><SPAN CLASS="definition">lua_setuservalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttisfulluserdata">ttisfulluserdata</A>(o), "full userdata expected");
+  <A HREF="lobject.h.html#setuservalue">setuservalue</A>(L, <A HREF="lobject.h.html#uvalue">uvalue</A>(o), L-&gt;top - 1);
+  <A HREF="lgc.h.html#luaC_barrier">luaC_barrier</A>(L, <A HREF="lobject.h.html#gcvalue">gcvalue</A>(o), L-&gt;top - 1);
+  L-&gt;top--;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+/*
+** 'load' and 'call' functions (run Lua code)
+*/
+
+
+#define <A NAME="checkresults"><SPAN CLASS="definition">checkresults</SPAN></A>(L,na,nr) \
+     <A HREF="llimits.h.html#api_check">api_check</A>(L, (nr) == <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A> || (L-&gt;ci-&gt;top - L-&gt;top &gt;= (nr) - (na)), \
+        "results from function overflow current stack size")
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_callk"><SPAN CLASS="definition">lua_callk</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nargs, int nresults,
+                        <A HREF="lua.h.html#lua_KContext">lua_KContext</A> ctx, <A HREF="lua.h.html#lua_KFunction">lua_KFunction</A> k) {
+  <A HREF="lobject.h.html#StkId">StkId</A> func;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, k == NULL || !<A HREF="lstate.h.html#isLua">isLua</A>(L-&gt;ci),
+    "cannot use continuations inside hooks");
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, nargs+1);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, L-&gt;status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>, "cannot do calls on non-normal thread");
+  <A HREF="lapi.c.html#checkresults">checkresults</A>(L, nargs, nresults);
+  func = L-&gt;top - (nargs+1);
+  if (k != NULL &amp;&amp; L-&gt;nny == 0) {  /* need to prepare continuation? */
+    L-&gt;ci-&gt;u.c.k = k;  /* save continuation */
+    L-&gt;ci-&gt;u.c.ctx = ctx;  /* save context */
+    <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, func, nresults);  /* do the call */
+  }
+  else  /* no continuation or no yieldable */
+    <A HREF="ldo.c.html#luaD_callnoyield">luaD_callnoyield</A>(L, func, nresults);  /* just do the call */
+  <A HREF="lapi.h.html#adjustresults">adjustresults</A>(L, nresults);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+
+/*
+** Execute a protected call.
+*/
+struct <A NAME="CallS"><SPAN CLASS="definition">CallS</SPAN></A> {  /* data to '<A HREF="lapi.c.html#f_call">f_call</A>' */
+  <A HREF="lobject.h.html#StkId">StkId</A> func;
+  int nresults;
+};
+
+
+static void <A NAME="f_call"><SPAN CLASS="definition">f_call</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  struct <A HREF="lapi.c.html#CallS">CallS</A> *c = <A HREF="llimits.h.html#cast">cast</A>(struct <A HREF="lapi.c.html#CallS">CallS</A> *, ud);
+  <A HREF="ldo.c.html#luaD_callnoyield">luaD_callnoyield</A>(L, c-&gt;func, c-&gt;nresults);
+}
+
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_pcallk"><SPAN CLASS="definition">lua_pcallk</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nargs, int nresults, int errfunc,
+                        <A HREF="lua.h.html#lua_KContext">lua_KContext</A> ctx, <A HREF="lua.h.html#lua_KFunction">lua_KFunction</A> k) {
+  struct <A HREF="lapi.c.html#CallS">CallS</A> c;
+  int status;
+  ptrdiff_t func;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, k == NULL || !<A HREF="lstate.h.html#isLua">isLua</A>(L-&gt;ci),
+    "cannot use continuations inside hooks");
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, nargs+1);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, L-&gt;status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>, "cannot do calls on non-normal thread");
+  <A HREF="lapi.c.html#checkresults">checkresults</A>(L, nargs, nresults);
+  if (errfunc == 0)
+    func = 0;
+  else {
+    <A HREF="lobject.h.html#StkId">StkId</A> o = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, errfunc);
+    <A HREF="lapi.c.html#api_checkstackindex">api_checkstackindex</A>(L, errfunc, o);
+    func = <A HREF="ldo.h.html#savestack">savestack</A>(L, o);
+  }
+  c.func = L-&gt;top - (nargs+1);  /* function to be called */
+  if (k == NULL || L-&gt;nny &gt; 0) {  /* no continuation or no yieldable? */
+    c.nresults = nresults;  /* do a 'conventional' protected call */
+    status = <A HREF="ldo.c.html#luaD_pcall">luaD_pcall</A>(L, <A HREF="lapi.c.html#f_call">f_call</A>, &amp;c, <A HREF="ldo.h.html#savestack">savestack</A>(L, c.func), func);
+  }
+  else {  /* prepare continuation (call is already protected by 'resume') */
+    <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci;
+    ci-&gt;u.c.k = k;  /* save continuation */
+    ci-&gt;u.c.ctx = ctx;  /* save context */
+    /* save information for error recovery */
+    ci-&gt;extra = <A HREF="ldo.h.html#savestack">savestack</A>(L, c.func);
+    ci-&gt;u.c.old_errfunc = L-&gt;errfunc;
+    L-&gt;errfunc = func;
+    <A HREF="lstate.h.html#setoah">setoah</A>(ci-&gt;callstatus, L-&gt;allowhook);  /* save value of 'allowhook' */
+    ci-&gt;callstatus |= <A HREF="lstate.h.html#CIST_YPCALL">CIST_YPCALL</A>;  /* function can do error recovery */
+    <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, c.func, nresults);  /* do the call */
+    ci-&gt;callstatus &amp;= ~<A HREF="lstate.h.html#CIST_YPCALL">CIST_YPCALL</A>;
+    L-&gt;errfunc = ci-&gt;u.c.old_errfunc;
+    status = <A HREF="lua.h.html#LUA_OK">LUA_OK</A>;  /* if it is here, there were no errors */
+  }
+  <A HREF="lapi.h.html#adjustresults">adjustresults</A>(L, nresults);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return status;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_load"><SPAN CLASS="definition">lua_load</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Reader">lua_Reader</A> reader, void *data,
+                      const char *chunkname, const char *mode) {
+  <A HREF="lzio.h.html#ZIO">ZIO</A> z;
+  int status;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  if (!chunkname) chunkname = "?";
+  <A HREF="lzio.c.html#luaZ_init">luaZ_init</A>(L, &amp;z, reader, data);
+  status = <A HREF="ldo.c.html#luaD_protectedparser">luaD_protectedparser</A>(L, &amp;z, chunkname, mode);
+  if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) {  /* no errors? */
+    <A HREF="lobject.h.html#LClosure">LClosure</A> *f = <A HREF="lobject.h.html#clLvalue">clLvalue</A>(L-&gt;top - 1);  /* get newly created function */
+    if (f-&gt;nupvalues &gt;= 1) {  /* does it have an upvalue? */
+      /* get global table from registry */
+      <A HREF="lobject.h.html#Table">Table</A> *reg = <A HREF="lobject.h.html#hvalue">hvalue</A>(&amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;l_registry);
+      const <A HREF="lobject.h.html#TValue">TValue</A> *gt = <A HREF="ltable.c.html#luaH_getint">luaH_getint</A>(reg, <A HREF="lua.h.html#LUA_RIDX_GLOBALS">LUA_RIDX_GLOBALS</A>);
+      /* set global table as 1st upvalue of 'f' (may be <A HREF="llex.h.html#LUA_ENV">LUA_ENV</A>) */
+      <A HREF="lobject.h.html#setobj">setobj</A>(L, f-&gt;upvals[0]-&gt;v, gt);
+      <A HREF="lgc.h.html#luaC_upvalbarrier">luaC_upvalbarrier</A>(L, f-&gt;upvals[0]);
+    }
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return status;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_dump"><SPAN CLASS="definition">lua_dump</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Writer">lua_Writer</A> writer, void *data, int strip) {
+  int status;
+  <A HREF="lobject.h.html#TValue">TValue</A> *o;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  o = L-&gt;top - 1;
+  if (<A HREF="lobject.h.html#isLfunction">isLfunction</A>(o))
+    status = <A HREF="ldump.c.html#luaU_dump">luaU_dump</A>(L, <A HREF="lobject.h.html#getproto">getproto</A>(o), writer, data, strip);
+  else
+    status = 1;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return status;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_status"><SPAN CLASS="definition">lua_status</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return L-&gt;status;
+}
+
+
+/*
+** Garbage-collection function
+*/
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_gc"><SPAN CLASS="definition">lua_gc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int what, int data) {
+  int res = 0;
+  <A HREF="lstate.h.html#global_State">global_State</A> *g;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  g = <A HREF="lstate.h.html#G">G</A>(L);
+  switch (what) {
+    case <A HREF="lua.h.html#LUA_GCSTOP">LUA_GCSTOP</A>: {
+      g-&gt;gcrunning = 0;
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_GCRESTART">LUA_GCRESTART</A>: {
+      <A HREF="lstate.c.html#luaE_setdebt">luaE_setdebt</A>(g, 0);
+      g-&gt;gcrunning = 1;
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_GCCOLLECT">LUA_GCCOLLECT</A>: {
+      <A HREF="lgc.c.html#luaC_fullgc">luaC_fullgc</A>(L, 0);
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_GCCOUNT">LUA_GCCOUNT</A>: {
+      /* GC values are expressed in Kbytes: #bytes/2^10 */
+      res = <A HREF="llimits.h.html#cast_int">cast_int</A>(<A HREF="lstate.h.html#gettotalbytes">gettotalbytes</A>(g) &gt;&gt; 10);
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_GCCOUNTB">LUA_GCCOUNTB</A>: {
+      res = <A HREF="llimits.h.html#cast_int">cast_int</A>(<A HREF="lstate.h.html#gettotalbytes">gettotalbytes</A>(g) &amp; 0x3ff);
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_GCSTEP">LUA_GCSTEP</A>: {
+      <A HREF="llimits.h.html#l_mem">l_mem</A> debt = 1;  /* =1 to signal that it did an actual step */
+      <A HREF="llimits.h.html#lu_byte">lu_byte</A> oldrunning = g-&gt;gcrunning;
+      g-&gt;gcrunning = 1;  /* allow GC to run */
+      if (data == 0) {
+        <A HREF="lstate.c.html#luaE_setdebt">luaE_setdebt</A>(g, -<A HREF="lgc.h.html#GCSTEPSIZE">GCSTEPSIZE</A>);  /* to do a "small" step */
+        <A HREF="lgc.c.html#luaC_step">luaC_step</A>(L);
+      }
+      else {  /* add 'data' to total debt */
+        debt = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#l_mem">l_mem</A>, data) * 1024 + g-&gt;GCdebt;
+        <A HREF="lstate.c.html#luaE_setdebt">luaE_setdebt</A>(g, debt);
+        <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+      }
+      g-&gt;gcrunning = oldrunning;  /* restore previous state */
+      if (debt &gt; 0 &amp;&amp; g-&gt;gcstate == <A HREF="lgc.h.html#GCSpause">GCSpause</A>)  /* end of cycle? */
+        res = 1;  /* signal it */
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_GCSETPAUSE">LUA_GCSETPAUSE</A>: {
+      res = g-&gt;gcpause;
+      g-&gt;gcpause = data;
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_GCSETSTEPMUL">LUA_GCSETSTEPMUL</A>: {
+      res = g-&gt;gcstepmul;
+      if (data &lt; 40) data = 40;  /* avoid ridiculous low values (and 0) */
+      g-&gt;gcstepmul = data;
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_GCISRUNNING">LUA_GCISRUNNING</A>: {
+      res = g-&gt;gcrunning;
+      break;
+    }
+    default: res = -1;  /* invalid option */
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return res;
+}
+
+
+
+/*
+** miscellaneous functions
+*/
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_error"><SPAN CLASS="definition">lua_error</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  <A HREF="ldebug.c.html#luaG_errormsg">luaG_errormsg</A>(L);
+  /* code unreachable; will unlock when control actually leaves the kernel */
+  return 0;  /* to avoid warnings */
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_next"><SPAN CLASS="definition">lua_next</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  int more;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(t), "table expected");
+  more = <A HREF="ltable.c.html#luaH_next">luaH_next</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(t), L-&gt;top - 1);
+  if (more) {
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  }
+  else  /* no more elements */
+    L-&gt;top -= 1;  /* remove key */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return more;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_concat"><SPAN CLASS="definition">lua_concat</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, n);
+  if (n &gt;= 2) {
+    <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+    <A HREF="lvm.c.html#luaV_concat">luaV_concat</A>(L, n);
+  }
+  else if (n == 0) {  /* push empty string */
+    <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, "", 0));
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  }
+  /* else n == 1; nothing to do */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_len"><SPAN CLASS="definition">lua_len</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx) {
+  <A HREF="lobject.h.html#StkId">StkId</A> t;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  t = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, idx);
+  <A HREF="lvm.c.html#luaV_objlen">luaV_objlen</A>(L, L-&gt;top, t);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_Alloc">lua_Alloc</A> <A NAME="lua_getallocf"><SPAN CLASS="definition">lua_getallocf</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void **ud) {
+  <A HREF="lua.h.html#lua_Alloc">lua_Alloc</A> f;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  if (ud) *ud = <A HREF="lstate.h.html#G">G</A>(L)-&gt;ud;
+  f = <A HREF="lstate.h.html#G">G</A>(L)-&gt;frealloc;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return f;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_setallocf"><SPAN CLASS="definition">lua_setallocf</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Alloc">lua_Alloc</A> f, void *ud) {
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lstate.h.html#G">G</A>(L)-&gt;ud = ud;
+  <A HREF="lstate.h.html#G">G</A>(L)-&gt;frealloc = f;
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void *<A NAME="lua_newuserdata"><SPAN CLASS="definition">lua_newuserdata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t size) {
+  <A HREF="lobject.h.html#Udata">Udata</A> *u;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+  u = <A HREF="lstring.c.html#luaS_newudata">luaS_newudata</A>(L, size);
+  <A HREF="lobject.h.html#setuvalue">setuvalue</A>(L, L-&gt;top, u);
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return <A HREF="lobject.h.html#getudatamem">getudatamem</A>(u);
+}
+
+
+
+static const char *<A NAME="aux_upvalue"><SPAN CLASS="definition">aux_upvalue</SPAN></A> (<A HREF="lobject.h.html#StkId">StkId</A> fi, int n, <A HREF="lobject.h.html#TValue">TValue</A> **val,
+                                <A HREF="lobject.h.html#CClosure">CClosure</A> **owner, <A HREF="lfunc.h.html#UpVal">UpVal</A> **uv) {
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(fi)) {
+    case <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>: {  /* C closure */
+      <A HREF="lobject.h.html#CClosure">CClosure</A> *f = <A HREF="lobject.h.html#clCvalue">clCvalue</A>(fi);
+      if (!(1 &lt;= n &amp;&amp; n &lt;= f-&gt;nupvalues)) return NULL;
+      *val = &amp;f-&gt;upvalue[n-1];
+      if (owner) *owner = f;
+      return "";
+    }
+    case <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>: {  /* Lua closure */
+      <A HREF="lobject.h.html#LClosure">LClosure</A> *f = <A HREF="lobject.h.html#clLvalue">clLvalue</A>(fi);
+      <A HREF="lobject.h.html#TString">TString</A> *name;
+      <A HREF="lobject.h.html#Proto">Proto</A> *p = f-&gt;p;
+      if (!(1 &lt;= n &amp;&amp; n &lt;= p-&gt;sizeupvalues)) return NULL;
+      *val = f-&gt;upvals[n-1]-&gt;v;
+      if (uv) *uv = f-&gt;upvals[n - 1];
+      name = p-&gt;upvalues[n-1].name;
+      return (name == NULL) ? "(*no name)" : <A HREF="lobject.h.html#getstr">getstr</A>(name);
+    }
+    default: return NULL;  /* not a closure */
+  }
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_getupvalue"><SPAN CLASS="definition">lua_getupvalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int funcindex, int n) {
+  const char *name;
+  <A HREF="lobject.h.html#TValue">TValue</A> *val = NULL;  /* to avoid warnings */
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  name = <A HREF="lapi.c.html#aux_upvalue">aux_upvalue</A>(<A HREF="lapi.c.html#index2addr">index2addr</A>(L, funcindex), n, &amp;val, NULL, NULL);
+  if (name) {
+    <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top, val);
+    <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return name;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_setupvalue"><SPAN CLASS="definition">lua_setupvalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int funcindex, int n) {
+  const char *name;
+  <A HREF="lobject.h.html#TValue">TValue</A> *val = NULL;  /* to avoid warnings */
+  <A HREF="lobject.h.html#CClosure">CClosure</A> *owner = NULL;
+  <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv = NULL;
+  <A HREF="lobject.h.html#StkId">StkId</A> fi;
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  fi = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, funcindex);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, 1);
+  name = <A HREF="lapi.c.html#aux_upvalue">aux_upvalue</A>(fi, n, &amp;val, &amp;owner, &amp;uv);
+  if (name) {
+    L-&gt;top--;
+    <A HREF="lobject.h.html#setobj">setobj</A>(L, val, L-&gt;top);
+    if (owner) { <A HREF="lgc.h.html#luaC_barrier">luaC_barrier</A>(L, owner, L-&gt;top); }
+    else if (uv) { <A HREF="lgc.h.html#luaC_upvalbarrier">luaC_upvalbarrier</A>(L, uv); }
+  }
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return name;
+}
+
+
+static <A HREF="lfunc.h.html#UpVal">UpVal</A> **<A NAME="getupvalref"><SPAN CLASS="definition">getupvalref</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int fidx, int n, <A HREF="lobject.h.html#LClosure">LClosure</A> **pf) {
+  <A HREF="lobject.h.html#LClosure">LClosure</A> *f;
+  <A HREF="lobject.h.html#StkId">StkId</A> fi = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, fidx);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, <A HREF="lobject.h.html#ttisLclosure">ttisLclosure</A>(fi), "Lua function expected");
+  f = <A HREF="lobject.h.html#clLvalue">clLvalue</A>(fi);
+  <A HREF="llimits.h.html#api_check">api_check</A>(L, (1 &lt;= n &amp;&amp; n &lt;= f-&gt;p-&gt;sizeupvalues), "invalid upvalue index");
+  if (pf) *pf = f;
+  return &amp;f-&gt;upvals[n - 1];  /* get its upvalue pointer */
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void *<A NAME="lua_upvalueid"><SPAN CLASS="definition">lua_upvalueid</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int fidx, int n) {
+  <A HREF="lobject.h.html#StkId">StkId</A> fi = <A HREF="lapi.c.html#index2addr">index2addr</A>(L, fidx);
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(fi)) {
+    case <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>: {  /* lua closure */
+      return *<A HREF="lapi.c.html#getupvalref">getupvalref</A>(L, fidx, n, NULL);
+    }
+    case <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>: {  /* C closure */
+      <A HREF="lobject.h.html#CClosure">CClosure</A> *f = <A HREF="lobject.h.html#clCvalue">clCvalue</A>(fi);
+      <A HREF="llimits.h.html#api_check">api_check</A>(L, 1 &lt;= n &amp;&amp; n &lt;= f-&gt;nupvalues, "invalid upvalue index");
+      return &amp;f-&gt;upvalue[n - 1];
+    }
+    default: {
+      <A HREF="llimits.h.html#api_check">api_check</A>(L, 0, "closure expected");
+      return NULL;
+    }
+  }
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A NAME="lua_upvaluejoin"><SPAN CLASS="definition">lua_upvaluejoin</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int fidx1, int n1,
+                                            int fidx2, int n2) {
+  <A HREF="lobject.h.html#LClosure">LClosure</A> *f1;
+  <A HREF="lfunc.h.html#UpVal">UpVal</A> **up1 = <A HREF="lapi.c.html#getupvalref">getupvalref</A>(L, fidx1, n1, &amp;f1);
+  <A HREF="lfunc.h.html#UpVal">UpVal</A> **up2 = <A HREF="lapi.c.html#getupvalref">getupvalref</A>(L, fidx2, n2, NULL);
+  <A HREF="lgc.c.html#luaC_upvdeccount">luaC_upvdeccount</A>(L, *up1);
+  *up1 = *up2;
+  (*up1)-&gt;refcount++;
+  if (<A HREF="lfunc.h.html#upisopen">upisopen</A>(*up1)) (*up1)-&gt;u.open.touched = 1;
+  <A HREF="lgc.h.html#luaC_upvalbarrier">luaC_upvalbarrier</A>(L, *up1);
+}
+
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:13 2015
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,109 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lcode.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lcode.h
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lcode.h,v 1.38 2002/12/11 12:34:22 roberto Exp $
+** Code generator for Lua
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lcode.h.html#lcode_h">lcode_h</A>
+#define <A NAME="lcode_h"><SPAN CLASS="definition">lcode_h</SPAN></A>
+
+#include "<A HREF="llex.h.html">llex.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lparser.h.html">lparser.h</A>"
+
+
+/*
+** Marks the end of a patch list. It is an invalid value both as an absolute
+** address, and as a list link (would link an element to itself).
+*/
+#define <A NAME="NO_JUMP"><SPAN CLASS="definition">NO_JUMP</SPAN></A> (-1)
+
+
+/*
+** grep "ORDER OPR" if you change these enums
+*/
+typedef enum <A NAME="BinOpr"><SPAN CLASS="definition">BinOpr</SPAN></A> {
+  <A NAME="OPR_ADD"><SPAN CLASS="definition">OPR_ADD</SPAN></A>, <A NAME="OPR_SUB"><SPAN CLASS="definition">OPR_SUB</SPAN></A>, <A NAME="OPR_MULT"><SPAN CLASS="definition">OPR_MULT</SPAN></A>, <A NAME="OPR_DIV"><SPAN CLASS="definition">OPR_DIV</SPAN></A>, <A NAME="OPR_POW"><SPAN CLASS="definition">OPR_POW</SPAN></A>,
+  <A NAME="OPR_CONCAT"><SPAN CLASS="definition">OPR_CONCAT</SPAN></A>,
+  <A NAME="OPR_NE"><SPAN CLASS="definition">OPR_NE</SPAN></A>, <A NAME="OPR_EQ"><SPAN CLASS="definition">OPR_EQ</SPAN></A>,
+  <A NAME="OPR_LT"><SPAN CLASS="definition">OPR_LT</SPAN></A>, <A NAME="OPR_LE"><SPAN CLASS="definition">OPR_LE</SPAN></A>, <A NAME="OPR_GT"><SPAN CLASS="definition">OPR_GT</SPAN></A>, <A NAME="OPR_GE"><SPAN CLASS="definition">OPR_GE</SPAN></A>,
+  <A NAME="OPR_AND"><SPAN CLASS="definition">OPR_AND</SPAN></A>, <A NAME="OPR_OR"><SPAN CLASS="definition">OPR_OR</SPAN></A>,
+  <A NAME="OPR_NOBINOPR"><SPAN CLASS="definition">OPR_NOBINOPR</SPAN></A>
+} <A HREF="lcode.h.html#BinOpr">BinOpr</A>;
+
+#define <A NAME="binopistest"><SPAN CLASS="definition">binopistest</SPAN></A>(op) ((op) &gt;= <A HREF="lcode.h.html#OPR_NE">OPR_NE</A>)
+
+typedef enum <A NAME="UnOpr"><SPAN CLASS="definition">UnOpr</SPAN></A> { <A NAME="OPR_MINUS"><SPAN CLASS="definition">OPR_MINUS</SPAN></A>, <A NAME="OPR_NOT"><SPAN CLASS="definition">OPR_NOT</SPAN></A>, <A NAME="OPR_NOUNOPR"><SPAN CLASS="definition">OPR_NOUNOPR</SPAN></A> } <A NAME="UnOpr"><SPAN CLASS="definition">UnOpr</SPAN></A>;
+
+
+#define <A NAME="getcode"><SPAN CLASS="definition">getcode</SPAN></A>(fs,e)   ((fs)-&gt;f-&gt;code[(e)-&gt;info])
+
+#define <A NAME="luaK_codeAsBx"><SPAN CLASS="definition">luaK_codeAsBx</SPAN></A>(fs,o,A,sBx)       <A HREF="lcode.c.html#luaK_codeABx">luaK_codeABx</A>(fs,o,A,(sBx)+<A HREF="lopcodes.h.html#MAXARG_sBx">MAXARG_sBx</A>)
+
+int <A HREF="lcode.c.html#luaK_code">luaK_code</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="llimits.h.html#Instruction">Instruction</A> i, int line);
+int <A HREF="lcode.c.html#luaK_codeABx">luaK_codeABx</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lopcodes.h.html#OpCode">OpCode</A> o, int A, unsigned int Bx);
+int <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lopcodes.h.html#OpCode">OpCode</A> o, int A, int B, int C);
+void <A HREF="lcode.c.html#luaK_fixline">luaK_fixline</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int line);
+void <A HREF="lcode.c.html#luaK_nil">luaK_nil</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int from, int n);
+void <A HREF="lcode.c.html#luaK_reserveregs">luaK_reserveregs</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int n);
+void <A HREF="lcode.c.html#luaK_checkstack">luaK_checkstack</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int n);
+int <A HREF="lcode.c.html#luaK_stringK">luaK_stringK</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lobject.h.html#TString">TString</A> *s);
+int <A HREF="lcode.c.html#luaK_numberK">luaK_numberK</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lua.h.html#lua_Number">lua_Number</A> r);
+void <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e);
+int <A HREF="lcode.c.html#luaK_exp2anyreg">luaK_exp2anyreg</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e);
+void <A HREF="lcode.c.html#luaK_exp2nextreg">luaK_exp2nextreg</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e);
+void <A HREF="lcode.c.html#luaK_exp2val">luaK_exp2val</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e);
+int <A HREF="lcode.c.html#luaK_exp2RK">luaK_exp2RK</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e);
+void <A HREF="lcode.c.html#luaK_self">luaK_self</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e, <A HREF="lparser.h.html#expdesc">expdesc</A> *key);
+void <A HREF="lcode.c.html#luaK_indexed">luaK_indexed</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *t, <A HREF="lparser.h.html#expdesc">expdesc</A> *k);
+void <A HREF="lcode.c.html#luaK_goiftrue">luaK_goiftrue</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e);
+void <A HREF="lcode.c.html#luaK_goiffalse">luaK_goiffalse</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e);
+void <A HREF="lcode.c.html#luaK_storevar">luaK_storevar</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *var, <A HREF="lparser.h.html#expdesc">expdesc</A> *e);
+void <A HREF="lcode.c.html#luaK_setcallreturns">luaK_setcallreturns</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *var, int nresults);
+int <A HREF="lcode.c.html#luaK_jump">luaK_jump</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs);
+void <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int list, int target);
+void <A HREF="lcode.c.html#luaK_patchtohere">luaK_patchtohere</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int list);
+void <A HREF="lcode.c.html#luaK_concat">luaK_concat</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int *l1, int l2);
+int <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs);
+void <A HREF="lcode.c.html#luaK_prefix">luaK_prefix</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lcode.h.html#UnOpr">UnOpr</A> op, <A HREF="lparser.h.html#expdesc">expdesc</A> *v);
+void <A HREF="lcode.c.html#luaK_infix">luaK_infix</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lcode.h.html#BinOpr">BinOpr</A> op, <A HREF="lparser.h.html#expdesc">expdesc</A> *v);
+void <A HREF="lcode.c.html#luaK_posfix">luaK_posfix</A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lcode.h.html#BinOpr">BinOpr</A> op, <A HREF="lparser.h.html#expdesc">expdesc</A> *v1, <A HREF="lparser.h.html#expdesc">expdesc</A> *v2);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

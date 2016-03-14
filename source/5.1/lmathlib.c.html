@@ -1,0 +1,298 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lmathlib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lmathlib.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lmathlib.c,v 1.67.1.1 2007/12/27 13:02:25 roberto Exp $
+** Standard mathematical library
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdlib.h&gt;
+#include &lt;math.h&gt;
+
+#define <A NAME="lmathlib_c"><SPAN CLASS="definition">lmathlib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+#undef <A HREF="lmathlib.c.html#PI">PI</A>
+#define <A NAME="PI"><SPAN CLASS="definition">PI</SPAN></A> (3.14159265358979323846)
+#define <A NAME="RADIANS_PER_DEGREE"><SPAN CLASS="definition">RADIANS_PER_DEGREE</SPAN></A> (<A HREF="lmathlib.c.html#PI">PI</A>/180.0)
+
+
+
+static int <A NAME="math_abs"><SPAN CLASS="definition">math_abs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, fabs(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_sin"><SPAN CLASS="definition">math_sin</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, sin(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_sinh"><SPAN CLASS="definition">math_sinh</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, sinh(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_cos"><SPAN CLASS="definition">math_cos</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, cos(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_cosh"><SPAN CLASS="definition">math_cosh</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, cosh(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_tan"><SPAN CLASS="definition">math_tan</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, tan(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_tanh"><SPAN CLASS="definition">math_tanh</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, tanh(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_asin"><SPAN CLASS="definition">math_asin</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, asin(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_acos"><SPAN CLASS="definition">math_acos</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, acos(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_atan"><SPAN CLASS="definition">math_atan</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, atan(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_atan2"><SPAN CLASS="definition">math_atan2</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, atan2(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1), <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 2)));
+  return 1;
+}
+
+static int <A NAME="math_ceil"><SPAN CLASS="definition">math_ceil</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, ceil(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_floor"><SPAN CLASS="definition">math_floor</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, floor(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_fmod"><SPAN CLASS="definition">math_fmod</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, fmod(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1), <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 2)));
+  return 1;
+}
+
+static int <A NAME="math_modf"><SPAN CLASS="definition">math_modf</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  double ip;
+  double fp = modf(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1), &amp;ip);
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, ip);
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, fp);
+  return 2;
+}
+
+static int <A NAME="math_sqrt"><SPAN CLASS="definition">math_sqrt</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, sqrt(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_pow"><SPAN CLASS="definition">math_pow</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, pow(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1), <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 2)));
+  return 1;
+}
+
+static int <A NAME="math_log"><SPAN CLASS="definition">math_log</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, log(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_log10"><SPAN CLASS="definition">math_log10</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, log10(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_exp"><SPAN CLASS="definition">math_exp</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, exp(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)));
+  return 1;
+}
+
+static int <A NAME="math_deg"><SPAN CLASS="definition">math_deg</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)/<A HREF="lmathlib.c.html#RADIANS_PER_DEGREE">RADIANS_PER_DEGREE</A>);
+  return 1;
+}
+
+static int <A NAME="math_rad"><SPAN CLASS="definition">math_rad</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)*<A HREF="lmathlib.c.html#RADIANS_PER_DEGREE">RADIANS_PER_DEGREE</A>);
+  return 1;
+}
+
+static int <A NAME="math_frexp"><SPAN CLASS="definition">math_frexp</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int e;
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, frexp(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1), &amp;e));
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, e);
+  return 2;
+}
+
+static int <A NAME="math_ldexp"><SPAN CLASS="definition">math_ldexp</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, ldexp(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1), <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2)));
+  return 1;
+}
+
+
+
+static int <A NAME="math_min"><SPAN CLASS="definition">math_min</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);  /* number of arguments */
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> dmin = <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1);
+  int i;
+  for (i=2; i&lt;=n; i++) {
+    <A HREF="lua.h.html#lua_Number">lua_Number</A> d = <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, i);
+    if (d &lt; dmin)
+      dmin = d;
+  }
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, dmin);
+  return 1;
+}
+
+
+static int <A NAME="math_max"><SPAN CLASS="definition">math_max</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);  /* number of arguments */
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> dmax = <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1);
+  int i;
+  for (i=2; i&lt;=n; i++) {
+    <A HREF="lua.h.html#lua_Number">lua_Number</A> d = <A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, i);
+    if (d &gt; dmax)
+      dmax = d;
+  }
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, dmax);
+  return 1;
+}
+
+
+static int <A NAME="math_random"><SPAN CLASS="definition">math_random</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  /* the `%' avoids the (rare) case of r==1, and is needed also because on
+     some systems (SunOS!) `rand()' may return a value larger than RAND_MAX */
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> r = (<A HREF="lua.h.html#lua_Number">lua_Number</A>)(rand()%RAND_MAX) / (<A HREF="lua.h.html#lua_Number">lua_Number</A>)RAND_MAX;
+  switch (<A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L)) {  /* check number of arguments */
+    case 0: {  /* no arguments */
+      <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, r);  /* Number between 0 and 1 */
+      break;
+    }
+    case 1: {  /* only upper limit */
+      int u = <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 1);
+      <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, 1&lt;=u, 1, "interval is empty");
+      <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, floor(r*u)+1);  /* int between 1 and `u' */
+      break;
+    }
+    case 2: {  /* lower and upper limits */
+      int l = <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 1);
+      int u = <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2);
+      <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, l&lt;=u, 2, "interval is empty");
+      <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, floor(r*(u-l+1))+l);  /* int between `l' and `u' */
+      break;
+    }
+    default: return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "wrong number of arguments");
+  }
+  return 1;
+}
+
+
+static int <A NAME="math_randomseed"><SPAN CLASS="definition">math_randomseed</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  srand(<A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 1));
+  return 0;
+}
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="mathlib"><SPAN CLASS="definition">mathlib</SPAN></A>[] = {
+  {"abs",   <A HREF="lmathlib.c.html#math_abs">math_abs</A>},
+  {"acos",  <A HREF="lmathlib.c.html#math_acos">math_acos</A>},
+  {"asin",  <A HREF="lmathlib.c.html#math_asin">math_asin</A>},
+  {"atan2", <A HREF="lmathlib.c.html#math_atan2">math_atan2</A>},
+  {"atan",  <A HREF="lmathlib.c.html#math_atan">math_atan</A>},
+  {"ceil",  <A HREF="lmathlib.c.html#math_ceil">math_ceil</A>},
+  {"cosh",   <A HREF="lmathlib.c.html#math_cosh">math_cosh</A>},
+  {"cos",   <A HREF="lmathlib.c.html#math_cos">math_cos</A>},
+  {"deg",   <A HREF="lmathlib.c.html#math_deg">math_deg</A>},
+  {"exp",   <A HREF="lmathlib.c.html#math_exp">math_exp</A>},
+  {"floor", <A HREF="lmathlib.c.html#math_floor">math_floor</A>},
+  {"fmod",   <A HREF="lmathlib.c.html#math_fmod">math_fmod</A>},
+  {"frexp", <A HREF="lmathlib.c.html#math_frexp">math_frexp</A>},
+  {"ldexp", <A HREF="lmathlib.c.html#math_ldexp">math_ldexp</A>},
+  {"log10", <A HREF="lmathlib.c.html#math_log10">math_log10</A>},
+  {"log",   <A HREF="lmathlib.c.html#math_log">math_log</A>},
+  {"max",   <A HREF="lmathlib.c.html#math_max">math_max</A>},
+  {"min",   <A HREF="lmathlib.c.html#math_min">math_min</A>},
+  {"modf",   <A HREF="lmathlib.c.html#math_modf">math_modf</A>},
+  {"pow",   <A HREF="lmathlib.c.html#math_pow">math_pow</A>},
+  {"rad",   <A HREF="lmathlib.c.html#math_rad">math_rad</A>},
+  {"random",     <A HREF="lmathlib.c.html#math_random">math_random</A>},
+  {"randomseed", <A HREF="lmathlib.c.html#math_randomseed">math_randomseed</A>},
+  {"sinh",   <A HREF="lmathlib.c.html#math_sinh">math_sinh</A>},
+  {"sin",   <A HREF="lmathlib.c.html#math_sin">math_sin</A>},
+  {"sqrt",  <A HREF="lmathlib.c.html#math_sqrt">math_sqrt</A>},
+  {"tanh",   <A HREF="lmathlib.c.html#math_tanh">math_tanh</A>},
+  {"tan",   <A HREF="lmathlib.c.html#math_tan">math_tan</A>},
+  {NULL, NULL}
+};
+
+
+/*
+** Open math library
+*/
+<A HREF="luaconf.h.html#LUALIB_API">LUALIB_API</A> int <A NAME="luaopen_math"><SPAN CLASS="definition">luaopen_math</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_register">luaL_register</A>(L, <A HREF="lualib.h.html#LUA_MATHLIBNAME">LUA_MATHLIBNAME</A>, <A HREF="lmathlib.c.html#mathlib">mathlib</A>);
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, <A HREF="lmathlib.c.html#PI">PI</A>);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "pi");
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, HUGE_VAL);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "huge");
+#if defined(<A HREF="luaconf.h.html#LUA_COMPAT_MOD">LUA_COMPAT_MOD</A>)
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, -1, "fmod");
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "mod");
+#endif
+  return 1;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

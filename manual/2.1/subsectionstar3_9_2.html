@@ -1,0 +1,40 @@
+<HEAD>
+<TITLE> Incompatibilities in the API</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=section3_10.html>  About this document </A>
+<B>Up:</B> <A HREF=section3_9.html>Incompatibilities with Previous </A>
+<B> Previous:</B> <A HREF=subsectionstar3_9_1.html> Incompatibilities in the </A>
+<H2><A NAME=S0920> Incompatibilities in the API</A></H2>
+<P>
+<UL><LI>
+The function <TT><B><B>lua_call</B></B></TT> no longer has the parameter <TT><B><B>nparam</B></B></TT>.
+<LI>
+The function <TT><B><B>lua_pop</B></B></TT> is no longer available,
+since it could lead to strange behavior.
+In particular,
+to access results returned from a Lua function,
+the new macro <TT><B><B>lua_getresult</B></B></TT> should be used.
+<LI>
+The old functions <TT><B><B>lua_storefield</B></B></TT> and <TT><B><B>lua_storeindexed</B></B></TT>
+have been replaced by 
+<TT><B><B><PRE>
+int lua_storesubscript (void);</PRE></B></B></TT>
+with the parameters explicitly pushed on the stack.
+<LI>
+The functionality of the function <TT><B><B>lua_errorfunction</B></B></TT> has been
+replaced by the <I>fallback</I> mechanism; see Section <A HREF=subsection3_4_8.html#error>4.8</A>.
+<LI>
+When calling a function from the Lua library,
+parameters passed through the stack
+must be pushed just before the correspondent call,
+with no intermediate calls to Lua.
+Special care should be taken with macros like
+<TT><B><B>lua_getindexed</B></B></TT> and <TT><B><B>lua_getfield</B></B></TT>.
+</UL>
+<P>
+<B> Next:</B> <A HREF=section3_10.html>  About this document </A>
+<B>Up:</B> <A HREF=section3_9.html>Incompatibilities with Previous </A>
+<B> Previous:</B> <A HREF=subsectionstar3_9_1.html> Incompatibilities in the </A>
+
+</BODY>

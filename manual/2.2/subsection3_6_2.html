@@ -1,0 +1,75 @@
+<HEAD>
+<TITLE>6.2 String Manipulation</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_6_3.html>6.3 Mathematical Functions</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_1.html>6.1 Predefined Functions</A>
+<HR>
+<H2><A NAME=S0620>6.2 String Manipulation</A></H2>
+<P>
+This library provides generic functions for string manipulation,
+such as finding and extracting substrings.
+When indexing a string, the first character has position 1.
+See Section <A HREF=subsection3_7_2.html#exstring>7.2</A> for some examples on string manipulation
+in Lua.
+<P>
+<H3><A NAME=S0621> <TT><B>strfind (str, substr, [init, [end]])</B></TT></A></H3>
+<P>
+
+Receives two string arguments,
+and returns a number.
+This number indicates the first position where the second argument appears
+in the first argument.
+If the second argument is not a substring of the first one,
+then <TT><B>strfind</B></TT> returns <B>nil</B>.
+A third optional numerical argument specifies where to start the search.
+Another optional numerical argument specifies where to stop it.
+<P>
+<H3><A NAME=S0622> <TT><B>strlen (s)</B></TT></A></H3>
+
+Receives a string and returns its length.
+<P>
+<H3><A NAME=S0623> <TT><B>strsub (s, i, [j])</B></TT></A></H3>
+
+Returns another string, which is a substring of <TT><B>s</B></TT>,
+starting at <TT><B>i</B></TT>  and runing until <TT><B>j</B></TT>.
+If <TT><B>j</B></TT> is absent,
+it is assumed to be equal to the length of <TT><B>s</B></TT>.
+Particularly, the call <TT><B>strsub(s,1,j)</B></TT> returns a prefix of <TT><B>s</B></TT>
+with length <TT><B>j</B></TT>,
+while the call <TT><B>strsub(s,i)</B></TT> returns a suffix of <TT><B>s</B></TT>,
+starting at <TT><B>i</B></TT>.
+<P>
+<H3><A NAME=S0624> <TT><B>strlower (s)</B></TT></A></H3>
+
+Receives a string and returns a copy of that string with all
+upper case letters changed to lower case.
+All other characters are left unchanged.
+<P>
+<H3><A NAME=S0625> <TT><B>strupper (s)</B></TT></A></H3>
+
+Receives a string and returns a copy of that string with all
+lower case letters changed to upper case.
+All other characters are left unchanged.
+<P>
+<H3><A NAME=S0626> <TT><B>ascii (s, [i])</B></TT></A></H3>
+
+Returns the ascii code of the character <TT><B>s[i]</B></TT>.
+If <TT><B>i</B></TT> is absent, it is assumed to be 1.
+<P>
+<H3><A NAME=S0627> <TT><B>int2str ({i})</B></TT></A></H3>
+
+Receives 0 or more numbers.
+Returns a string with length equal to the number of arguments,
+wherein each character has ascii value equal
+to its correspondent argument.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_6_3.html>6.3 Mathematical Functions</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_1.html>6.1 Predefined Functions</A>
+<HR>
+
+</BODY>

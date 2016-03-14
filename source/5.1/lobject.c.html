@@ -1,0 +1,249 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lobject.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lobject.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lobject.c,v 2.22.1.1 2007/12/27 13:02:25 roberto Exp $
+** Some generic functions over Lua objects
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;ctype.h&gt;
+#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define <A NAME="lobject_c"><SPAN CLASS="definition">lobject_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+
+
+
+const <A HREF="lobject.h.html#TValue">TValue</A> <A NAME="luaO_nilobject_"><SPAN CLASS="definition">luaO_nilobject_</SPAN></A> = {{NULL}, <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>};
+
+
+/*
+** converts an integer to a "floating point byte", represented as
+** (eeeeexxx), where the real value is (1xxx) * 2^(eeeee - 1) if
+** eeeee != 0 and (xxx) otherwise.
+*/
+int <A NAME="luaO_int2fb"><SPAN CLASS="definition">luaO_int2fb</SPAN></A> (unsigned int x) {
+  int e = 0;  /* expoent */
+  while (x &gt;= 16) {
+    x = (x+1) &gt;&gt; 1;
+    e++;
+  }
+  if (x &lt; 8) return x;
+  else return ((e+1) &lt;&lt; 3) | (<A HREF="llimits.h.html#cast_int">cast_int</A>(x) - 8);
+}
+
+
+/* converts back */
+int <A NAME="luaO_fb2int"><SPAN CLASS="definition">luaO_fb2int</SPAN></A> (int x) {
+  int e = (x &gt;&gt; 3) &amp; 31;
+  if (e == 0) return x;
+  else return ((x &amp; 7)+8) &lt;&lt; (e - 1);
+}
+
+
+int <A NAME="luaO_log2"><SPAN CLASS="definition">luaO_log2</SPAN></A> (unsigned int x) {
+  static const <A HREF="llimits.h.html#lu_byte">lu_byte</A> log_2[256] = {
+    0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8
+  };
+  int l = -1;
+  while (x &gt;= 256) { l += 8; x &gt;&gt;= 8; }
+  return l + log_2[x];
+
+}
+
+
+int <A NAME="luaO_rawequalObj"><SPAN CLASS="definition">luaO_rawequalObj</SPAN></A> (const <A HREF="lobject.h.html#TValue">TValue</A> *t1, const <A HREF="lobject.h.html#TValue">TValue</A> *t2) {
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(t1) != <A HREF="lobject.h.html#ttype">ttype</A>(t2)) return 0;
+  else switch (<A HREF="lobject.h.html#ttype">ttype</A>(t1)) {
+    case <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>:
+      return 1;
+    case <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>:
+      return <A HREF="luaconf.h.html#luai_numeq">luai_numeq</A>(<A HREF="lobject.h.html#nvalue">nvalue</A>(t1), <A HREF="lobject.h.html#nvalue">nvalue</A>(t2));
+    case <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>:
+      return <A HREF="lobject.h.html#bvalue">bvalue</A>(t1) == <A HREF="lobject.h.html#bvalue">bvalue</A>(t2);  /* boolean true must be 1 !! */
+    case <A HREF="lua.h.html#LUA_TLIGHTUSERDATA">LUA_TLIGHTUSERDATA</A>:
+      return <A HREF="lobject.h.html#pvalue">pvalue</A>(t1) == <A HREF="lobject.h.html#pvalue">pvalue</A>(t2);
+    default:
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#iscollectable">iscollectable</A>(t1));
+      return <A HREF="lobject.h.html#gcvalue">gcvalue</A>(t1) == <A HREF="lobject.h.html#gcvalue">gcvalue</A>(t2);
+  }
+}
+
+
+int <A NAME="luaO_str2d"><SPAN CLASS="definition">luaO_str2d</SPAN></A> (const char *s, <A HREF="lua.h.html#lua_Number">lua_Number</A> *result) {
+  char *endptr;
+  *result = <A HREF="luaconf.h.html#lua_str2number">lua_str2number</A>(s, &amp;endptr);
+  if (endptr == s) return 0;  /* conversion failed */
+  if (*endptr == 'x' || *endptr == 'X')  /* maybe an hexadecimal constant? */
+    *result = <A HREF="llimits.h.html#cast_num">cast_num</A>(strtoul(s, &amp;endptr, 16));
+  if (*endptr == '\0') return 1;  /* most common case */
+  while (isspace(<A HREF="llimits.h.html#cast">cast</A>(unsigned char, *endptr))) endptr++;
+  if (*endptr != '\0') return 0;  /* invalid trailing characters? */
+  return 1;
+}
+
+
+
+static void <A NAME="pushstr"><SPAN CLASS="definition">pushstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str) {
+  <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, <A HREF="lstring.h.html#luaS_new">luaS_new</A>(L, str));
+  <A HREF="ldo.h.html#incr_top">incr_top</A>(L);
+}
+
+
+/* this function handles only `%d', `%c', %f, %p, and `%s' formats */
+const char *<A NAME="luaO_pushvfstring"><SPAN CLASS="definition">luaO_pushvfstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, va_list argp) {
+  int n = 1;
+  <A HREF="lobject.c.html#pushstr">pushstr</A>(L, "");
+  for (;;) {
+    const char *e = strchr(fmt, '%');
+    if (e == NULL) break;
+    <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, fmt, e-fmt));
+    <A HREF="ldo.h.html#incr_top">incr_top</A>(L);
+    switch (*(e+1)) {
+      case 's': {
+        const char *s = va_arg(argp, char *);
+        if (s == NULL) s = "(null)";
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, s);
+        break;
+      }
+      case 'c': {
+        char buff[2];
+        buff[0] = <A HREF="llimits.h.html#cast">cast</A>(char, va_arg(argp, int));
+        buff[1] = '\0';
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, buff);
+        break;
+      }
+      case 'd': {
+        <A HREF="lobject.h.html#setnvalue">setnvalue</A>(L-&gt;top, <A HREF="llimits.h.html#cast_num">cast_num</A>(va_arg(argp, int)));
+        <A HREF="ldo.h.html#incr_top">incr_top</A>(L);
+        break;
+      }
+      case 'f': {
+        <A HREF="lobject.h.html#setnvalue">setnvalue</A>(L-&gt;top, <A HREF="llimits.h.html#cast_num">cast_num</A>(va_arg(argp, <A HREF="llimits.h.html#l_uacNumber">l_uacNumber</A>)));
+        <A HREF="ldo.h.html#incr_top">incr_top</A>(L);
+        break;
+      }
+      case 'p': {
+        char buff[4*sizeof(void *) + 8]; /* should be enough space for a `%p' */
+        sprintf(buff, "%p", va_arg(argp, void *));
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, buff);
+        break;
+      }
+      case '%': {
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, "%");
+        break;
+      }
+      default: {
+        char buff[3];
+        buff[0] = '%';
+        buff[1] = *(e+1);
+        buff[2] = '\0';
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, buff);
+        break;
+      }
+    }
+    n += 2;
+    fmt = e+2;
+  }
+  <A HREF="lobject.c.html#pushstr">pushstr</A>(L, fmt);
+  <A HREF="lvm.c.html#luaV_concat">luaV_concat</A>(L, n+1, <A HREF="llimits.h.html#cast_int">cast_int</A>(L-&gt;top - L-&gt;base) - 1);
+  L-&gt;top -= n;
+  return <A HREF="lobject.h.html#svalue">svalue</A>(L-&gt;top - 1);
+}
+
+
+const char *<A NAME="luaO_pushfstring"><SPAN CLASS="definition">luaO_pushfstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...) {
+  const char *msg;
+  va_list argp;
+  va_start(argp, fmt);
+  msg = <A HREF="lobject.c.html#luaO_pushvfstring">luaO_pushvfstring</A>(L, fmt, argp);
+  va_end(argp);
+  return msg;
+}
+
+
+void <A NAME="luaO_chunkid"><SPAN CLASS="definition">luaO_chunkid</SPAN></A> (char *out, const char *source, size_t bufflen) {
+  if (*source == '=') {
+    strncpy(out, source+1, bufflen);  /* remove first char */
+    out[bufflen-1] = '\0';  /* ensures null termination */
+  }
+  else {  /* out = "source", or "...source" */
+    if (*source == '@') {
+      size_t l;
+      source++;  /* skip the `@' */
+      bufflen -= sizeof(" '...' ");
+      l = strlen(source);
+      strcpy(out, "");
+      if (l &gt; bufflen) {
+        source += (l-bufflen);  /* get last part of file name */
+        strcat(out, "...");
+      }
+      strcat(out, source);
+    }
+    else {  /* out = [string "string"] */
+      size_t len = strcspn(source, "\n\r");  /* stop at first newline */
+      bufflen -= sizeof(" [string \"...\"] ");
+      if (len &gt; bufflen) len = bufflen;
+      strcpy(out, "[string \"");
+      if (source[len] != '\0') {  /* must truncate? */
+        strncat(out, source, len);
+        strcat(out, "...");
+      }
+      else
+        strcat(out, source);
+      strcat(out, "\"]");
+    }
+  }
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

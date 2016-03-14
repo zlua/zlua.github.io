@@ -1,0 +1,75 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - ltable.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ltable.h
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ltable.h,v 2.10.1.1 2007/12/27 13:02:25 roberto Exp $
+** Lua tables (hash)
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="ltable.h.html#ltable_h">ltable_h</A>
+#define <A NAME="ltable_h"><SPAN CLASS="definition">ltable_h</SPAN></A>
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+
+
+#define <A NAME="gnode"><SPAN CLASS="definition">gnode</SPAN></A>(t,i)      (&amp;(t)-&gt;node[i])
+#define <A NAME="gkey"><SPAN CLASS="definition">gkey</SPAN></A>(n)         (&amp;(n)-&gt;i_key.nk)
+#define <A NAME="gval"><SPAN CLASS="definition">gval</SPAN></A>(n)         (&amp;(n)-&gt;i_val)
+#define <A NAME="gnext"><SPAN CLASS="definition">gnext</SPAN></A>(n)        ((n)-&gt;i_key.nk.next)
+
+#define <A NAME="key2tval"><SPAN CLASS="definition">key2tval</SPAN></A>(n)     (&amp;(n)-&gt;i_key.tvk)
+
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="ltable.c.html#luaH_getnum">luaH_getnum</A> (<A HREF="lobject.h.html#Table">Table</A> *t, int key);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="ltable.c.html#luaH_setnum">luaH_setnum</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, int key);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A> (<A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lobject.h.html#TString">TString</A> *key);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="ltable.c.html#luaH_setstr">luaH_setstr</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lobject.h.html#TString">TString</A> *key);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="ltable.c.html#luaH_get">luaH_get</A> (<A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="ltable.c.html#luaH_set">luaH_set</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#Table">Table</A> *<A HREF="ltable.c.html#luaH_new">luaH_new</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narray, int lnhash);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ltable.c.html#luaH_resizearray">luaH_resizearray</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, int nasize);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ltable.c.html#luaH_free">luaH_free</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ltable.c.html#luaH_next">luaH_next</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t, <A HREF="lobject.h.html#StkId">StkId</A> key);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ltable.c.html#luaH_getn">luaH_getn</A> (<A HREF="lobject.h.html#Table">Table</A> *t);
+
+
+#if defined(LUA_DEBUG)
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#Node">Node</A> *<A HREF="ltable.c.html#luaH_mainposition">luaH_mainposition</A> (const <A HREF="lobject.h.html#Table">Table</A> *t, const <A HREF="lobject.h.html#TValue">TValue</A> *key);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ltable.c.html#luaH_isdummy">luaH_isdummy</A> (<A HREF="lobject.h.html#Node">Node</A> *n);
+#endif
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,120 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>Programming in Lua : 12.1.1</title>
+<link rel="stylesheet" type="text/css" href="pil.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</head>
+<body>
+<p class="warning">
+<A HREF="contents.html"><IMG TITLE="Programming in Lua (first edition)" SRC="capa.jpg" ALT="" ALIGN="left"></A>This first edition was written for Lua 5.0. While still largely relevant for later versions, there are some differences.<BR>The third edition targets Lua 5.2 and is available at <A HREF="http://www.amazon.com/exec/obidos/ASIN/859037985X/theprogrammil3-20">Amazon</A> and other bookstores.<BR>By buying the book, you also help to <A HREF="../donations.html">support the Lua project</A>.
+</p>
+<table width="100%" class="nav">
+<tr>
+<td width="10%" align="left"><a href="12.1.html"><img src="left.png" alt="Previous"></a></td>
+<td width="80%" align="center"><a href="contents.html">
+<font color="gray">Programming in </font><font color="blue"> Lua</font>
+</a></td>
+<td width="10%" align="right"><a href="12.1.2.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+<tr>
+<td width="10%" align="left"></td>
+<td width="80%" align="center"><a href="contents.html#P2">Part II. Tables and Objects</a>
+<span class="spacer"></span>
+<a href="contents.html#12">Chapter 12. Data Files and Persistence</a></td>
+<td width="10%" align="right"></td></tr>
+</table>
+<hr>
+<h3>12.1.1 &ndash; Saving Tables without Cycles</h3>
+
+<p>Our next (and harder) task is to save tables.
+There are several ways to do that,
+according to what restrictions we assume about
+the table structure.
+No single algorithm is appropriate for all cases.
+Simple tables not only need simpler algorithms,
+but the resulting files can be more aesthetic, too.
+
+<p>Our first attempt is as follows:
+<pre>
+    function serialize (o)
+      if type(o) == "number" then
+        io.write(o)
+      elseif type(o) == "string" then
+        io.write(string.format("%q", o))
+      elseif type(o) == "table" then
+        io.write("{\n")
+        for k,v in pairs(o) do
+          io.write("  ", k, " = ")
+          serialize(v)
+          io.write(",\n")
+        end
+        io.write("}\n")
+      else
+        error("cannot serialize a " .. type(o))
+      end
+    end
+</pre>
+Despite its simplicity,
+that function does a reasonable job.
+It even handles nested tables
+(that is, tables within other tables),
+as long as the table structure is a tree
+(that is, there are no shared sub-tables and no cycles).
+A small aesthetic improvement would be to indent
+occasional nested tables;
+you can try it as an exercise.
+(Hint:
+Add an extra parameter to <code>serialize</code> with the indentation string.)
+
+<p>The previous function assumes that all keys in a table
+are valid identifiers.
+If a table has numeric keys,
+or string keys which are not syntactic valid Lua identifiers,
+we are in trouble.
+A simple way to solve this difficulty is to change the line
+<pre>
+          io.write("  ", k, " = ")
+</pre>
+to
+<pre>
+          io.write("  [")
+          serialize(k)
+          io.write("] = ")
+</pre>
+With this change, we improve the robustness of our function,
+at the cost of the aesthetics of the resulting file.
+Compare:
+<pre>
+    -- result of serialize{a=12, b='Lua', key='another "one"'}
+    -- first version
+    {
+      a = 12,
+      b = "Lua",
+      key = "another \"one\"",
+    }
+    
+    -- second version
+    {
+      ["a"] = 12,
+      ["b"] = "Lua",
+      ["key"] = "another \"one\"",
+    }
+</pre>
+We can improve this result by testing for each case
+whether it needs the square brackets;
+again, we will leave this improvement as an exercise.
+
+<hr>
+<table width="100%" class="nav">
+<tr>
+<td width="90%" align="left">
+<small>
+  Copyright &copy; 2003&ndash;2004 Roberto Ierusalimschy.  All rights reserved.
+</small>
+</td>
+<td width="10%" align="right"><a href="12.1.2.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+</table>
+
+
+</body></html>
+

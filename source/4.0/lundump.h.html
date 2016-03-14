@@ -1,0 +1,70 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lundump.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lundump.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lundump.h,v 1.21 2000/10/31 16:57:23 lhf Exp $
+** load pre-compiled Lua chunks
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lundump.h.html#lundump_h">lundump_h</A>
+#define <A NAME="lundump_h"><SPAN CLASS="definition">lundump_h</SPAN></A>
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+/* load one chunk */
+<A HREF="lobject.h.html#Proto">Proto</A>* <A HREF="lundump.c.html#luaU_undump">luaU_undump</A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z);
+
+/* find byte order */
+int <A HREF="lundump.c.html#luaU_endianess">luaU_endianess</A> (void);
+
+/* definitions for headers of binary files */
+#define <A NAME="VERSION"><SPAN CLASS="definition">VERSION</SPAN></A>         0x40            /* last format change was in 4.0 */
+#define <A NAME="VERSION0"><SPAN CLASS="definition">VERSION0</SPAN></A>        0x40            /* last major  change was in 4.0 */
+#define <A NAME="ID_CHUNK"><SPAN CLASS="definition">ID_CHUNK</SPAN></A>        27              /* binary files start with ESC... */
+#define <A NAME="SIGNATURE"><SPAN CLASS="definition">SIGNATURE</SPAN></A>       "Lua"           /* ...followed by this signature */
+
+/* formats for error messages */
+#define <A NAME="SOURCE_FMT"><SPAN CLASS="definition">SOURCE_FMT</SPAN></A>      "&lt;%d:%.99s&gt;"
+#define <A NAME="SOURCE"><SPAN CLASS="definition">SOURCE</SPAN></A>          tf-&gt;lineDefined,tf-&gt;source-&gt;str
+#define <A NAME="IN_FMT"><SPAN CLASS="definition">IN_FMT</SPAN></A>          " in %p " <A HREF="lundump.h.html#SOURCE_FMT">SOURCE_FMT</A>
+#define <A NAME="IN"><SPAN CLASS="definition">IN</SPAN></A>              tf,<A HREF="lundump.h.html#SOURCE">SOURCE</A>
+
+/* a multiple of PI for testing native format */
+/* multiplying by 1E8 gives non-trivial integer values */
+#define <A NAME="TEST_NUMBER"><SPAN CLASS="definition">TEST_NUMBER</SPAN></A>     3.14159265358979323846E8
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

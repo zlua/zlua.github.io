@@ -1,0 +1,130 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lctype.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lctype.h
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lctype.h,v 1.12.1.1 2013/04/12 18:48:47 roberto Exp $
+** 'ctype' functions for Lua
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lctype.h.html#lctype_h">lctype_h</A>
+#define <A NAME="lctype_h"><SPAN CLASS="definition">lctype_h</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+/*
+** WARNING: the functions defined here do not necessarily correspond
+** to the similar functions in the standard C ctype.h. They are
+** optimized for the specific needs of Lua
+*/
+
+#if !defined(<A HREF="lctype.h.html#LUA_USE_CTYPE">LUA_USE_CTYPE</A>)
+
+#if 'A' == 65 &amp;&amp; '0' == 48
+/* ASCII case: can use its own tables; faster and fixed */
+#define <A HREF="lctype.h.html#LUA_USE_CTYPE">LUA_USE_CTYPE</A>   0
+#else
+/* must use standard C ctype */
+#define <A NAME="LUA_USE_CTYPE"><SPAN CLASS="definition">LUA_USE_CTYPE</SPAN></A>   1
+#endif
+
+#endif
+
+
+#if !<A HREF="lctype.h.html#LUA_USE_CTYPE">LUA_USE_CTYPE</A>      /* { */
+
+#include &lt;limits.h&gt;
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+
+
+#define <A NAME="ALPHABIT"><SPAN CLASS="definition">ALPHABIT</SPAN></A>        0
+#define <A NAME="DIGITBIT"><SPAN CLASS="definition">DIGITBIT</SPAN></A>        1
+#define <A NAME="PRINTBIT"><SPAN CLASS="definition">PRINTBIT</SPAN></A>        2
+#define <A NAME="SPACEBIT"><SPAN CLASS="definition">SPACEBIT</SPAN></A>        3
+#define <A NAME="XDIGITBIT"><SPAN CLASS="definition">XDIGITBIT</SPAN></A>       4
+
+
+#define <A NAME="MASK"><SPAN CLASS="definition">MASK</SPAN></A>(B)         (1 &lt;&lt; (B))
+
+
+/*
+** add 1 to char to allow index -1 (<A HREF="lzio.h.html#EOZ">EOZ</A>)
+*/
+#define <A NAME="testprop"><SPAN CLASS="definition">testprop</SPAN></A>(c,p)   (<A HREF="lctype.c.html#luai_ctype_">luai_ctype_</A>[(c)+1] &amp; (p))
+
+/*
+** 'lalpha' (Lua alphabetic) and 'lalnum' (Lua alphanumeric) both include '_'
+*/
+#define <A HREF="lctype.h.html#lislalpha">lislalpha</A>(c)    <A HREF="lctype.h.html#testprop">testprop</A>(c, <A HREF="lctype.h.html#MASK">MASK</A>(<A HREF="lctype.h.html#ALPHABIT">ALPHABIT</A>))
+#define <A HREF="lctype.h.html#lislalnum">lislalnum</A>(c)    <A HREF="lctype.h.html#testprop">testprop</A>(c, (<A HREF="lctype.h.html#MASK">MASK</A>(<A HREF="lctype.h.html#ALPHABIT">ALPHABIT</A>) | <A HREF="lctype.h.html#MASK">MASK</A>(<A HREF="lctype.h.html#DIGITBIT">DIGITBIT</A>)))
+#define <A HREF="lctype.h.html#lisdigit">lisdigit</A>(c)     <A HREF="lctype.h.html#testprop">testprop</A>(c, <A HREF="lctype.h.html#MASK">MASK</A>(<A HREF="lctype.h.html#DIGITBIT">DIGITBIT</A>))
+#define <A HREF="lctype.h.html#lisspace">lisspace</A>(c)     <A HREF="lctype.h.html#testprop">testprop</A>(c, <A HREF="lctype.h.html#MASK">MASK</A>(<A HREF="lctype.h.html#SPACEBIT">SPACEBIT</A>))
+#define <A HREF="lctype.h.html#lisprint">lisprint</A>(c)     <A HREF="lctype.h.html#testprop">testprop</A>(c, <A HREF="lctype.h.html#MASK">MASK</A>(<A HREF="lctype.h.html#PRINTBIT">PRINTBIT</A>))
+#define <A HREF="lctype.h.html#lisxdigit">lisxdigit</A>(c)    <A HREF="lctype.h.html#testprop">testprop</A>(c, <A HREF="lctype.h.html#MASK">MASK</A>(<A HREF="lctype.h.html#XDIGITBIT">XDIGITBIT</A>))
+
+/*
+** this '<A HREF="lctype.h.html#ltolower">ltolower</A>' only works for alphabetic characters
+*/
+#define <A HREF="lctype.h.html#ltolower">ltolower</A>(c)     ((c) | ('A' ^ 'a'))
+
+
+/* two more entries for 0 and -1 (<A HREF="lzio.h.html#EOZ">EOZ</A>) */
+<A HREF="luaconf.h.html#LUAI_DDEC">LUAI_DDEC</A> const <A HREF="llimits.h.html#lu_byte">lu_byte</A> <A HREF="lctype.c.html#luai_ctype_">luai_ctype_</A>[UCHAR_MAX + 2];
+
+
+#else                   /* }{ */
+
+/*
+** use standard C ctypes
+*/
+
+#include &lt;ctype.h&gt;
+
+
+#define <A NAME="lislalpha"><SPAN CLASS="definition">lislalpha</SPAN></A>(c)    (isalpha(c) || (c) == '_')
+#define <A NAME="lislalnum"><SPAN CLASS="definition">lislalnum</SPAN></A>(c)    (isalnum(c) || (c) == '_')
+#define <A NAME="lisdigit"><SPAN CLASS="definition">lisdigit</SPAN></A>(c)     (isdigit(c))
+#define <A NAME="lisspace"><SPAN CLASS="definition">lisspace</SPAN></A>(c)     (isspace(c))
+#define <A NAME="lisprint"><SPAN CLASS="definition">lisprint</SPAN></A>(c)     (isprint(c))
+#define <A NAME="lisxdigit"><SPAN CLASS="definition">lisxdigit</SPAN></A>(c)    (isxdigit(c))
+
+#define <A NAME="ltolower"><SPAN CLASS="definition">ltolower</SPAN></A>(c)     (tolower(c))
+
+#endif                  /* } */
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,69 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lualib.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lualib.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lualib.h,v 1.14 2000/10/27 16:15:53 roberto Exp $
+** Lua standard libraries
+** See Copyright Notice in lua.h
+*/
+
+
+#ifndef <A HREF="lualib.h.html#lualib_h">lualib_h</A>
+#define <A NAME="lualib_h"><SPAN CLASS="definition">lualib_h</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+#ifndef <A HREF="lualib.h.html#LUALIB_API">LUALIB_API</A>
+#define <A NAME="LUALIB_API"><SPAN CLASS="definition">LUALIB_API</SPAN></A>      extern
+#endif
+
+
+#define <A NAME="LUA_ALERT"><SPAN CLASS="definition">LUA_ALERT</SPAN></A>               "_ALERT"
+
+<A HREF="lualib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lbaselib.c.html#lua_baselibopen">lua_baselibopen</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="lualib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="liolib.c.html#lua_iolibopen">lua_iolibopen</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="lualib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lstrlib.c.html#lua_strlibopen">lua_strlibopen</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="lualib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lmathlib.c.html#lua_mathlibopen">lua_mathlibopen</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="lualib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="ldblib.c.html#lua_dblibopen">lua_dblibopen</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+
+
+/* Auxiliary functions (private) */
+
+const char *<A HREF="lstrlib.c.html#luaI_classend">luaI_classend</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *p);
+int <A HREF="lstrlib.c.html#luaI_singlematch">luaI_singlematch</A> (int c, const char *p, const char *ep);
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

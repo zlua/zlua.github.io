@@ -1,0 +1,67 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lundump.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lundump.h
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lundump.h,v 1.45 2015/09/08 15:41:05 roberto Exp $
+** load precompiled Lua chunks
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lundump.h.html#lundump_h">lundump_h</A>
+#define <A NAME="lundump_h"><SPAN CLASS="definition">lundump_h</SPAN></A>
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+/* data to catch conversion errors */
+#define <A NAME="LUAC_DATA"><SPAN CLASS="definition">LUAC_DATA</SPAN></A>       "\x19\x93\r\n\x1a\n"
+
+#define <A NAME="LUAC_INT"><SPAN CLASS="definition">LUAC_INT</SPAN></A>        0x5678
+#define <A NAME="LUAC_NUM"><SPAN CLASS="definition">LUAC_NUM</SPAN></A>        <A HREF="llimits.h.html#cast_num">cast_num</A>(370.5)
+
+#define <A NAME="MYINT"><SPAN CLASS="definition">MYINT</SPAN></A>(s)        (s[0]-'0')
+#define <A NAME="LUAC_VERSION"><SPAN CLASS="definition">LUAC_VERSION</SPAN></A>    (<A HREF="lundump.h.html#MYINT">MYINT</A>(<A HREF="lua.h.html#LUA_VERSION_MAJOR">LUA_VERSION_MAJOR</A>)*16+<A HREF="lundump.h.html#MYINT">MYINT</A>(<A HREF="lua.h.html#LUA_VERSION_MINOR">LUA_VERSION_MINOR</A>))
+#define <A NAME="LUAC_FORMAT"><SPAN CLASS="definition">LUAC_FORMAT</SPAN></A>     0       /* this is the official format */
+
+/* load one chunk; from lundump.c */
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#LClosure">LClosure</A>* <A HREF="lundump.c.html#luaU_undump">luaU_undump</A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, const char* name);
+
+/* dump one chunk; from ldump.c */
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ldump.c.html#luaU_dump">luaU_dump</A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, const <A HREF="lobject.h.html#Proto">Proto</A>* f, <A HREF="lua.h.html#lua_Writer">lua_Writer</A> w,
+                         void* data, int strip);
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:16 2015
+</P>
+
+</BODY>
+</HTML>

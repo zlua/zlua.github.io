@@ -1,0 +1,114 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>Programming in Lua : p1.1</title>
+<link rel="stylesheet" type="text/css" href="pil.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</head>
+<body>
+<p class="warning">
+<A HREF="contents.html"><IMG TITLE="Programming in Lua (first edition)" SRC="capa.jpg" ALT="" ALIGN="left"></A>This first edition was written for Lua 5.0. While still largely relevant for later versions, there are some differences.<BR>The third edition targets Lua 5.2 and is available at <A HREF="http://www.amazon.com/exec/obidos/ASIN/859037985X/theprogrammil3-20">Amazon</A> and other bookstores.<BR>By buying the book, you also help to <A HREF="../donations.html">support the Lua project</A>.
+</p>
+<table width="100%" class="nav">
+<tr>
+<td width="10%" align="left"><a href="p1.html"><img src="left.png" alt="Previous"></a></td>
+<td width="80%" align="center"><a href="contents.html">
+<font color="gray">Programming in </font><font color="blue"> Lua</font>
+</a></td>
+<td width="10%" align="right"><a href="p1.2.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+<tr>
+<td width="10%" align="left"></td>
+<td width="80%" align="center"><a href="contents.html#0">Preface</a></td>
+<td width="10%" align="right"></td></tr>
+</table>
+<hr>
+<h3>Audience</h3>
+
+<p>Lua users typically fall into three broad groups:
+those that use Lua already embedded in an application program,
+those that use Lua stand alone,
+and those that use Lua and C together.
+
+<p>Many people use Lua embedded in an application program,
+such as CGILua (for building dynamic Web pages)
+or LuaOrb (for accessing CORBA objects).
+These applications use the Lua-C API to register new functions,
+to create new types,
+and to change the behavior of some language operations,
+configuring Lua for their specific domains.
+Frequently, the users of such applications do not even know that
+Lua is an independent language adapted for a particular domain;
+for instance, CGILua users tend to think of Lua as a language
+specifically designed for the Web.
+
+<p>Lua is useful also as a stand-alone language,
+mainly for text-processing and one-shot little programs.
+For such uses, the main functionality of Lua comes from its
+standard libraries,
+which offer pattern matching and other functions for string handling.
+We may regard the stand-alone language
+as the embedding of Lua into the domain of
+string and (text) file manipulation.
+
+<p>Finally, there are those programmers that work on
+the other side of the bench,
+writing applications that use Lua as a library.
+Those people will program more in C than in Lua,
+although they need a good understanding of Lua
+to create interfaces that are simple,
+easy to use, and well integrated with the language.
+
+<p>This book has much to offer to all those people.
+The first part covers the language itself,
+showing how we can explore all its potential.
+We focus on different language constructs
+and use numerous examples to show how to use them for
+practical tasks.
+Some chapters in this part cover basic concepts,
+such as control structures.
+But there are also advanced (and original) topics,
+such as iterators and coroutines.
+
+<p>The second part is entirely devoted to tables,
+the sole data structure in Lua.
+Its chapters discuss data structures,
+persistence, packages, and object-oriented programming.
+There we will unveil the real power of the language.
+
+<p>The third part presents the standard libraries.
+This part is particularly useful for those that use Lua
+as a stand-alone language,
+although many other applications also incorporate all or part of the
+standard libraries.
+This part devotes one chapter to each standard library:
+the mathematical library,
+the table library,
+the string library,
+the I/O library,
+the operating system library,
+and the debug library.
+
+<p>Finally, the last part of the book covers the API between Lua and C,
+for those that use C to get the full power of Lua.
+This part necessarily has a flavor quite different from the
+rest of the book.
+There we will be programming in C, not in Lua;
+therefore, we will be wearing a different hat.
+For some readers,
+the discussion of the C API may be of marginal interest;
+for others, it may be the most relevant part of this book.
+
+<hr>
+<table width="100%" class="nav">
+<tr>
+<td width="90%" align="left">
+<small>
+  Copyright &copy; 2003&ndash;2004 Roberto Ierusalimschy.  All rights reserved.
+</small>
+</td>
+<td width="10%" align="right"><a href="p1.2.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+</table>
+
+
+</body></html>
+

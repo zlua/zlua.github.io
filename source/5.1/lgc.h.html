@@ -1,0 +1,145 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lgc.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lgc.h
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lgc.h,v 2.15.1.1 2007/12/27 13:02:25 roberto Exp $
+** Garbage Collector
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lgc.h.html#lgc_h">lgc_h</A>
+#define <A NAME="lgc_h"><SPAN CLASS="definition">lgc_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+
+
+/*
+** Possible states of the Garbage Collector
+*/
+#define <A NAME="GCSpause"><SPAN CLASS="definition">GCSpause</SPAN></A>        0
+#define <A NAME="GCSpropagate"><SPAN CLASS="definition">GCSpropagate</SPAN></A>    1
+#define <A NAME="GCSsweepstring"><SPAN CLASS="definition">GCSsweepstring</SPAN></A>  2
+#define <A NAME="GCSsweep"><SPAN CLASS="definition">GCSsweep</SPAN></A>        3
+#define <A NAME="GCSfinalize"><SPAN CLASS="definition">GCSfinalize</SPAN></A>     4
+
+
+/*
+** some userful bit tricks
+*/
+#define <A NAME="resetbits"><SPAN CLASS="definition">resetbits</SPAN></A>(x,m)  ((x) &amp;= <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_byte">lu_byte</A>, ~(m)))
+#define <A NAME="setbits"><SPAN CLASS="definition">setbits</SPAN></A>(x,m)    ((x) |= (m))
+#define <A NAME="testbits"><SPAN CLASS="definition">testbits</SPAN></A>(x,m)   ((x) &amp; (m))
+#define <A NAME="bitmask"><SPAN CLASS="definition">bitmask</SPAN></A>(b)      (1&lt;&lt;(b))
+#define <A NAME="bit2mask"><SPAN CLASS="definition">bit2mask</SPAN></A>(b1,b2) (<A HREF="lgc.h.html#bitmask">bitmask</A>(b1) | <A HREF="lgc.h.html#bitmask">bitmask</A>(b2))
+#define <A NAME="l_setbit"><SPAN CLASS="definition">l_setbit</SPAN></A>(x,b)   <A HREF="lgc.h.html#setbits">setbits</A>(x, <A HREF="lgc.h.html#bitmask">bitmask</A>(b))
+#define <A NAME="resetbit"><SPAN CLASS="definition">resetbit</SPAN></A>(x,b)   <A HREF="lgc.h.html#resetbits">resetbits</A>(x, <A HREF="lgc.h.html#bitmask">bitmask</A>(b))
+#define <A NAME="testbit"><SPAN CLASS="definition">testbit</SPAN></A>(x,b)    <A HREF="lgc.h.html#testbits">testbits</A>(x, <A HREF="lgc.h.html#bitmask">bitmask</A>(b))
+#define <A NAME="set2bits"><SPAN CLASS="definition">set2bits</SPAN></A>(x,b1,b2)       <A HREF="lgc.h.html#setbits">setbits</A>(x, (<A HREF="lgc.h.html#bit2mask">bit2mask</A>(b1, b2)))
+#define <A NAME="reset2bits"><SPAN CLASS="definition">reset2bits</SPAN></A>(x,b1,b2)     <A HREF="lgc.h.html#resetbits">resetbits</A>(x, (<A HREF="lgc.h.html#bit2mask">bit2mask</A>(b1, b2)))
+#define <A NAME="test2bits"><SPAN CLASS="definition">test2bits</SPAN></A>(x,b1,b2)      <A HREF="lgc.h.html#testbits">testbits</A>(x, (<A HREF="lgc.h.html#bit2mask">bit2mask</A>(b1, b2)))
+
+
+
+/*
+** Layout for bit use in `marked' field:
+** bit 0 - object is white (type 0)
+** bit 1 - object is white (type 1)
+** bit 2 - object is black
+** bit 3 - for userdata: has been finalized
+** bit 3 - for tables: has weak keys
+** bit 4 - for tables: has weak values
+** bit 5 - object is fixed (should not be collected)
+** bit 6 - object is "super" fixed (only the <A HREF="lua.c.html#main">main</A> thread)
+*/
+
+
+#define <A NAME="WHITE0BIT"><SPAN CLASS="definition">WHITE0BIT</SPAN></A>       0
+#define <A NAME="WHITE1BIT"><SPAN CLASS="definition">WHITE1BIT</SPAN></A>       1
+#define <A NAME="BLACKBIT"><SPAN CLASS="definition">BLACKBIT</SPAN></A>        2
+#define <A NAME="FINALIZEDBIT"><SPAN CLASS="definition">FINALIZEDBIT</SPAN></A>    3
+#define <A NAME="KEYWEAKBIT"><SPAN CLASS="definition">KEYWEAKBIT</SPAN></A>      3
+#define <A NAME="VALUEWEAKBIT"><SPAN CLASS="definition">VALUEWEAKBIT</SPAN></A>    4
+#define <A NAME="FIXEDBIT"><SPAN CLASS="definition">FIXEDBIT</SPAN></A>        5
+#define <A NAME="SFIXEDBIT"><SPAN CLASS="definition">SFIXEDBIT</SPAN></A>       6
+#define <A NAME="WHITEBITS"><SPAN CLASS="definition">WHITEBITS</SPAN></A>       <A HREF="lgc.h.html#bit2mask">bit2mask</A>(<A HREF="lgc.h.html#WHITE0BIT">WHITE0BIT</A>, <A HREF="lgc.h.html#WHITE1BIT">WHITE1BIT</A>)
+
+
+#define <A NAME="iswhite"><SPAN CLASS="definition">iswhite</SPAN></A>(x)      <A HREF="lgc.h.html#test2bits">test2bits</A>((x)-&gt;gch.marked, <A HREF="lgc.h.html#WHITE0BIT">WHITE0BIT</A>, <A HREF="lgc.h.html#WHITE1BIT">WHITE1BIT</A>)
+#define <A NAME="isblack"><SPAN CLASS="definition">isblack</SPAN></A>(x)      <A HREF="lgc.h.html#testbit">testbit</A>((x)-&gt;gch.marked, <A HREF="lgc.h.html#BLACKBIT">BLACKBIT</A>)
+#define <A NAME="isgray"><SPAN CLASS="definition">isgray</SPAN></A>(x)       (!<A HREF="lgc.h.html#isblack">isblack</A>(x) &amp;&amp; !<A HREF="lgc.h.html#iswhite">iswhite</A>(x))
+
+#define <A NAME="otherwhite"><SPAN CLASS="definition">otherwhite</SPAN></A>(g)   (g-&gt;currentwhite ^ <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+#define <A NAME="isdead"><SPAN CLASS="definition">isdead</SPAN></A>(g,v)     ((v)-&gt;gch.marked &amp; <A HREF="lgc.h.html#otherwhite">otherwhite</A>(g) &amp; <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+
+#define <A NAME="changewhite"><SPAN CLASS="definition">changewhite</SPAN></A>(x)  ((x)-&gt;gch.marked ^= <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+#define <A NAME="gray2black"><SPAN CLASS="definition">gray2black</SPAN></A>(x)   <A HREF="lgc.h.html#l_setbit">l_setbit</A>((x)-&gt;gch.marked, <A HREF="lgc.h.html#BLACKBIT">BLACKBIT</A>)
+
+#define <A NAME="valiswhite"><SPAN CLASS="definition">valiswhite</SPAN></A>(x)   (<A HREF="lobject.h.html#iscollectable">iscollectable</A>(x) &amp;&amp; <A HREF="lgc.h.html#iswhite">iswhite</A>(<A HREF="lobject.h.html#gcvalue">gcvalue</A>(x)))
+
+#define <A NAME="luaC_white"><SPAN CLASS="definition">luaC_white</SPAN></A>(g)   <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_byte">lu_byte</A>, (g)-&gt;currentwhite &amp; <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+
+
+#define <A NAME="luaC_checkGC"><SPAN CLASS="definition">luaC_checkGC</SPAN></A>(L) { \
+  <A HREF="llimits.h.html#condhardstacktests">condhardstacktests</A>(<A HREF="ldo.c.html#luaD_reallocstack">luaD_reallocstack</A>(L, L-&gt;stacksize - <A HREF="lstate.h.html#EXTRA_STACK">EXTRA_STACK</A> - 1)); \
+  if (<A HREF="lstate.h.html#G">G</A>(L)-&gt;totalbytes &gt;= <A HREF="lstate.h.html#G">G</A>(L)-&gt;GCthreshold) \
+        <A HREF="lgc.c.html#luaC_step">luaC_step</A>(L); }
+
+
+#define <A NAME="luaC_barrier"><SPAN CLASS="definition">luaC_barrier</SPAN></A>(L,p,v) { if (<A HREF="lgc.h.html#valiswhite">valiswhite</A>(v) &amp;&amp; <A HREF="lgc.h.html#isblack">isblack</A>(<A HREF="lstate.h.html#obj2gco">obj2gco</A>(p)))  \
+        <A HREF="lgc.c.html#luaC_barrierf">luaC_barrierf</A>(L,<A HREF="lstate.h.html#obj2gco">obj2gco</A>(p),<A HREF="lobject.h.html#gcvalue">gcvalue</A>(v)); }
+
+#define <A NAME="luaC_barriert"><SPAN CLASS="definition">luaC_barriert</SPAN></A>(L,t,v) { if (<A HREF="lgc.h.html#valiswhite">valiswhite</A>(v) &amp;&amp; <A HREF="lgc.h.html#isblack">isblack</A>(<A HREF="lstate.h.html#obj2gco">obj2gco</A>(t)))  \
+        <A HREF="lgc.c.html#luaC_barrierback">luaC_barrierback</A>(L,t); }
+
+#define <A NAME="luaC_objbarrier"><SPAN CLASS="definition">luaC_objbarrier</SPAN></A>(L,p,o)  \
+        { if (<A HREF="lgc.h.html#iswhite">iswhite</A>(<A HREF="lstate.h.html#obj2gco">obj2gco</A>(o)) &amp;&amp; <A HREF="lgc.h.html#isblack">isblack</A>(<A HREF="lstate.h.html#obj2gco">obj2gco</A>(p))) \
+                <A HREF="lgc.c.html#luaC_barrierf">luaC_barrierf</A>(L,<A HREF="lstate.h.html#obj2gco">obj2gco</A>(p),<A HREF="lstate.h.html#obj2gco">obj2gco</A>(o)); }
+
+#define <A NAME="luaC_objbarriert"><SPAN CLASS="definition">luaC_objbarriert</SPAN></A>(L,t,o)  \
+   { if (<A HREF="lgc.h.html#iswhite">iswhite</A>(<A HREF="lstate.h.html#obj2gco">obj2gco</A>(o)) &amp;&amp; <A HREF="lgc.h.html#isblack">isblack</A>(<A HREF="lstate.h.html#obj2gco">obj2gco</A>(t))) <A HREF="lgc.c.html#luaC_barrierback">luaC_barrierback</A>(L,t); }
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> size_t <A HREF="lgc.c.html#luaC_separateudata">luaC_separateudata</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int all);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_callGCTM">luaC_callGCTM</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_freeall">luaC_freeall</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_step">luaC_step</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_fullgc">luaC_fullgc</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_link">luaC_link</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#GCObject">GCObject</A> *o, <A HREF="llimits.h.html#lu_byte">lu_byte</A> tt);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_linkupval">luaC_linkupval</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#UpVal">UpVal</A> *uv);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_barrierf">luaC_barrierf</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#GCObject">GCObject</A> *o, <A HREF="lstate.h.html#GCObject">GCObject</A> *v);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_barrierback">luaC_barrierback</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

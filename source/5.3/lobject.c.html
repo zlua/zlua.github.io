@@ -1,0 +1,512 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lobject.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lobject.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lobject.c,v 2.108 2015/11/02 16:09:30 roberto Exp $
+** Some generic functions over Lua objects
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lobject_c"><SPAN CLASS="definition">lobject_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;locale.h&gt;
+#include &lt;math.h&gt;
+#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lctype.h.html">lctype.h</A>"
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+
+
+
+<A HREF="luaconf.h.html#LUAI_DDEF">LUAI_DDEF</A> const <A HREF="lobject.h.html#TValue">TValue</A> <A NAME="luaO_nilobject_"><SPAN CLASS="definition">luaO_nilobject_</SPAN></A> = {<A HREF="lobject.h.html#NILCONSTANT">NILCONSTANT</A>};
+
+
+/*
+** converts an integer to a "floating point byte", represented as
+** (eeeeexxx), where the real value is (1xxx) * 2^(eeeee - 1) if
+** eeeee != 0 and (xxx) otherwise.
+*/
+int <A NAME="luaO_int2fb"><SPAN CLASS="definition">luaO_int2fb</SPAN></A> (unsigned int x) {
+  int e = 0;  /* exponent */
+  if (x &lt; 8) return x;
+  while (x &gt;= (8 &lt;&lt; 4)) {  /* coarse steps */
+    x = (x + 0xf) &gt;&gt; 4;  /* x = ceil(x / 16) */
+    e += 4;
+  }
+  while (x &gt;= (8 &lt;&lt; 1)) {  /* fine steps */
+    x = (x + 1) &gt;&gt; 1;  /* x = ceil(x / 2) */
+    e++;
+  }
+  return ((e+1) &lt;&lt; 3) | (<A HREF="llimits.h.html#cast_int">cast_int</A>(x) - 8);
+}
+
+
+/* converts back */
+int <A NAME="luaO_fb2int"><SPAN CLASS="definition">luaO_fb2int</SPAN></A> (int x) {
+  return (x &lt; 8) ? x : ((x &amp; 7) + 8) &lt;&lt; ((x &gt;&gt; 3) - 1);
+}
+
+
+/*
+** Computes ceil(log2(x))
+*/
+int <A NAME="luaO_ceillog2"><SPAN CLASS="definition">luaO_ceillog2</SPAN></A> (unsigned int x) {
+  static const <A HREF="llimits.h.html#lu_byte">lu_byte</A> log_2[256] = {  /* log_2[i] = ceil(log2(i - 1)) */
+    0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8
+  };
+  int l = 0;
+  x--;
+  while (x &gt;= 256) { l += 8; x &gt;&gt;= 8; }
+  return l + log_2[x];
+}
+
+
+static <A HREF="lua.h.html#lua_Integer">lua_Integer</A> <A NAME="intarith"><SPAN CLASS="definition">intarith</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int op, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> v1,
+                                                   <A HREF="lua.h.html#lua_Integer">lua_Integer</A> v2) {
+  switch (op) {
+    case <A HREF="lua.h.html#LUA_OPADD">LUA_OPADD</A>: return <A HREF="lvm.h.html#intop">intop</A>(+, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPSUB">LUA_OPSUB</A>:return <A HREF="lvm.h.html#intop">intop</A>(-, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPMUL">LUA_OPMUL</A>:return <A HREF="lvm.h.html#intop">intop</A>(*, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPMOD">LUA_OPMOD</A>: return <A HREF="lvm.c.html#luaV_mod">luaV_mod</A>(L, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPIDIV">LUA_OPIDIV</A>: return <A HREF="lvm.c.html#luaV_div">luaV_div</A>(L, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPBAND">LUA_OPBAND</A>: return <A HREF="lvm.h.html#intop">intop</A>(&amp;, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPBOR">LUA_OPBOR</A>: return <A HREF="lvm.h.html#intop">intop</A>(|, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPBXOR">LUA_OPBXOR</A>: return <A HREF="lvm.h.html#intop">intop</A>(^, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPSHL">LUA_OPSHL</A>: return <A HREF="lvm.c.html#luaV_shiftl">luaV_shiftl</A>(v1, v2);
+    case <A HREF="lua.h.html#LUA_OPSHR">LUA_OPSHR</A>: return <A HREF="lvm.c.html#luaV_shiftl">luaV_shiftl</A>(v1, -v2);
+    case <A HREF="lua.h.html#LUA_OPUNM">LUA_OPUNM</A>: return <A HREF="lvm.h.html#intop">intop</A>(-, 0, v1);
+    case <A HREF="lua.h.html#LUA_OPBNOT">LUA_OPBNOT</A>: return <A HREF="lvm.h.html#intop">intop</A>(^, ~<A HREF="llimits.h.html#l_castS2U">l_castS2U</A>(0), v1);
+    default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0); return 0;
+  }
+}
+
+
+static <A HREF="lua.h.html#lua_Number">lua_Number</A> <A NAME="numarith"><SPAN CLASS="definition">numarith</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int op, <A HREF="lua.h.html#lua_Number">lua_Number</A> v1,
+                                                  <A HREF="lua.h.html#lua_Number">lua_Number</A> v2) {
+  switch (op) {
+    case <A HREF="lua.h.html#LUA_OPADD">LUA_OPADD</A>: return <A HREF="llimits.h.html#luai_numadd">luai_numadd</A>(L, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPSUB">LUA_OPSUB</A>: return <A HREF="llimits.h.html#luai_numsub">luai_numsub</A>(L, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPMUL">LUA_OPMUL</A>: return <A HREF="llimits.h.html#luai_nummul">luai_nummul</A>(L, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPDIV">LUA_OPDIV</A>: return <A HREF="llimits.h.html#luai_numdiv">luai_numdiv</A>(L, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPPOW">LUA_OPPOW</A>: return <A HREF="llimits.h.html#luai_numpow">luai_numpow</A>(L, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPIDIV">LUA_OPIDIV</A>: return <A HREF="llimits.h.html#luai_numidiv">luai_numidiv</A>(L, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPUNM">LUA_OPUNM</A>: return <A HREF="llimits.h.html#luai_numunm">luai_numunm</A>(L, v1);
+    case <A HREF="lua.h.html#LUA_OPMOD">LUA_OPMOD</A>: {
+      <A HREF="lua.h.html#lua_Number">lua_Number</A> m;
+      <A HREF="llimits.h.html#luai_nummod">luai_nummod</A>(L, v1, v2, m);
+      return m;
+    }
+    default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0); return 0;
+  }
+}
+
+
+void <A NAME="luaO_arith"><SPAN CLASS="definition">luaO_arith</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int op, const <A HREF="lobject.h.html#TValue">TValue</A> *p1, const <A HREF="lobject.h.html#TValue">TValue</A> *p2,
+                 <A HREF="lobject.h.html#TValue">TValue</A> *res) {
+  switch (op) {
+    case <A HREF="lua.h.html#LUA_OPBAND">LUA_OPBAND</A>: case <A HREF="lua.h.html#LUA_OPBOR">LUA_OPBOR</A>: case <A HREF="lua.h.html#LUA_OPBXOR">LUA_OPBXOR</A>:
+    case <A HREF="lua.h.html#LUA_OPSHL">LUA_OPSHL</A>: case <A HREF="lua.h.html#LUA_OPSHR">LUA_OPSHR</A>:
+    case <A HREF="lua.h.html#LUA_OPBNOT">LUA_OPBNOT</A>: {  /* operate only on integers */
+      <A HREF="lua.h.html#lua_Integer">lua_Integer</A> i1; <A HREF="lua.h.html#lua_Integer">lua_Integer</A> i2;
+      if (<A HREF="lvm.h.html#tointeger">tointeger</A>(p1, &amp;i1) &amp;&amp; <A HREF="lvm.h.html#tointeger">tointeger</A>(p2, &amp;i2)) {
+        <A HREF="lobject.h.html#setivalue">setivalue</A>(res, <A HREF="lobject.c.html#intarith">intarith</A>(L, op, i1, i2));
+        return;
+      }
+      else break;  /* go to the end */
+    }
+    case <A HREF="lua.h.html#LUA_OPDIV">LUA_OPDIV</A>: case <A HREF="lua.h.html#LUA_OPPOW">LUA_OPPOW</A>: {  /* operate only on floats */
+      <A HREF="lua.h.html#lua_Number">lua_Number</A> n1; <A HREF="lua.h.html#lua_Number">lua_Number</A> n2;
+      if (<A HREF="lvm.h.html#tonumber">tonumber</A>(p1, &amp;n1) &amp;&amp; <A HREF="lvm.h.html#tonumber">tonumber</A>(p2, &amp;n2)) {
+        <A HREF="lobject.h.html#setfltvalue">setfltvalue</A>(res, <A HREF="lobject.c.html#numarith">numarith</A>(L, op, n1, n2));
+        return;
+      }
+      else break;  /* go to the end */
+    }
+    default: {  /* other operations */
+      <A HREF="lua.h.html#lua_Number">lua_Number</A> n1; <A HREF="lua.h.html#lua_Number">lua_Number</A> n2;
+      if (<A HREF="lobject.h.html#ttisinteger">ttisinteger</A>(p1) &amp;&amp; <A HREF="lobject.h.html#ttisinteger">ttisinteger</A>(p2)) {
+        <A HREF="lobject.h.html#setivalue">setivalue</A>(res, <A HREF="lobject.c.html#intarith">intarith</A>(L, op, <A HREF="lobject.h.html#ivalue">ivalue</A>(p1), <A HREF="lobject.h.html#ivalue">ivalue</A>(p2)));
+        return;
+      }
+      else if (<A HREF="lvm.h.html#tonumber">tonumber</A>(p1, &amp;n1) &amp;&amp; <A HREF="lvm.h.html#tonumber">tonumber</A>(p2, &amp;n2)) {
+        <A HREF="lobject.h.html#setfltvalue">setfltvalue</A>(res, <A HREF="lobject.c.html#numarith">numarith</A>(L, op, n1, n2));
+        return;
+      }
+      else break;  /* go to the end */
+    }
+  }
+  /* could not perform raw operation; try metamethod */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L != NULL);  /* should not fail when folding (compile time) */
+  <A HREF="ltm.c.html#luaT_trybinTM">luaT_trybinTM</A>(L, p1, p2, res, <A HREF="llimits.h.html#cast">cast</A>(<A HREF="ltm.h.html#TMS">TMS</A>, (op - <A HREF="lua.h.html#LUA_OPADD">LUA_OPADD</A>) + <A HREF="ltm.h.html#TM_ADD">TM_ADD</A>));
+}
+
+
+int <A NAME="luaO_hexavalue"><SPAN CLASS="definition">luaO_hexavalue</SPAN></A> (int c) {
+  if (<A HREF="lctype.h.html#lisdigit">lisdigit</A>(c)) return c - '0';
+  else return (<A HREF="lctype.h.html#ltolower">ltolower</A>(c) - 'a') + 10;
+}
+
+
+static int <A NAME="isneg"><SPAN CLASS="definition">isneg</SPAN></A> (const char **s) {
+  if (**s == '-') { (*s)++; return 1; }
+  else if (**s == '+') (*s)++;
+  return 0;
+}
+
+
+
+/*
+** {==================================================================
+** Lua's implementation for '<A HREF="lobject.c.html#lua_strx2number">lua_strx2number</A>'
+** ===================================================================
+*/
+
+#if !defined(<A HREF="lobject.c.html#lua_strx2number">lua_strx2number</A>)
+
+/* maximum number of significant digits to read (to avoid overflows
+   even with single floats) */
+#define <A NAME="MAXSIGDIG"><SPAN CLASS="definition">MAXSIGDIG</SPAN></A>       30
+
+/*
+** convert an hexadecimal numeric string to a number, following
+** C99 specification for 'strtod'
+*/
+static <A HREF="lua.h.html#lua_Number">lua_Number</A> <A NAME="lua_strx2number"><SPAN CLASS="definition">lua_strx2number</SPAN></A> (const char *s, char **endptr) {
+  int dot = <A HREF="luaconf.h.html#lua_getlocaledecpoint">lua_getlocaledecpoint</A>();
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> r = 0.0;  /* result (accumulator) */
+  int sigdig = 0;  /* number of significant digits */
+  int nosigdig = 0;  /* number of non-significant digits */
+  int e = 0;  /* exponent correction */
+  int neg;  /* 1 if number is negative */
+  int hasdot = 0;  /* true after seen a dot */
+  *endptr = <A HREF="llimits.h.html#cast">cast</A>(char *, s);  /* nothing is valid yet */
+  while (<A HREF="lctype.h.html#lisspace">lisspace</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s))) s++;  /* skip initial spaces */
+  neg = <A HREF="lobject.c.html#isneg">isneg</A>(&amp;s);  /* check signal */
+  if (!(*s == '0' &amp;&amp; (*(s + 1) == 'x' || *(s + 1) == 'X')))  /* check '0x' */
+    return 0.0;  /* invalid format (no '0x') */
+  for (s += 2; ; s++) {  /* skip '0x' and read numeral */
+    if (*s == dot) {
+      if (hasdot) break;  /* second dot? stop loop */
+      else hasdot = 1;
+    }
+    else if (<A HREF="lctype.h.html#lisxdigit">lisxdigit</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s))) {
+      if (sigdig == 0 &amp;&amp; *s == '0')  /* non-significant digit (zero)? */
+        nosigdig++;
+      else if (++sigdig &lt;= <A HREF="lobject.c.html#MAXSIGDIG">MAXSIGDIG</A>)  /* can read it without overflow? */
+          r = (r * <A HREF="llimits.h.html#cast_num">cast_num</A>(16.0)) + <A HREF="lobject.c.html#luaO_hexavalue">luaO_hexavalue</A>(*s);
+      else e++; /* too many digits; ignore, but still count for exponent */
+      if (hasdot) e--;  /* decimal digit? correct exponent */
+    }
+    else break;  /* neither a dot nor a digit */
+  }
+  if (nosigdig + sigdig == 0)  /* no digits? */
+    return 0.0;  /* invalid format */
+  *endptr = <A HREF="llimits.h.html#cast">cast</A>(char *, s);  /* valid up to here */
+  e *= 4;  /* each digit multiplies/divides value by 2^4 */
+  if (*s == 'p' || *s == 'P') {  /* exponent part? */
+    int exp1 = 0;  /* exponent value */
+    int neg1;  /* exponent signal */
+    s++;  /* skip 'p' */
+    neg1 = <A HREF="lobject.c.html#isneg">isneg</A>(&amp;s);  /* signal */
+    if (!<A HREF="lctype.h.html#lisdigit">lisdigit</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s)))
+      return 0.0;  /* invalid; must have at least one digit */
+    while (<A HREF="lctype.h.html#lisdigit">lisdigit</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s)))  /* read exponent */
+      exp1 = exp1 * 10 + *(s++) - '0';
+    if (neg1) exp1 = -exp1;
+    e += exp1;
+    *endptr = <A HREF="llimits.h.html#cast">cast</A>(char *, s);  /* valid up to here */
+  }
+  if (neg) r = -r;
+  return <A HREF="luaconf.h.html#l_mathop">l_mathop</A>(ldexp)(r, e);
+}
+
+#endif
+/* }====================================================== */
+
+
+static const char *<A NAME="l_str2d"><SPAN CLASS="definition">l_str2d</SPAN></A> (const char *s, <A HREF="lua.h.html#lua_Number">lua_Number</A> *result) {
+  char *endptr;
+  if (strpbrk(s, "nN"))  /* reject 'inf' and 'nan' */
+    return NULL;
+  else if (strpbrk(s, "xX"))  /* hex? */
+    *result = <A HREF="lobject.c.html#lua_strx2number">lua_strx2number</A>(s, &amp;endptr);
+  else
+    *result = <A HREF="luaconf.h.html#lua_str2number">lua_str2number</A>(s, &amp;endptr);
+  if (endptr == s) return NULL;  /* nothing recognized */
+  while (<A HREF="lctype.h.html#lisspace">lisspace</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*endptr))) endptr++;
+  return (*endptr == '\0' ? endptr : NULL);  /* OK if no trailing characters */
+}
+
+
+static const char *<A NAME="l_str2int"><SPAN CLASS="definition">l_str2int</SPAN></A> (const char *s, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> *result) {
+  <A HREF="lua.h.html#lua_Unsigned">lua_Unsigned</A> a = 0;
+  int empty = 1;
+  int neg;
+  while (<A HREF="lctype.h.html#lisspace">lisspace</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s))) s++;  /* skip initial spaces */
+  neg = <A HREF="lobject.c.html#isneg">isneg</A>(&amp;s);
+  if (s[0] == '0' &amp;&amp;
+      (s[1] == 'x' || s[1] == 'X')) {  /* hex? */
+    s += 2;  /* skip '0x' */
+    for (; <A HREF="lctype.h.html#lisxdigit">lisxdigit</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s)); s++) {
+      a = a * 16 + <A HREF="lobject.c.html#luaO_hexavalue">luaO_hexavalue</A>(*s);
+      empty = 0;
+    }
+  }
+  else {  /* decimal */
+    for (; <A HREF="lctype.h.html#lisdigit">lisdigit</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s)); s++) {
+      a = a * 10 + *s - '0';
+      empty = 0;
+    }
+  }
+  while (<A HREF="lctype.h.html#lisspace">lisspace</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s))) s++;  /* skip trailing spaces */
+  if (empty || *s != '\0') return NULL;  /* something wrong in the numeral */
+  else {
+    *result = <A HREF="llimits.h.html#l_castU2S">l_castU2S</A>((neg) ? 0u - a : a);
+    return s;
+  }
+}
+
+
+size_t <A NAME="luaO_str2num"><SPAN CLASS="definition">luaO_str2num</SPAN></A> (const char *s, <A HREF="lobject.h.html#TValue">TValue</A> *o) {
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> i; <A HREF="lua.h.html#lua_Number">lua_Number</A> n;
+  const char *e;
+  if ((e = <A HREF="lobject.c.html#l_str2int">l_str2int</A>(s, &amp;i)) != NULL) {  /* try as an integer */
+    <A HREF="lobject.h.html#setivalue">setivalue</A>(o, i);
+  }
+  else if ((e = <A HREF="lobject.c.html#l_str2d">l_str2d</A>(s, &amp;n)) != NULL) {  /* else try as a float */
+    <A HREF="lobject.h.html#setfltvalue">setfltvalue</A>(o, n);
+  }
+  else
+    return 0;  /* conversion failed */
+  return (e - s) + 1;  /* success; return string size */
+}
+
+
+int <A NAME="luaO_utf8esc"><SPAN CLASS="definition">luaO_utf8esc</SPAN></A> (char *buff, unsigned long x) {
+  int n = 1;  /* number of bytes put in buffer (backwards) */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(x &lt;= 0x10FFFF);
+  if (x &lt; 0x80)  /* ascii? */
+    buff[<A HREF="lobject.h.html#UTF8BUFFSZ">UTF8BUFFSZ</A> - 1] = <A HREF="llimits.h.html#cast">cast</A>(char, x);
+  else {  /* need continuation bytes */
+    unsigned int mfb = 0x3f;  /* maximum that fits in first byte */
+    do {  /* add continuation bytes */
+      buff[<A HREF="lobject.h.html#UTF8BUFFSZ">UTF8BUFFSZ</A> - (n++)] = <A HREF="llimits.h.html#cast">cast</A>(char, 0x80 | (x &amp; 0x3f));
+      x &gt;&gt;= 6;  /* remove added bits */
+      mfb &gt;&gt;= 1;  /* now there is one less bit available in first byte */
+    } while (x &gt; mfb);  /* still needs continuation byte? */
+    buff[<A HREF="lobject.h.html#UTF8BUFFSZ">UTF8BUFFSZ</A> - n] = <A HREF="llimits.h.html#cast">cast</A>(char, (~mfb &lt;&lt; 1) | x);  /* add first byte */
+  }
+  return n;
+}
+
+
+/* maximum length of the conversion of a number to a string */
+#define <A NAME="MAXNUMBER2STR"><SPAN CLASS="definition">MAXNUMBER2STR</SPAN></A>   50
+
+
+/*
+** Convert a number object to a string
+*/
+void <A NAME="luaO_tostring"><SPAN CLASS="definition">luaO_tostring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> obj) {
+  char buff[<A HREF="lobject.c.html#MAXNUMBER2STR">MAXNUMBER2STR</A>];
+  size_t len;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(obj));
+  if (<A HREF="lobject.h.html#ttisinteger">ttisinteger</A>(obj))
+    len = <A HREF="luaconf.h.html#lua_integer2str">lua_integer2str</A>(buff, sizeof(buff), <A HREF="lobject.h.html#ivalue">ivalue</A>(obj));
+  else {
+    len = <A HREF="luaconf.h.html#lua_number2str">lua_number2str</A>(buff, sizeof(buff), <A HREF="lobject.h.html#fltvalue">fltvalue</A>(obj));
+#if !defined(LUA_COMPAT_FLOATSTRING)
+    if (buff[strspn(buff, "-0123456789")] == '\0') {  /* looks like an int? */
+      buff[len++] = <A HREF="luaconf.h.html#lua_getlocaledecpoint">lua_getlocaledecpoint</A>();
+      buff[len++] = '0';  /* adds '.0' to result */
+    }
+#endif
+  }
+  <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, obj, <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, buff, len));
+}
+
+
+static void <A NAME="pushstr"><SPAN CLASS="definition">pushstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l) {
+  <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, str, l));
+  <A HREF="ldo.c.html#luaD_inctop">luaD_inctop</A>(L);
+}
+
+
+/* this function handles only '%d', '%c', '%f', '%p', and '%s' 
+   conventional formats, plus Lua-specific '%I' and '%U' */
+const char *<A NAME="luaO_pushvfstring"><SPAN CLASS="definition">luaO_pushvfstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, va_list argp) {
+  int n = 0;
+  for (;;) {
+    const char *e = strchr(fmt, '%');
+    if (e == NULL) break;
+    <A HREF="lobject.c.html#pushstr">pushstr</A>(L, fmt, e - fmt);
+    switch (*(e+1)) {
+      case 's': {
+        const char *s = va_arg(argp, char *);
+        if (s == NULL) s = "(null)";
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, s, strlen(s));
+        break;
+      }
+      case 'c': {
+        char buff = <A HREF="llimits.h.html#cast">cast</A>(char, va_arg(argp, int));
+        if (<A HREF="lctype.h.html#lisprint">lisprint</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(buff)))
+          <A HREF="lobject.c.html#pushstr">pushstr</A>(L, &amp;buff, 1);
+        else  /* non-printable character; print its code */
+          <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(L, "&lt;\\%d&gt;", <A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(buff));
+        break;
+      }
+      case 'd': {
+        <A HREF="lobject.h.html#setivalue">setivalue</A>(L-&gt;top, va_arg(argp, int));
+        goto top2str;
+      }
+      case 'I': {
+        <A HREF="lobject.h.html#setivalue">setivalue</A>(L-&gt;top, <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lua.h.html#lua_Integer">lua_Integer</A>, va_arg(argp, <A HREF="llimits.h.html#l_uacInt">l_uacInt</A>)));
+        goto top2str;
+      }
+      case 'f': {
+        <A HREF="lobject.h.html#setfltvalue">setfltvalue</A>(L-&gt;top, <A HREF="llimits.h.html#cast_num">cast_num</A>(va_arg(argp, <A HREF="llimits.h.html#l_uacNumber">l_uacNumber</A>)));
+      top2str:
+        <A HREF="ldo.c.html#luaD_inctop">luaD_inctop</A>(L);
+        <A HREF="lobject.c.html#luaO_tostring">luaO_tostring</A>(L, L-&gt;top - 1);
+        break;
+      }
+      case 'p': {
+        char buff[4*sizeof(void *) + 8]; /* should be enough space for a '%p' */
+        int l = <A HREF="luaconf.h.html#l_sprintf">l_sprintf</A>(buff, sizeof(buff), "%p", va_arg(argp, void *));
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, buff, l);
+        break;
+      }
+      case 'U': {
+        char buff[<A HREF="lobject.h.html#UTF8BUFFSZ">UTF8BUFFSZ</A>];
+        int l = <A HREF="lobject.c.html#luaO_utf8esc">luaO_utf8esc</A>(buff, <A HREF="llimits.h.html#cast">cast</A>(long, va_arg(argp, long)));
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, buff + <A HREF="lobject.h.html#UTF8BUFFSZ">UTF8BUFFSZ</A> - l, l);
+        break;
+      }
+      case '%': {
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, "%", 1);
+        break;
+      }
+      default: {
+        <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "invalid option '%%%c' to '<A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>'",
+                         *(e + 1));
+      }
+    }
+    n += 2;
+    fmt = e+2;
+  }
+  <A HREF="ldo.h.html#luaD_checkstack">luaD_checkstack</A>(L, 1);
+  <A HREF="lobject.c.html#pushstr">pushstr</A>(L, fmt, strlen(fmt));
+  if (n &gt; 0) <A HREF="lvm.c.html#luaV_concat">luaV_concat</A>(L, n + 1);
+  return <A HREF="lobject.h.html#svalue">svalue</A>(L-&gt;top - 1);
+}
+
+
+const char *<A NAME="luaO_pushfstring"><SPAN CLASS="definition">luaO_pushfstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...) {
+  const char *msg;
+  va_list argp;
+  va_start(argp, fmt);
+  msg = <A HREF="lobject.c.html#luaO_pushvfstring">luaO_pushvfstring</A>(L, fmt, argp);
+  va_end(argp);
+  return msg;
+}
+
+
+/* number of chars of a literal string without the ending \0 */
+#define <A NAME="LL"><SPAN CLASS="definition">LL</SPAN></A>(x)   (sizeof(x)/sizeof(char) - 1)
+
+#define <A NAME="RETS"><SPAN CLASS="definition">RETS</SPAN></A>    "..."
+#define <A NAME="PRE"><SPAN CLASS="definition">PRE</SPAN></A>     "[string \""
+#define <A NAME="POS"><SPAN CLASS="definition">POS</SPAN></A>     "\"]"
+
+#define <A NAME="addstr"><SPAN CLASS="definition">addstr</SPAN></A>(a,b,l)   ( memcpy(a,b,(l) * sizeof(char)), a += (l) )
+
+void <A NAME="luaO_chunkid"><SPAN CLASS="definition">luaO_chunkid</SPAN></A> (char *out, const char *source, size_t bufflen) {
+  size_t l = strlen(source);
+  if (*source == '=') {  /* 'literal' source */
+    if (l &lt;= bufflen)  /* small enough? */
+      memcpy(out, source + 1, l * sizeof(char));
+    else {  /* truncate it */
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, source + 1, bufflen - 1);
+      *out = '\0';
+    }
+  }
+  else if (*source == '@') {  /* file name */
+    if (l &lt;= bufflen)  /* small enough? */
+      memcpy(out, source + 1, l * sizeof(char));
+    else {  /* add '...' before rest of name */
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, <A HREF="lobject.c.html#RETS">RETS</A>, <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#RETS">RETS</A>));
+      bufflen -= <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#RETS">RETS</A>);
+      memcpy(out, source + 1 + l - bufflen, bufflen * sizeof(char));
+    }
+  }
+  else {  /* string; format as [string "source"] */
+    const char *nl = strchr(source, '\n');  /* find first new line (if any) */
+    <A HREF="lobject.c.html#addstr">addstr</A>(out, <A HREF="lobject.c.html#PRE">PRE</A>, <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#PRE">PRE</A>));  /* add prefix */
+    bufflen -= <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#PRE">PRE</A> <A HREF="lobject.c.html#RETS">RETS</A> <A HREF="lobject.c.html#POS">POS</A>) + 1;  /* save space for prefix+suffix+'\0' */
+    if (l &lt; bufflen &amp;&amp; nl == NULL) {  /* small one-line source? */
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, source, l);  /* keep it */
+    }
+    else {
+      if (nl != NULL) l = nl - source;  /* stop at first newline */
+      if (l &gt; bufflen) l = bufflen;
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, source, l);
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, <A HREF="lobject.c.html#RETS">RETS</A>, <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#RETS">RETS</A>));
+    }
+    memcpy(out, <A HREF="lobject.c.html#POS">POS</A>, (<A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#POS">POS</A>) + 1) * sizeof(char));
+  }
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:15 2015
+</P>
+
+</BODY>
+</HTML>

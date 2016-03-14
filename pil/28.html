@@ -1,0 +1,79 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>Programming in Lua : 28</title>
+<link rel="stylesheet" type="text/css" href="pil.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</head>
+<body>
+<p class="warning">
+<A HREF="contents.html"><IMG TITLE="Programming in Lua (first edition)" SRC="capa.jpg" ALT="" ALIGN="left"></A>This first edition was written for Lua 5.0. While still largely relevant for later versions, there are some differences.<BR>The third edition targets Lua 5.2 and is available at <A HREF="http://www.amazon.com/exec/obidos/ASIN/859037985X/theprogrammil3-20">Amazon</A> and other bookstores.<BR>By buying the book, you also help to <A HREF="../donations.html">support the Lua project</A>.
+</p>
+<table width="100%" class="nav">
+<tr>
+<td width="10%" align="left"><a href="27.3.3.html"><img src="left.png" alt="Previous"></a></td>
+<td width="80%" align="center"><a href="contents.html">
+<font color="gray">Programming in </font><font color="blue"> Lua</font>
+</a></td>
+<td width="10%" align="right"><a href="28.1.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+<tr>
+<td width="10%" align="left"></td>
+<td width="80%" align="center"><a href="contents.html#P4">Part IV. The C API</a>
+<span class="spacer"></span>
+<a href="contents.html#28">Chapter 28. User-Defined Types in C</a></td>
+<td width="10%" align="right"></td></tr>
+</table>
+<hr>
+<h1>28 &ndash; User-Defined Types in C</h1>
+
+<p>In the previous chapter,
+we saw how to extend Lua with new functions written in C.
+Now, we will see how to extend Lua with new types written in C.
+We will start with a small example that
+we will extend through the chapter
+with metamethods and other goodies.
+
+<p>Our example is a quite simple type:
+numeric arrays.
+The main motivation for this example is that
+it does not involve complex algorithms,
+so we can concentrate on API issues.
+Despite its simplicity, this type is useful for some applications.
+Usually, we do not need external arrays in Lua;
+hash tables do the job quite well.
+But hash tables can be memory-hungry for huge arrays,
+as for each entry they must store a generic value,
+a link address, plus some extra space to grow.
+A straight implementation in C,
+where we store the numeric values without any extra space,
+uses less than 50% of the memory used by a hash table.
+
+<p>We will represent our arrays with the following structure:
+<pre>
+    typedef struct NumArray {
+      int size;
+      double values[1];  /* variable part */
+    } NumArray;
+</pre>
+We declare the array <code>values</code> with size 1 only as a placeholder,
+because C does not allow an array with size 0;
+we will define the actual size by the space we allocate for the array.
+For an array with <code>n</code> elements,
+we need <code>sizeof(NumArray) + (n-1)*sizeof(double)</code> bytes.
+(We subtract one from <code>n</code> because the original structure already
+includes space for one element.)
+
+<hr>
+<table width="100%" class="nav">
+<tr>
+<td width="90%" align="left">
+<small>
+  Copyright &copy; 2003&ndash;2004 Roberto Ierusalimschy.  All rights reserved.
+</small>
+</td>
+<td width="10%" align="right"><a href="28.1.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+</table>
+
+
+</body></html>
+

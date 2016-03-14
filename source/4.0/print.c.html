@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - print.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+print.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: print.c,v 1.32 2000/11/06 20:04:36 lhf Exp $
+** print bytecodes
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+#include "<A HREF="luac.h.html">luac.h</A>"
+
+/* macros used in print.h, included in <A HREF="print.c.html#PrintCode">PrintCode</A> */
+#define <A NAME="P_OP"><SPAN CLASS="definition">P_OP</SPAN></A>(x) printf("%-11s\t",x)
+#define <A NAME="P_NONE"><SPAN CLASS="definition">P_NONE</SPAN></A>
+#define <A NAME="P_AB"><SPAN CLASS="definition">P_AB</SPAN></A>    printf("%d %d",<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i),<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i))
+#define <A NAME="P_F"><SPAN CLASS="definition">P_F</SPAN></A>     printf("%d %d\t; %p",<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i),<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i),tf-&gt;kproto[<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i)])
+#define <A NAME="P_J"><SPAN CLASS="definition">P_J</SPAN></A>     printf("%d\t; to %d",<A HREF="lopcodes.h.html#GETARG_S">GETARG_S</A>(i),<A HREF="lopcodes.h.html#GETARG_S">GETARG_S</A>(i)+at+1)
+#define <A NAME="P_Q"><SPAN CLASS="definition">P_Q</SPAN></A>     <A HREF="print.c.html#PrintString">PrintString</A>(tf,<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i))
+#define <A NAME="P_K"><SPAN CLASS="definition">P_K</SPAN></A>     printf("%d\t; %s",<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i),tf-&gt;kstr[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)]-&gt;str)
+#define <A NAME="P_L"><SPAN CLASS="definition">P_L</SPAN></A>     <A HREF="print.c.html#PrintLocal">PrintLocal</A>(tf,<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i),at-1)
+#define <A NAME="P_N"><SPAN CLASS="definition">P_N</SPAN></A>     printf("%d\t; " <A HREF="llimits.h.html#NUMBER_FMT">NUMBER_FMT</A>,<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i),tf-&gt;knum[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)])
+#define <A NAME="P_S"><SPAN CLASS="definition">P_S</SPAN></A>     printf("%d",<A HREF="lopcodes.h.html#GETARG_S">GETARG_S</A>(i))
+#define <A NAME="P_U"><SPAN CLASS="definition">P_U</SPAN></A>     printf("%u",<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i))
+
+static void <A NAME="PrintString"><SPAN CLASS="definition">PrintString</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* tf, int n)
+{
+ const char* s=tf-&gt;kstr[n]-&gt;str;
+ printf("%d\t; ",n);
+ putchar('"');
+ for (; *s; s++)
+ {
+  switch (*s)
+  {
+   case '"': printf("\\\""); break;
+   case '\a': printf("\\a"); break;
+   case '\b': printf("\\b"); break;
+   case '\f': printf("\\f"); break;
+   case '\n': printf("\\n"); break;
+   case '\r': printf("\\r"); break;
+   case '\t': printf("\\t"); break;
+   case '\v': printf("\\v"); break;
+   default: putchar(*s); break;
+  }
+ }
+ putchar('"');
+}
+
+static void <A NAME="PrintLocal"><SPAN CLASS="definition">PrintLocal</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* tf, int n, int pc)
+{
+ const char* s=<A HREF="lfunc.c.html#luaF_getlocalname">luaF_getlocalname</A>(tf,n+1,pc); 
+ printf("%u",n);
+ if (s!=NULL) printf("\t; %s",s);
+}
+
+static void <A NAME="PrintCode"><SPAN CLASS="definition">PrintCode</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* tf)
+{
+ const <A HREF="llimits.h.html#Instruction">Instruction</A>* code=tf-&gt;code;
+ const <A HREF="llimits.h.html#Instruction">Instruction</A>* p=code;
+ for (;;)
+ {
+  int at=p-code+1;
+  <A HREF="llimits.h.html#Instruction">Instruction</A> i=*p;
+  int line=<A HREF="ldebug.c.html#luaG_getline">luaG_getline</A>(tf-&gt;lineinfo,at-1,1,NULL);
+  printf("%6d\t",at);
+  if (line&gt;=0) printf("[%d]\t",line); else printf("[-]\t");
+  switch (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i)) {
+#include "print.h"
+  }
+  printf("\n");
+  if (i==<A HREF="lopcodes.h.html#OP_END">OP_END</A>) break;
+  p++;
+ }
+}
+
+#define <A NAME="IsMain"><SPAN CLASS="definition">IsMain</SPAN></A>(tf)      (tf-&gt;lineDefined==0)
+
+#define <A NAME="SS"><SPAN CLASS="definition">SS</SPAN></A>(x)   (x==1)?"":"s"
+#define <A NAME="S"><SPAN CLASS="definition">S</SPAN></A>(x)    x,<A HREF="print.c.html#SS">SS</A>(x)
+
+static void <A NAME="PrintHeader"><SPAN CLASS="definition">PrintHeader</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* tf)
+{
+ printf("\n%s " <A HREF="lundump.h.html#SOURCE_FMT">SOURCE_FMT</A> " (%d instruction%s/%d bytes at %p)\n",
+        <A HREF="print.c.html#IsMain">IsMain</A>(tf)?"<A HREF="lua.c.html#main">main</A>":"function",<A HREF="lundump.h.html#SOURCE">SOURCE</A>,
+        <A HREF="print.c.html#S">S</A>(tf-&gt;ncode),tf-&gt;ncode*<A HREF="luac.h.html#Sizeof">Sizeof</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>),tf);
+ printf("%d%s param%s, %d stack%s, ",
+        tf-&gt;numparams,tf-&gt;is_vararg?"+":"",<A HREF="print.c.html#SS">SS</A>(tf-&gt;numparams),<A HREF="print.c.html#S">S</A>(tf-&gt;maxstacksize));
+ printf("%d local%s, %d string%s, %d number%s, %d function%s, %d line%s\n",
+        <A HREF="print.c.html#S">S</A>(tf-&gt;nlocvars),<A HREF="print.c.html#S">S</A>(tf-&gt;nkstr),<A HREF="print.c.html#S">S</A>(tf-&gt;nknum),<A HREF="print.c.html#S">S</A>(tf-&gt;nkproto),<A HREF="print.c.html#S">S</A>(tf-&gt;nlineinfo));
+}
+
+#define <A NAME="PrintFunction"><SPAN CLASS="definition">PrintFunction</SPAN></A> luaU_printchunk
+
+void <A HREF="print.c.html#PrintFunction">PrintFunction</A>(const <A HREF="lobject.h.html#Proto">Proto</A>* tf)
+{
+ int i,n=tf-&gt;nkproto;
+ <A HREF="print.c.html#PrintHeader">PrintHeader</A>(tf);
+ <A HREF="print.c.html#PrintCode">PrintCode</A>(tf);
+ for (i=0; i&lt;n; i++) <A HREF="print.c.html#PrintFunction">PrintFunction</A>(tf-&gt;kproto[i]);
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

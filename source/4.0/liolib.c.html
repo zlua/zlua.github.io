@@ -1,0 +1,753 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - liolib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+liolib.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: liolib.c,v 1.91 2000/10/31 13:10:24 roberto Exp $
+** Standard I/O (and system) library
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;ctype.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;time.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="luadebug.h.html">luadebug.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+#ifndef OLD_ANSI
+#include &lt;errno.h&gt;
+#include &lt;locale.h&gt;
+#define <A NAME="realloc"><SPAN CLASS="definition">realloc</SPAN></A>(b,s)    ((b) == NULL ? malloc(s) : (<A NAME="realloc"><SPAN CLASS="definition">realloc</SPAN></A>)(b, s))
+#define <A NAME="free"><SPAN CLASS="definition">free</SPAN></A>(b)         if (b) (<A NAME="free"><SPAN CLASS="definition">free</SPAN></A>)(b)
+#else
+/* no support for locale and for <A HREF="liolib.c.html#strerror">strerror</A>: fake them */
+#define <A NAME="setlocale"><SPAN CLASS="definition">setlocale</SPAN></A>(a,b)  ((void)a, strcmp((b),"C")==0?"C":NULL)
+#define <A NAME="LC_ALL"><SPAN CLASS="definition">LC_ALL</SPAN></A>          0
+#define <A NAME="LC_COLLATE"><SPAN CLASS="definition">LC_COLLATE</SPAN></A>      0
+#define <A NAME="LC_CTYPE"><SPAN CLASS="definition">LC_CTYPE</SPAN></A>        0
+#define <A NAME="LC_MONETARY"><SPAN CLASS="definition">LC_MONETARY</SPAN></A>     0
+#define <A NAME="LC_NUMERIC"><SPAN CLASS="definition">LC_NUMERIC</SPAN></A>      0
+#define <A NAME="LC_TIME"><SPAN CLASS="definition">LC_TIME</SPAN></A>         0
+#define <A NAME="strerror"><SPAN CLASS="definition">strerror</SPAN></A>(e)     "generic I/O error"
+#define <A NAME="errno"><SPAN CLASS="definition">errno</SPAN></A>           (-1)
+#endif
+
+
+
+#ifdef POPEN
+/* FILE *<A HREF="liolib.c.html#popen">popen</A>();
+int pclose(); */
+#define <A HREF="liolib.c.html#CLOSEFILE">CLOSEFILE</A>(L, f)    ((pclose(f) == -1) ? fclose(f) : 0)
+#else
+/* no support for <A HREF="liolib.c.html#popen">popen</A> */
+#define <A NAME="popen"><SPAN CLASS="definition">popen</SPAN></A>(x,y) NULL  /* that is, <A NAME="popen"><SPAN CLASS="definition">popen</SPAN></A> always fails */
+#define <A NAME="CLOSEFILE"><SPAN CLASS="definition">CLOSEFILE</SPAN></A>(L, f)    (fclose(f))
+#endif
+
+
+#define <A NAME="INFILE"><SPAN CLASS="definition">INFILE</SPAN></A>  0
+#define <A NAME="OUTFILE"><SPAN CLASS="definition">OUTFILE</SPAN></A> 1
+
+typedef struct <A NAME="IOCtrl"><SPAN CLASS="definition">IOCtrl</SPAN></A> {
+  int ref[2];  /* ref for strings _INPUT/_OUTPUT */
+  int iotag;    /* tag for file handles */
+  int closedtag;  /* tag for closed handles */
+} <A HREF="liolib.c.html#IOCtrl">IOCtrl</A>;
+
+
+
+static const char *const <A NAME="filenames"><SPAN CLASS="definition">filenames</SPAN></A>[] = {"_INPUT", "_OUTPUT"};
+
+
+static int <A NAME="pushresult"><SPAN CLASS="definition">pushresult</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int i) {
+  if (i) {
+    <A HREF="lua.h.html#lua_pushuserdata">lua_pushuserdata</A>(L, NULL);
+    return 1;
+  }
+  else {
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, <A HREF="liolib.c.html#strerror">strerror</A>(<A HREF="liolib.c.html#errno">errno</A>));
+    <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, <A HREF="liolib.c.html#errno">errno</A>);
+    return 3;;
+  }
+}
+
+
+/*
+** {======================================================
+** FILE Operations
+** =======================================================
+*/
+
+
+static FILE *<A NAME="gethandle"><SPAN CLASS="definition">gethandle</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl, int f) {
+  void *p = <A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, f);
+  if (p != NULL) {  /* is `f' a userdata ? */
+    int ftag = <A HREF="lapi.c.html#lua_tag">lua_tag</A>(L, f);
+    if (ftag == ctrl-&gt;iotag)  /* does it have the correct tag? */
+      return (FILE *)p;
+    else if (ftag == ctrl-&gt;closedtag)
+      <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "cannot access a closed file");
+    /* else go through */
+  }
+  return NULL;
+}
+
+
+static FILE *<A NAME="getnonullfile"><SPAN CLASS="definition">getnonullfile</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl, int arg) {
+  FILE *f = <A HREF="liolib.c.html#gethandle">gethandle</A>(L, ctrl, arg);
+  <A HREF="lauxlib.h.html#luaL_arg_check">luaL_arg_check</A>(L, f, arg, "invalid file handle");
+  return f;
+}
+
+
+static FILE *<A NAME="getfilebyref"><SPAN CLASS="definition">getfilebyref</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl, int inout) {
+  FILE *f;
+  <A HREF="lapi.c.html#lua_getglobals">lua_getglobals</A>(L);
+  <A HREF="lapi.c.html#lua_getref">lua_getref</A>(L, ctrl-&gt;ref[inout]);
+  <A HREF="lapi.c.html#lua_rawget">lua_rawget</A>(L, -2);
+  f = <A HREF="liolib.c.html#gethandle">gethandle</A>(L, ctrl, -1);
+  if (f == NULL)
+    <A HREF="lauxlib.c.html#luaL_verror">luaL_verror</A>(L, "global variable `%.10s' is not a file handle",
+                <A HREF="liolib.c.html#filenames">filenames</A>[inout]);
+  return f;
+}
+
+
+static void <A NAME="setfilebyname"><SPAN CLASS="definition">setfilebyname</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl, FILE *f,
+                           const char *name) {
+  <A HREF="lapi.c.html#lua_pushusertag">lua_pushusertag</A>(L, f, ctrl-&gt;iotag);
+  <A HREF="lapi.c.html#lua_setglobal">lua_setglobal</A>(L, name);
+}
+
+
+#define <A NAME="setfile"><SPAN CLASS="definition">setfile</SPAN></A>(L,ctrl,f,inout) (<A HREF="liolib.c.html#setfilebyname">setfilebyname</A>(L,ctrl,f,<A HREF="liolib.c.html#filenames">filenames</A>[inout]))
+
+
+static int <A NAME="setreturn"><SPAN CLASS="definition">setreturn</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl, FILE *f, int inout) {
+  if (f == NULL)
+    return <A HREF="liolib.c.html#pushresult">pushresult</A>(L, 0);
+  else {
+    <A HREF="liolib.c.html#setfile">setfile</A>(L, ctrl, f, inout);
+    <A HREF="lapi.c.html#lua_pushusertag">lua_pushusertag</A>(L, f, ctrl-&gt;iotag);
+    return 1;
+  }
+}
+
+
+static int <A NAME="closefile"><SPAN CLASS="definition">closefile</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl, FILE *f) {
+  if (f == stdin || f == stdout || f == stderr)
+    return 1;
+  else {
+    <A HREF="lapi.c.html#lua_pushusertag">lua_pushusertag</A>(L, f, ctrl-&gt;iotag);
+    <A HREF="lapi.c.html#lua_settag">lua_settag</A>(L, ctrl-&gt;closedtag);
+    return (<A HREF="liolib.c.html#CLOSEFILE">CLOSEFILE</A>(L, f) == 0);
+  }
+}
+
+
+static int <A NAME="io_close"><SPAN CLASS="definition">io_close</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove upvalue */
+  return <A HREF="liolib.c.html#pushresult">pushresult</A>(L, <A HREF="liolib.c.html#closefile">closefile</A>(L, ctrl, <A HREF="liolib.c.html#getnonullfile">getnonullfile</A>(L, ctrl, 1)));
+}
+
+
+static int <A NAME="file_collect"><SPAN CLASS="definition">file_collect</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  FILE *f = <A HREF="liolib.c.html#getnonullfile">getnonullfile</A>(L, ctrl, 1);
+  if (f != stdin &amp;&amp; f != stdout &amp;&amp; f != stderr)
+    <A HREF="liolib.c.html#CLOSEFILE">CLOSEFILE</A>(L, f);
+  return 0;
+}
+
+
+static int <A NAME="io_open"><SPAN CLASS="definition">io_open</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  FILE *f;
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove upvalue */
+  f = fopen(<A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1), <A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 2));
+  if (f) {
+    <A HREF="lapi.c.html#lua_pushusertag">lua_pushusertag</A>(L, f, ctrl-&gt;iotag);
+    return 1;
+  }
+  else
+    return <A HREF="liolib.c.html#pushresult">pushresult</A>(L, 0);
+}
+
+
+
+static int <A NAME="io_fromto"><SPAN CLASS="definition">io_fromto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int inout, const char *mode) {
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  FILE *current;
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove upvalue */
+  if (<A HREF="lua.h.html#lua_isnull">lua_isnull</A>(L, 1)) {
+    <A HREF="liolib.c.html#closefile">closefile</A>(L, ctrl, <A HREF="liolib.c.html#getfilebyref">getfilebyref</A>(L, ctrl, inout));
+    current = (inout == 0) ? stdin : stdout;    
+  }
+  else if (<A HREF="lapi.c.html#lua_tag">lua_tag</A>(L, 1) == ctrl-&gt;iotag)  /* deprecated option */
+    current = (FILE *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, 1);
+  else {
+    const char *s = <A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1);
+    current = (*s == '|') ? <A HREF="liolib.c.html#popen">popen</A>(s+1, mode) : fopen(s, mode);
+  }
+  return <A HREF="liolib.c.html#setreturn">setreturn</A>(L, ctrl, current, inout);
+}
+
+
+static int <A NAME="io_readfrom"><SPAN CLASS="definition">io_readfrom</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="liolib.c.html#io_fromto">io_fromto</A>(L, <A HREF="liolib.c.html#INFILE">INFILE</A>, "r");
+}
+
+
+static int <A NAME="io_writeto"><SPAN CLASS="definition">io_writeto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="liolib.c.html#io_fromto">io_fromto</A>(L, <A HREF="liolib.c.html#OUTFILE">OUTFILE</A>, "w");
+}
+
+
+static int <A NAME="io_appendto"><SPAN CLASS="definition">io_appendto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  FILE *current;
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove upvalue */
+  current = fopen(<A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1), "a");
+  return <A HREF="liolib.c.html#setreturn">setreturn</A>(L, ctrl, current, <A HREF="liolib.c.html#OUTFILE">OUTFILE</A>);
+}
+
+
+
+/*
+** {======================================================
+** READ
+** =======================================================
+*/
+
+
+
+#ifdef LUA_COMPAT_READPATTERN
+
+/*
+** We cannot lookahead without need, because this can lock stdin.
+** This flag signals when we need to read a next char.
+*/
+#define <A NAME="NEED_OTHER"><SPAN CLASS="definition">NEED_OTHER</SPAN></A> (EOF-1)  /* just some flag different from EOF */
+
+
+static int <A HREF="liolib.c.html#read_pattern">read_pattern</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, FILE *f, const char *p) {
+  int inskip = 0;  /* {skip} level */
+  int c = <A HREF="liolib.c.html#NEED_OTHER">NEED_OTHER</A>;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  while (*p != '\0') {
+    switch (*p) {
+      case '{':
+        inskip++;
+        p++;
+        continue;
+      case '}':
+        if (!inskip) <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "unbalanced braces in read pattern");
+        inskip--;
+        p++;
+        continue;
+      default: {
+        const char *ep = <A HREF="lstrlib.c.html#luaI_classend">luaI_classend</A>(L, p);  /* get what is next */
+        int m;  /* match result */
+        if (c == <A HREF="liolib.c.html#NEED_OTHER">NEED_OTHER</A>) c = getc(f);
+        m = (c==EOF) ? 0 : <A HREF="lstrlib.c.html#luaI_singlematch">luaI_singlematch</A>(c, p, ep);
+        if (m) {
+          if (!inskip) <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, c);
+          c = <A HREF="liolib.c.html#NEED_OTHER">NEED_OTHER</A>;
+        }
+        switch (*ep) {
+          case '+':  /* repetition (1 or more) */
+            if (!m) goto break_while;  /* pattern fails? */
+            /* else go through */
+          case '*':  /* repetition (0 or more) */
+            while (m) {  /* reads the same item until it fails */
+              c = getc(f);
+              m = (c==EOF) ? 0 : <A HREF="lstrlib.c.html#luaI_singlematch">luaI_singlematch</A>(c, p, ep);
+              if (m &amp;&amp; !inskip) <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, c);
+            }
+            /* go through to continue reading the pattern */
+          case '?':  /* optional */
+            p = ep+1;  /* continues reading the pattern */
+            continue;
+          default:
+            if (!m) goto break_while;  /* pattern fails? */
+            p = ep;  /* else continues reading the pattern */
+        }
+      }
+    }
+  } break_while:
+  if (c != <A HREF="liolib.c.html#NEED_OTHER">NEED_OTHER</A>) ungetc(c, f);
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);  /* close buffer */
+  return (*p == '\0');
+}
+
+#else
+
+#define <A NAME="read_pattern"><SPAN CLASS="definition">read_pattern</SPAN></A>(L, f, p) (<A HREF="ldo.c.html#lua_error">lua_error</A>(L, "read patterns are deprecated"), 0)
+
+#endif
+
+
+static int <A NAME="read_number"><SPAN CLASS="definition">read_number</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, FILE *f) {
+  double d;
+  if (fscanf(f, "%lf", &amp;d) == 1) {
+    <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, d);
+    return 1;
+  }
+  else return 0;  /* read fails */
+}
+
+
+static int <A NAME="read_word"><SPAN CLASS="definition">read_word</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, FILE *f) {
+  int c;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  do { c = fgetc(f); } while (isspace(c));  /* skip spaces */
+  while (c != EOF &amp;&amp; !isspace(c)) {
+    <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, c);
+    c = fgetc(f);
+  }
+  ungetc(c, f);
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);  /* close buffer */
+  return (<A HREF="lapi.c.html#lua_strlen">lua_strlen</A>(L, -1) &gt; 0);
+}
+
+
+static int <A NAME="read_line"><SPAN CLASS="definition">read_line</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, FILE *f) {
+  int n = 0;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  for (;;) {
+    char *p = <A HREF="lauxlib.c.html#luaL_prepbuffer">luaL_prepbuffer</A>(&amp;b);
+    if (!fgets(p, <A HREF="lauxlib.h.html#LUAL_BUFFERSIZE">LUAL_BUFFERSIZE</A>, f))  /* read fails? */
+      break;
+    n = strlen(p);
+    if (p[n-1] != '\n')
+      <A HREF="lauxlib.h.html#luaL_addsize">luaL_addsize</A>(&amp;b, n); 
+    else {
+      <A HREF="lauxlib.h.html#luaL_addsize">luaL_addsize</A>(&amp;b, n-1);  /* do not add the `\n' */
+      break;
+    }
+  }
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);  /* close buffer */
+  return (n &gt; 0);  /* read something? */
+}
+
+
+static void <A NAME="read_file"><SPAN CLASS="definition">read_file</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, FILE *f) {
+  size_t len = 0;
+  size_t size = BUFSIZ;
+  char *buffer = NULL;
+  for (;;) {
+    char *newbuffer = (char *)<A HREF="liolib.c.html#realloc">realloc</A>(buffer, size);
+    if (newbuffer == NULL) {
+      <A HREF="liolib.c.html#free">free</A>(buffer);
+      <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "not enough memory to read a file");
+    }
+    buffer = newbuffer;
+    len += fread(buffer+len, sizeof(char), size-len, f);
+    if (len &lt; size) break;  /* did not read all it could */
+    size *= 2;
+  }
+  <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, buffer, len);
+  <A HREF="liolib.c.html#free">free</A>(buffer);
+}
+
+
+static int <A NAME="read_chars"><SPAN CLASS="definition">read_chars</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, FILE *f, size_t n) {
+  char *buffer;
+  size_t n1;
+  char statbuff[BUFSIZ];
+  if (n &lt;= BUFSIZ)
+    buffer = statbuff;
+  else {
+    buffer = (char  *)malloc(n);
+    if (buffer == NULL)
+      <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "not enough memory to read a file");
+  }
+  n1 = fread(buffer, sizeof(char), n, f);
+  <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, buffer, n1);
+  if (buffer != statbuff) <A HREF="liolib.c.html#free">free</A>(buffer);
+  return (n1 &gt; 0 || n == 0);
+}
+
+
+static int <A NAME="io_read"><SPAN CLASS="definition">io_read</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  int lastarg = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) - 1;
+  int firstarg = 1;
+  FILE *f = <A HREF="liolib.c.html#gethandle">gethandle</A>(L, ctrl, firstarg);
+  int n;
+  if (f) firstarg++;
+  else f = <A HREF="liolib.c.html#getfilebyref">getfilebyref</A>(L, ctrl, <A HREF="liolib.c.html#INFILE">INFILE</A>);  /* get _INPUT */
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);
+  if (firstarg &gt; lastarg) {  /* no arguments? */
+    <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 0);  /* erase upvalue and other eventual garbage */
+    firstarg = lastarg = 1;  /* correct indices */
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, "*l");  /* push default argument */
+  }
+  else  /* ensure stack space for all results and for auxlib's buffer */
+    <A HREF="lauxlib.c.html#luaL_checkstack">luaL_checkstack</A>(L, lastarg-firstarg+1+<A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>, "too many arguments");
+  for (n = firstarg; n&lt;=lastarg; n++) {
+    int success;
+    if (<A HREF="lapi.c.html#lua_isnumber">lua_isnumber</A>(L, n))
+      success = <A HREF="liolib.c.html#read_chars">read_chars</A>(L, f, (size_t)<A HREF="lapi.c.html#lua_tonumber">lua_tonumber</A>(L, n));
+    else {
+      const char *p = <A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, n);
+      if (p[0] != '*')
+        success = <A HREF="liolib.c.html#read_pattern">read_pattern</A>(L, f, p);  /* deprecated! */
+      else {
+        switch (p[1]) {
+          case 'n':  /* number */
+            if (!<A HREF="liolib.c.html#read_number">read_number</A>(L, f)) goto endloop;  /* read fails */
+            continue;  /* number is already pushed; avoid the "pushstring" */
+          case 'l':  /* line */
+            success = <A HREF="liolib.c.html#read_line">read_line</A>(L, f);
+            break;
+          case 'a':  /* file */
+            <A HREF="liolib.c.html#read_file">read_file</A>(L, f);
+            success = 1; /* always success */
+            break;
+          case 'w':  /* word */
+            success = <A HREF="liolib.c.html#read_word">read_word</A>(L, f);
+            break;
+          default:
+            <A HREF="lauxlib.c.html#luaL_argerror">luaL_argerror</A>(L, n, "invalid format");
+            success = 0;  /* to avoid warnings */
+        }
+      }
+    }
+    if (!success) {
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove last result */
+      break;  /* read fails */
+    }
+  } endloop:
+  return n - firstarg;
+}
+
+/* }====================================================== */
+
+
+static int <A NAME="io_write"><SPAN CLASS="definition">io_write</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int lastarg = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) - 1;
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  int arg = 1;
+  int status = 1;
+  FILE *f = <A HREF="liolib.c.html#gethandle">gethandle</A>(L, ctrl, arg);
+  if (f) arg++;
+  else f = <A HREF="liolib.c.html#getfilebyref">getfilebyref</A>(L, ctrl, <A HREF="liolib.c.html#OUTFILE">OUTFILE</A>);  /* get _OUTPUT */
+  for (; arg &lt;=  lastarg; arg++) {
+    if (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, arg) == <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>) {  /* LUA_NUMBER */
+      /* optimization: could be done exactly as for strings */
+      status = status &amp;&amp; fprintf(f, "%.16g", <A HREF="lapi.c.html#lua_tonumber">lua_tonumber</A>(L, arg)) &gt; 0;
+    }
+    else {
+      size_t l;
+      const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, arg, &amp;l);
+      status = status &amp;&amp; (fwrite(s, sizeof(char), l, f) == l);
+    }
+  }
+  <A HREF="liolib.c.html#pushresult">pushresult</A>(L, status);
+  return 1;
+}
+
+
+static int <A NAME="io_seek"><SPAN CLASS="definition">io_seek</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  static const int mode[] = {SEEK_SET, SEEK_CUR, SEEK_END};
+  static const char *const modenames[] = {"set", "cur", "end", NULL};
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  FILE *f;
+  int op;
+  long offset;
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove upvalue */
+  f = <A HREF="liolib.c.html#getnonullfile">getnonullfile</A>(L, ctrl, 1);
+  op = <A HREF="lauxlib.c.html#luaL_findstring">luaL_findstring</A>(<A HREF="lauxlib.h.html#luaL_opt_string">luaL_opt_string</A>(L, 2, "cur"), modenames);
+  offset = <A HREF="lauxlib.h.html#luaL_opt_long">luaL_opt_long</A>(L, 3, 0);
+  <A HREF="lauxlib.h.html#luaL_arg_check">luaL_arg_check</A>(L, op != -1, 2, "invalid mode");
+  op = fseek(f, offset, mode[op]);
+  if (op)
+    return <A HREF="liolib.c.html#pushresult">pushresult</A>(L, 0);  /* error */
+  else {
+    <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, ftell(f));
+    return 1;
+  }
+}
+
+
+static int <A NAME="io_flush"><SPAN CLASS="definition">io_flush</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);
+  FILE *f;
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove upvalue */
+  f = <A HREF="liolib.c.html#gethandle">gethandle</A>(L, ctrl, 1);
+  <A HREF="lauxlib.h.html#luaL_arg_check">luaL_arg_check</A>(L, f || <A HREF="lua.h.html#lua_isnull">lua_isnull</A>(L, 1), 1, "invalid file handle");
+  return <A HREF="liolib.c.html#pushresult">pushresult</A>(L, fflush(f) == 0);
+}
+
+/* }====================================================== */
+
+
+/*
+** {======================================================
+** Other O.S. Operations
+** =======================================================
+*/
+
+static int <A NAME="io_execute"><SPAN CLASS="definition">io_execute</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, system(<A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1)));
+  return 1;
+}
+
+
+static int <A NAME="io_remove"><SPAN CLASS="definition">io_remove</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="liolib.c.html#pushresult">pushresult</A>(L, remove(<A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1)) == 0);
+}
+
+
+static int <A NAME="io_rename"><SPAN CLASS="definition">io_rename</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="liolib.c.html#pushresult">pushresult</A>(L, rename(<A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1),
+                    <A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 2)) == 0);
+}
+
+
+static int <A NAME="io_tmpname"><SPAN CLASS="definition">io_tmpname</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, tmpnam(NULL));
+  return 1;
+}
+
+
+
+static int <A NAME="io_getenv"><SPAN CLASS="definition">io_getenv</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, getenv(<A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1)));  /* if NULL push nil */
+  return 1;
+}
+
+
+static int <A NAME="io_clock"><SPAN CLASS="definition">io_clock</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, ((double)clock())/CLOCKS_PER_SEC);
+  return 1;
+}
+
+
+static int <A NAME="io_date"><SPAN CLASS="definition">io_date</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  char b[256];
+  const char *s = <A HREF="lauxlib.h.html#luaL_opt_string">luaL_opt_string</A>(L, 1, "%c");
+  struct tm *stm;
+  time_t t;
+  time(&amp;t); stm = localtime(&amp;t);
+  if (strftime(b, sizeof(b), s, stm))
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, b);
+  else
+    <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "invalid `date' format");
+  return 1;
+}
+
+
+static int <A NAME="setloc"><SPAN CLASS="definition">setloc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  static const int cat[] = {<A HREF="liolib.c.html#LC_ALL">LC_ALL</A>, <A HREF="liolib.c.html#LC_COLLATE">LC_COLLATE</A>, <A HREF="liolib.c.html#LC_CTYPE">LC_CTYPE</A>, <A HREF="liolib.c.html#LC_MONETARY">LC_MONETARY</A>,
+                      <A HREF="liolib.c.html#LC_NUMERIC">LC_NUMERIC</A>, <A HREF="liolib.c.html#LC_TIME">LC_TIME</A>};
+  static const char *const catnames[] = {"all", "collate", "ctype", "monetary",
+     "numeric", "time", NULL};
+  int op = <A HREF="lauxlib.c.html#luaL_findstring">luaL_findstring</A>(<A HREF="lauxlib.h.html#luaL_opt_string">luaL_opt_string</A>(L, 2, "all"), catnames);
+  <A HREF="lauxlib.h.html#luaL_arg_check">luaL_arg_check</A>(L, op != -1, 2, "invalid option");
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, <A HREF="liolib.c.html#setlocale">setlocale</A>(cat[op], <A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1)));
+  return 1;
+}
+
+
+static int <A NAME="io_exit"><SPAN CLASS="definition">io_exit</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  exit(<A HREF="lauxlib.h.html#luaL_opt_int">luaL_opt_int</A>(L, 1, EXIT_SUCCESS));
+  return 0;  /* to avoid warnings */
+}
+
+/* }====================================================== */
+
+
+
+static int <A NAME="io_debug"><SPAN CLASS="definition">io_debug</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  for (;;) {
+    char buffer[250];
+    fprintf(stderr, "lua_debug&gt; ");
+    if (fgets(buffer, sizeof(buffer), stdin) == 0 ||
+        strcmp(buffer, "cont\n") == 0)
+      return 0;
+    <A HREF="ldo.c.html#lua_dostring">lua_dostring</A>(L, buffer);
+    <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 0);  /* remove eventual returns */
+  }
+}
+
+
+#define <A NAME="LEVELS1"><SPAN CLASS="definition">LEVELS1</SPAN></A> 12      /* size of the first part of the stack */
+#define <A NAME="LEVELS2"><SPAN CLASS="definition">LEVELS2</SPAN></A> 10      /* size of the second part of the stack */
+
+static int <A NAME="errorfb"><SPAN CLASS="definition">errorfb</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int level = 1;  /* skip level 0 (it's this function) */
+  int firstpart = 1;  /* still before eventual `...' */
+  <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> ar;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, "error: ");
+  <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, <A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 1));
+  <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, "\n");
+  while (<A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(L, level++, &amp;ar)) {
+    char buff[120];  /* enough to fit following `sprintf's */
+    if (level == 2)
+      <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, "stack traceback:\n");
+    else if (level &gt; <A HREF="liolib.c.html#LEVELS1">LEVELS1</A> &amp;&amp; firstpart) {
+      /* no more than `<A HREF="liolib.c.html#LEVELS2">LEVELS2</A>' more levels? */
+      if (!<A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(L, level+<A HREF="liolib.c.html#LEVELS2">LEVELS2</A>, &amp;ar))
+        level--;  /* keep going */
+      else {
+        <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, "       ...\n");  /* too many levels */
+        while (<A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(L, level+<A HREF="liolib.c.html#LEVELS2">LEVELS2</A>, &amp;ar))  /* find last levels */
+          level++;
+      }
+      firstpart = 0;
+      continue;
+    }
+    sprintf(buff, "%4d:  ", level-1);
+    <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, buff);
+    <A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>(L, "Snl", &amp;ar);
+    switch (*ar.namewhat) {
+      case 'g':  case 'l':  /* global, local */
+        sprintf(buff, "function `%.50s'", ar.name);
+        break;
+      case 'f':  /* field */
+        sprintf(buff, "method `%.50s'", ar.name);
+        break;
+      case 't':  /* tag method */
+        sprintf(buff, "`%.50s' tag method", ar.name);
+        break;
+      default: {
+        if (*ar.what == 'm')  /* <A HREF="lua.c.html#main">main</A>? */
+          sprintf(buff, "<A HREF="lua.c.html#main">main</A> of %.70s", ar.short_src);
+        else if (*ar.what == 'C')  /* C function? */
+          sprintf(buff, "%.70s", ar.short_src);
+        else
+          sprintf(buff, "function &lt;%d:%.70s&gt;", ar.linedefined, ar.short_src);
+        ar.source = NULL;  /* do not print source again */
+      }
+    }
+    <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, buff);
+    if (ar.currentline &gt; 0) {
+      sprintf(buff, " at line %d", ar.currentline);
+      <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, buff);
+    }
+    if (ar.source) {
+      sprintf(buff, " [%.70s]", ar.short_src);
+      <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, buff);
+    }
+    <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A>(&amp;b, "\n");
+  }
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  <A HREF="lapi.c.html#lua_getglobal">lua_getglobal</A>(L, <A HREF="lualib.h.html#LUA_ALERT">LUA_ALERT</A>);
+  if (<A HREF="lua.h.html#lua_isfunction">lua_isfunction</A>(L, -1)) {  /* avoid loop if _ALERT is not defined */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -2);  /* error message */
+    <A HREF="lapi.c.html#lua_rawcall">lua_rawcall</A>(L, 1, 0);
+  }
+  return 0;
+}
+
+
+
+static const struct <A HREF="lauxlib.h.html#luaL_reg">luaL_reg</A> <A NAME="iolib"><SPAN CLASS="definition">iolib</SPAN></A>[] = {
+  {<A HREF="lua.h.html#LUA_ERRORMESSAGE">LUA_ERRORMESSAGE</A>, <A HREF="liolib.c.html#errorfb">errorfb</A>},
+  {"clock",     <A HREF="liolib.c.html#io_clock">io_clock</A>},
+  {"date",     <A HREF="liolib.c.html#io_date">io_date</A>},
+  {"debug",    <A HREF="liolib.c.html#io_debug">io_debug</A>},
+  {"execute",  <A HREF="liolib.c.html#io_execute">io_execute</A>},
+  {"exit",     <A HREF="liolib.c.html#io_exit">io_exit</A>},
+  {"getenv",   <A HREF="liolib.c.html#io_getenv">io_getenv</A>},
+  {"remove",   <A HREF="liolib.c.html#io_remove">io_remove</A>},
+  {"rename",   <A HREF="liolib.c.html#io_rename">io_rename</A>},
+  {"<A HREF="liolib.c.html#setlocale">setlocale</A>", <A HREF="liolib.c.html#setloc">setloc</A>},
+  {"tmpname",   <A HREF="liolib.c.html#io_tmpname">io_tmpname</A>}
+};
+
+
+static const struct <A HREF="lauxlib.h.html#luaL_reg">luaL_reg</A> <A NAME="iolibtag"><SPAN CLASS="definition">iolibtag</SPAN></A>[] = {
+  {"appendto", <A HREF="liolib.c.html#io_appendto">io_appendto</A>},
+  {"<A HREF="liolib.c.html#closefile">closefile</A>",   <A HREF="liolib.c.html#io_close">io_close</A>},
+  {"flush",     <A HREF="liolib.c.html#io_flush">io_flush</A>},
+  {"openfile",   <A HREF="liolib.c.html#io_open">io_open</A>},
+  {"read",     <A HREF="liolib.c.html#io_read">io_read</A>},
+  {"readfrom", <A HREF="liolib.c.html#io_readfrom">io_readfrom</A>},
+  {"seek",     <A HREF="liolib.c.html#io_seek">io_seek</A>},
+  {"write",    <A HREF="liolib.c.html#io_write">io_write</A>},
+  {"writeto",  <A HREF="liolib.c.html#io_writeto">io_writeto</A>}
+};
+
+
+static void <A NAME="openwithcontrol"><SPAN CLASS="definition">openwithcontrol</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *ctrl = (<A HREF="liolib.c.html#IOCtrl">IOCtrl</A> *)<A HREF="lapi.c.html#lua_newuserdata">lua_newuserdata</A>(L, sizeof(<A HREF="liolib.c.html#IOCtrl">IOCtrl</A>));
+  unsigned int i;
+  ctrl-&gt;iotag = <A HREF="ltm.c.html#lua_newtag">lua_newtag</A>(L);
+  ctrl-&gt;closedtag = <A HREF="ltm.c.html#lua_newtag">lua_newtag</A>(L);
+  for (i=0; i&lt;sizeof(<A HREF="liolib.c.html#iolibtag">iolibtag</A>)/sizeof(<A HREF="liolib.c.html#iolibtag">iolibtag</A>[0]); i++) {
+    /* put `ctrl' as upvalue for these functions */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+    <A HREF="lapi.c.html#lua_pushcclosure">lua_pushcclosure</A>(L, <A HREF="liolib.c.html#iolibtag">iolibtag</A>[i].func, 1);
+    <A HREF="lapi.c.html#lua_setglobal">lua_setglobal</A>(L, <A HREF="liolib.c.html#iolibtag">iolibtag</A>[i].name);
+  }
+  /* create references to variable names */
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, <A HREF="liolib.c.html#filenames">filenames</A>[<A HREF="liolib.c.html#INFILE">INFILE</A>]);
+  ctrl-&gt;ref[<A HREF="liolib.c.html#INFILE">INFILE</A>] = <A HREF="lapi.c.html#lua_ref">lua_ref</A>(L, 1);
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, <A HREF="liolib.c.html#filenames">filenames</A>[<A HREF="liolib.c.html#OUTFILE">OUTFILE</A>]);
+  ctrl-&gt;ref[<A HREF="liolib.c.html#OUTFILE">OUTFILE</A>] = <A HREF="lapi.c.html#lua_ref">lua_ref</A>(L, 1);
+  /* predefined file handles */
+  <A HREF="liolib.c.html#setfile">setfile</A>(L, ctrl, stdin, <A HREF="liolib.c.html#INFILE">INFILE</A>);
+  <A HREF="liolib.c.html#setfile">setfile</A>(L, ctrl, stdout, <A HREF="liolib.c.html#OUTFILE">OUTFILE</A>);
+  <A HREF="liolib.c.html#setfilebyname">setfilebyname</A>(L, ctrl, stdin, "_STDIN");
+  <A HREF="liolib.c.html#setfilebyname">setfilebyname</A>(L, ctrl, stdout, "_STDOUT");
+  <A HREF="liolib.c.html#setfilebyname">setfilebyname</A>(L, ctrl, stderr, "_STDERR");
+  /* close files when collected */
+  <A HREF="lapi.c.html#lua_pushcclosure">lua_pushcclosure</A>(L, <A HREF="liolib.c.html#file_collect">file_collect</A>, 1);  /* pops `ctrl' from stack */
+  <A HREF="ltm.c.html#lua_settagmethod">lua_settagmethod</A>(L, ctrl-&gt;iotag, "gc");
+}
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="lua_iolibopen"><SPAN CLASS="definition">lua_iolibopen</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.h.html#luaL_openl">luaL_openl</A>(L, <A HREF="liolib.c.html#iolib">iolib</A>);
+  <A HREF="liolib.c.html#openwithcontrol">openwithcontrol</A>(L);
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

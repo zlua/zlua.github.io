@@ -1,0 +1,99 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lzio.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lzio.h
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lzio.h,v 1.15 2003/03/20 16:00:56 roberto Exp $
+** Buffered streams
+** See Copyright Notice in lua.h
+*/
+
+
+#ifndef <A HREF="lzio.h.html#lzio_h">lzio_h</A>
+#define <A NAME="lzio_h"><SPAN CLASS="definition">lzio_h</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+#define <A NAME="EOZ"><SPAN CLASS="definition">EOZ</SPAN></A>     (-1)                    /* end of stream */
+
+typedef struct <A HREF="lzio.h.html#Zio">Zio</A> <A NAME="ZIO"><SPAN CLASS="definition">ZIO</SPAN></A>;
+
+
+#define <A NAME="char2int"><SPAN CLASS="definition">char2int</SPAN></A>(c)     <A HREF="llimits.h.html#cast">cast</A>(int, <A HREF="llimits.h.html#cast">cast</A>(unsigned char, (c)))
+
+#define <A NAME="zgetc"><SPAN CLASS="definition">zgetc</SPAN></A>(z)  (((z)-&gt;n--)&gt;0 ?  <A HREF="lzio.h.html#char2int">char2int</A>(*(z)-&gt;p++) : <A HREF="lzio.c.html#luaZ_fill">luaZ_fill</A>(z))
+
+#define <A NAME="zname"><SPAN CLASS="definition">zname</SPAN></A>(z)        ((z)-&gt;name)
+
+void <A HREF="lzio.c.html#luaZ_init">luaZ_init</A> (<A HREF="lzio.h.html#ZIO">ZIO</A> *z, <A HREF="lua.h.html#lua_Chunkreader">lua_Chunkreader</A> reader, void *data, const char *name);
+size_t <A HREF="lzio.c.html#luaZ_read">luaZ_read</A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z, void* b, size_t n);   /* read next n bytes */
+int <A HREF="lzio.c.html#luaZ_lookahead">luaZ_lookahead</A> (<A HREF="lzio.h.html#ZIO">ZIO</A> *z);
+
+
+
+typedef struct <A NAME="Mbuffer"><SPAN CLASS="definition">Mbuffer</SPAN></A> {
+  char *buffer;
+  size_t buffsize;
+} <A HREF="lzio.h.html#Mbuffer">Mbuffer</A>;
+
+
+char *<A HREF="lzio.c.html#luaZ_openspace">luaZ_openspace</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lzio.h.html#Mbuffer">Mbuffer</A> *buff, size_t n);
+
+#define <A NAME="luaZ_initbuffer"><SPAN CLASS="definition">luaZ_initbuffer</SPAN></A>(L, buff) ((buff)-&gt;buffer = NULL, (buff)-&gt;buffsize = 0)
+
+#define <A NAME="luaZ_sizebuffer"><SPAN CLASS="definition">luaZ_sizebuffer</SPAN></A>(buff)   ((buff)-&gt;buffsize)
+#define <A NAME="luaZ_buffer"><SPAN CLASS="definition">luaZ_buffer</SPAN></A>(buff)       ((buff)-&gt;buffer)
+
+#define <A NAME="luaZ_resizebuffer"><SPAN CLASS="definition">luaZ_resizebuffer</SPAN></A>(L, buff, size) \
+        (<A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, (buff)-&gt;buffer, (buff)-&gt;buffsize, size, char), \
+        (buff)-&gt;buffsize = size)
+
+#define <A NAME="luaZ_freebuffer"><SPAN CLASS="definition">luaZ_freebuffer</SPAN></A>(L, buff)        <A HREF="lzio.h.html#luaZ_resizebuffer">luaZ_resizebuffer</A>(L, buff, 0)
+
+
+/* --------- Private Part ------------------ */
+
+struct <A NAME="Zio"><SPAN CLASS="definition">Zio</SPAN></A> {
+  size_t n;                     /* bytes still unread */
+  const char *p;                /* current position in buffer */
+  <A HREF="lua.h.html#lua_Chunkreader">lua_Chunkreader</A> reader;
+  void* data;                   /* additional data */
+  const char *name;
+};
+
+
+int <A HREF="lzio.c.html#luaZ_fill">luaZ_fill</A> (<A HREF="lzio.h.html#ZIO">ZIO</A> *z);
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

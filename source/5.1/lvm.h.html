@@ -1,0 +1,71 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lvm.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lvm.h
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lvm.h,v 2.5.1.1 2007/12/27 13:02:25 roberto Exp $
+** Lua virtual machine
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lvm.h.html#lvm_h">lvm_h</A>
+#define <A NAME="lvm_h"><SPAN CLASS="definition">lvm_h</SPAN></A>
+
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+
+
+#define <A NAME="tostring"><SPAN CLASS="definition">tostring</SPAN></A>(L,o) ((<A HREF="lobject.h.html#ttype">ttype</A>(o) == <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>) || (<A HREF="lvm.c.html#luaV_tostring">luaV_tostring</A>(L, o)))
+
+#define <A NAME="tonumber"><SPAN CLASS="definition">tonumber</SPAN></A>(o,n)   (<A HREF="lobject.h.html#ttype">ttype</A>(o) == <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A> || \
+                         (((o) = <A HREF="lvm.c.html#luaV_tonumber">luaV_tonumber</A>(o,n)) != NULL))
+
+#define <A NAME="equalobj"><SPAN CLASS="definition">equalobj</SPAN></A>(L,o1,o2) \
+        (<A HREF="lobject.h.html#ttype">ttype</A>(o1) == <A HREF="lobject.h.html#ttype">ttype</A>(o2) &amp;&amp; <A HREF="lvm.c.html#luaV_equalval">luaV_equalval</A>(L, o1, o2))
+
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lvm.c.html#luaV_lessthan">luaV_lessthan</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *l, const <A HREF="lobject.h.html#TValue">TValue</A> *r);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lvm.c.html#luaV_equalval">luaV_equalval</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *t1, const <A HREF="lobject.h.html#TValue">TValue</A> *t2);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="lvm.c.html#luaV_tonumber">luaV_tonumber</A> (const <A HREF="lobject.h.html#TValue">TValue</A> *obj, <A HREF="lobject.h.html#TValue">TValue</A> *n);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lvm.c.html#luaV_tostring">luaV_tostring</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> obj);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_gettable">luaV_gettable</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *t, <A HREF="lobject.h.html#TValue">TValue</A> *key,
+                                            <A HREF="lobject.h.html#StkId">StkId</A> val);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_settable">luaV_settable</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *t, <A HREF="lobject.h.html#TValue">TValue</A> *key,
+                                            <A HREF="lobject.h.html#StkId">StkId</A> val);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_execute">luaV_execute</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nexeccalls);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_concat">luaV_concat</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int total, int last);
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:56 2016
+</P>
+
+</BODY>
+</HTML>

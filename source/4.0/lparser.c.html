@@ -1,0 +1,1159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lparser.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lparser.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lparser.c,v 1.117 2000/11/29 11:57:42 roberto Exp $
+** LL(1) Parser and code generator for Lua
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lcode.h.html">lcode.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="llex.h.html">llex.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lparser.h.html">lparser.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+
+
+/*
+** Constructors descriptor:
+** `n' indicates number of elements, and `k' signals whether
+** it is a list <A HREF="lparser.c.html#constructor">constructor</A> (k = 0) or a record <A HREF="lparser.c.html#constructor">constructor</A> (k = 1)
+** or empty (k = ';' or '}')
+*/
+typedef struct <A NAME="Constdesc"><SPAN CLASS="definition">Constdesc</SPAN></A> {
+  int n;
+  int k;
+} <A HREF="lparser.c.html#Constdesc">Constdesc</A>;
+
+
+typedef struct <A NAME="Breaklabel"><SPAN CLASS="definition">Breaklabel</SPAN></A> {
+  struct <A HREF="lparser.c.html#Breaklabel">Breaklabel</A> *previous;  /* chain */
+  int breaklist;
+  int stacklevel;
+} <A HREF="lparser.c.html#Breaklabel">Breaklabel</A>;
+
+
+
+
+/*
+** prototypes for recursive non-terminal functions
+*/
+static void <A HREF="lparser.c.html#body">body</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int needself, int line);
+static void <A HREF="lparser.c.html#chunk">chunk</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls);
+static void <A HREF="lparser.c.html#constructor">constructor</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls);
+static void <A HREF="lparser.c.html#expr">expr</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v);
+static void <A HREF="lparser.c.html#exp1">exp1</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls);
+
+
+
+static void <A NAME="next"><SPAN CLASS="definition">next</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  ls-&gt;lastline = ls-&gt;linenumber;
+  if (ls-&gt;<A HREF="lparser.c.html#lookahead">lookahead</A>.token != <A HREF="llex.h.html#TK_EOS">TK_EOS</A>) {  /* is there a look-ahead token? */
+    ls-&gt;t = ls-&gt;<A HREF="lparser.c.html#lookahead">lookahead</A>;  /* use this one */
+    ls-&gt;<A HREF="lparser.c.html#lookahead">lookahead</A>.token = <A HREF="llex.h.html#TK_EOS">TK_EOS</A>;  /* and discharge it */
+  }
+  else
+    ls-&gt;t.token = <A HREF="llex.c.html#luaX_lex">luaX_lex</A>(ls, &amp;ls-&gt;t.seminfo);  /* read <A HREF="lparser.c.html#next">next</A> token */
+}
+
+
+static void <A NAME="lookahead"><SPAN CLASS="definition">lookahead</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(ls-&gt;<A HREF="lparser.c.html#lookahead">lookahead</A>.token == <A HREF="llex.h.html#TK_EOS">TK_EOS</A>, "two look-aheads");
+  ls-&gt;<A HREF="lparser.c.html#lookahead">lookahead</A>.token = <A HREF="llex.c.html#luaX_lex">luaX_lex</A>(ls, &amp;ls-&gt;<A HREF="lparser.c.html#lookahead">lookahead</A>.seminfo);
+}
+
+
+static void <A NAME="error_expected"><SPAN CLASS="definition">error_expected</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int token) {
+  char buff[100], t[<A HREF="llex.h.html#TOKEN_LEN">TOKEN_LEN</A>];
+  <A HREF="llex.c.html#luaX_token2str">luaX_token2str</A>(token, t);
+  sprintf(buff, "`%.20s' expected", t);
+  <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, buff);
+}
+
+
+static void <A NAME="check"><SPAN CLASS="definition">check</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int c) {
+  if (ls-&gt;t.token != c)
+    <A HREF="lparser.c.html#error_expected">error_expected</A>(ls, c);
+  <A HREF="lparser.c.html#next">next</A>(ls);
+}
+
+
+static void <A NAME="check_condition"><SPAN CLASS="definition">check_condition</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int c, const char *msg) {
+  if (!c) <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, msg);
+}
+
+
+static int <A NAME="optional"><SPAN CLASS="definition">optional</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int c) {
+  if (ls-&gt;t.token == c) {
+    <A HREF="lparser.c.html#next">next</A>(ls);
+    return 1;
+  }
+  else return 0;
+}
+
+
+static void <A NAME="check_match"><SPAN CLASS="definition">check_match</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int what, int who, int where) {
+  if (ls-&gt;t.token != what) {
+    if (where == ls-&gt;linenumber)
+      <A HREF="lparser.c.html#error_expected">error_expected</A>(ls, what);
+    else {
+      char buff[100];
+      char t_what[<A HREF="llex.h.html#TOKEN_LEN">TOKEN_LEN</A>], t_who[<A HREF="llex.h.html#TOKEN_LEN">TOKEN_LEN</A>];
+      <A HREF="llex.c.html#luaX_token2str">luaX_token2str</A>(what, t_what);
+      <A HREF="llex.c.html#luaX_token2str">luaX_token2str</A>(who, t_who);
+      sprintf(buff, "`%.20s' expected (to close `%.20s' at line %d)",
+              t_what, t_who, where);
+      <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, buff);
+    }
+  }
+  <A HREF="lparser.c.html#next">next</A>(ls);
+}
+
+
+static int <A NAME="string_constant"><SPAN CLASS="definition">string_constant</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lobject.h.html#TString">TString</A> *s) {
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = fs-&gt;f;
+  int c = s-&gt;u.s.constindex;
+  if (c &gt;= f-&gt;nkstr || f-&gt;kstr[c] != s) {
+    <A HREF="lmem.h.html#luaM_growvector">luaM_growvector</A>(fs-&gt;L, f-&gt;kstr, f-&gt;nkstr, 1, <A HREF="lobject.h.html#TString">TString</A> *,
+                    "constant table overflow", <A HREF="llimits.h.html#MAXARG_U">MAXARG_U</A>);
+    c = f-&gt;nkstr++;
+    f-&gt;kstr[c] = s;
+    s-&gt;u.s.constindex = c;  /* hint for <A HREF="lparser.c.html#next">next</A> time */
+  }
+  return c;
+}
+
+
+static void <A NAME="code_string"><SPAN CLASS="definition">code_string</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lobject.h.html#TString">TString</A> *s) {
+  <A HREF="lcode.c.html#luaK_kstr">luaK_kstr</A>(ls, <A HREF="lparser.c.html#string_constant">string_constant</A>(ls-&gt;fs, s));
+}
+
+
+static <A HREF="lobject.h.html#TString">TString</A> *<A NAME="str_checkname"><SPAN CLASS="definition">str_checkname</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+  <A HREF="lparser.c.html#check_condition">check_condition</A>(ls, (ls-&gt;t.token == <A HREF="llex.h.html#TK_NAME">TK_NAME</A>), "&lt;name&gt; expected");
+  ts = ls-&gt;t.seminfo.ts;
+  <A HREF="lparser.c.html#next">next</A>(ls);
+  return ts;
+}
+
+
+static int <A NAME="checkname"><SPAN CLASS="definition">checkname</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  return <A HREF="lparser.c.html#string_constant">string_constant</A>(ls-&gt;fs, <A HREF="lparser.c.html#str_checkname">str_checkname</A>(ls));
+}
+
+
+static int <A NAME="luaI_registerlocalvar"><SPAN CLASS="definition">luaI_registerlocalvar</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lobject.h.html#TString">TString</A> *varname) {
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = ls-&gt;fs-&gt;f;
+  <A HREF="lmem.h.html#luaM_growvector">luaM_growvector</A>(ls-&gt;L, f-&gt;locvars, f-&gt;nlocvars, 1, <A HREF="lobject.h.html#LocVar">LocVar</A>, "", <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>);
+  f-&gt;locvars[f-&gt;nlocvars].varname = varname;
+  return f-&gt;nlocvars++;
+}
+
+
+static void <A NAME="new_localvar"><SPAN CLASS="definition">new_localvar</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lobject.h.html#TString">TString</A> *name, int n) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="llex.c.html#luaX_checklimit">luaX_checklimit</A>(ls, fs-&gt;nactloc+n+1, <A HREF="llimits.h.html#MAXLOCALS">MAXLOCALS</A>, "local variables");
+  fs-&gt;actloc[fs-&gt;nactloc+n] = <A HREF="lparser.c.html#luaI_registerlocalvar">luaI_registerlocalvar</A>(ls, name);
+}
+
+
+static void <A NAME="adjustlocalvars"><SPAN CLASS="definition">adjustlocalvars</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int nvars) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  while (nvars--)
+    fs-&gt;f-&gt;locvars[fs-&gt;actloc[fs-&gt;nactloc++]].startpc = fs-&gt;pc;
+}
+
+
+static void <A NAME="removelocalvars"><SPAN CLASS="definition">removelocalvars</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int nvars) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  while (nvars--)
+    fs-&gt;f-&gt;locvars[fs-&gt;actloc[--fs-&gt;nactloc]].endpc = fs-&gt;pc;
+}
+
+
+static void <A NAME="new_localvarstr"><SPAN CLASS="definition">new_localvarstr</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *name, int n) {
+  <A HREF="lparser.c.html#new_localvar">new_localvar</A>(ls, <A HREF="lstring.c.html#luaS_newfixed">luaS_newfixed</A>(ls-&gt;L, name), n);
+}
+
+
+static int <A NAME="search_local"><SPAN CLASS="definition">search_local</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lobject.h.html#TString">TString</A> *n, <A HREF="lparser.h.html#expdesc">expdesc</A> *var) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs;
+  int level = 0;
+  for (fs=ls-&gt;fs; fs; fs=fs-&gt;prev) {
+    int i;
+    for (i=fs-&gt;nactloc-1; i &gt;= 0; i--) {
+      if (n == fs-&gt;f-&gt;locvars[fs-&gt;actloc[i]].varname) {
+        var-&gt;k = <A HREF="lparser.h.html#VLOCAL">VLOCAL</A>;
+        var-&gt;u.index = i;
+        return level;
+      }
+    }
+    level++;  /* `var' not found; <A HREF="lparser.c.html#check">check</A> outer level */
+  }
+  var-&gt;k = <A HREF="lparser.h.html#VGLOBAL">VGLOBAL</A>;  /* not found in any level; must be global */
+  return -1;
+}
+
+
+static void <A NAME="singlevar"><SPAN CLASS="definition">singlevar</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lobject.h.html#TString">TString</A> *n, <A HREF="lparser.h.html#expdesc">expdesc</A> *var) {
+  int level = <A HREF="lparser.c.html#search_local">search_local</A>(ls, n, var);
+  if (level &gt;= 1)  /* neither local (0) nor global (-1)? */
+    <A HREF="llex.c.html#luaX_syntaxerror">luaX_syntaxerror</A>(ls, "cannot access a variable in outer scope", n-&gt;str);
+  else if (level == -1)  /* global? */
+    var-&gt;u.index = <A HREF="lparser.c.html#string_constant">string_constant</A>(ls-&gt;fs, n);
+}
+
+
+static int <A NAME="indexupvalue"><SPAN CLASS="definition">indexupvalue</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int i;
+  for (i=0; i&lt;fs-&gt;nupvalues; i++) {
+    if (fs-&gt;upvalues[i].k == v-&gt;k &amp;&amp; fs-&gt;upvalues[i].u.index == v-&gt;u.index)
+      return i;
+  }
+  /* new one */
+  <A HREF="llex.c.html#luaX_checklimit">luaX_checklimit</A>(ls, fs-&gt;nupvalues+1, <A HREF="llimits.h.html#MAXUPVALUES">MAXUPVALUES</A>, "upvalues");
+  fs-&gt;upvalues[fs-&gt;nupvalues] = *v;
+  return fs-&gt;nupvalues++;
+}
+
+
+static void <A NAME="pushupvalue"><SPAN CLASS="definition">pushupvalue</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lobject.h.html#TString">TString</A> *n) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lparser.h.html#expdesc">expdesc</A> v;
+  int level = <A HREF="lparser.c.html#search_local">search_local</A>(ls, n, &amp;v);
+  if (level == -1) {  /* global? */
+    if (fs-&gt;prev == NULL)
+      <A HREF="llex.c.html#luaX_syntaxerror">luaX_syntaxerror</A>(ls, "cannot access upvalue in <A HREF="lua.c.html#main">main</A>", n-&gt;str);
+    v.u.index = <A HREF="lparser.c.html#string_constant">string_constant</A>(fs-&gt;prev, n);
+  }
+  else if (level != 1)
+    <A HREF="llex.c.html#luaX_syntaxerror">luaX_syntaxerror</A>(ls,
+         "upvalue must be global or local to immediately outer scope", n-&gt;str);
+  <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(fs, <A HREF="lopcodes.h.html#OP_PUSHUPVALUE">OP_PUSHUPVALUE</A>, <A HREF="lparser.c.html#indexupvalue">indexupvalue</A>(ls, &amp;v));
+}
+
+
+static void <A NAME="adjust_mult_assign"><SPAN CLASS="definition">adjust_mult_assign</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int nvars, int nexps) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int diff = nexps - nvars;
+  if (nexps &gt; 0 &amp;&amp; <A HREF="lcode.c.html#luaK_lastisopen">luaK_lastisopen</A>(fs)) { /* list ends in a function call */
+    diff--;  /* do not count function call itself */
+    if (diff &lt;= 0) {  /* more variables than values? */
+      <A HREF="lcode.c.html#luaK_setcallreturns">luaK_setcallreturns</A>(fs, -diff);  /* function call provide extra values */
+      diff = 0;  /* no more difference */
+    }
+    else  /* more values than variables */
+      <A HREF="lcode.c.html#luaK_setcallreturns">luaK_setcallreturns</A>(fs, 0);  /* call should provide no value */
+  }
+  /* push or pop eventual difference between list lengths */
+  <A HREF="lcode.c.html#luaK_adjuststack">luaK_adjuststack</A>(fs, diff);
+}
+
+
+static void <A NAME="code_params"><SPAN CLASS="definition">code_params</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int nparams, int dots) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lparser.c.html#adjustlocalvars">adjustlocalvars</A>(ls, nparams);
+  <A HREF="llex.c.html#luaX_checklimit">luaX_checklimit</A>(ls, fs-&gt;nactloc, <A HREF="llimits.h.html#MAXPARAMS">MAXPARAMS</A>, "parameters");
+  fs-&gt;f-&gt;numparams = fs-&gt;nactloc;  /* `self' could be there already */
+  fs-&gt;f-&gt;is_vararg = dots;
+  if (dots) {
+    <A HREF="lparser.c.html#new_localvarstr">new_localvarstr</A>(ls, "arg", 0);
+    <A HREF="lparser.c.html#adjustlocalvars">adjustlocalvars</A>(ls, 1);
+  }
+  <A HREF="lcode.c.html#luaK_deltastack">luaK_deltastack</A>(fs, fs-&gt;nactloc);  /* count parameters in the stack */
+}
+
+
+static void <A NAME="enterbreak"><SPAN CLASS="definition">enterbreak</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.c.html#Breaklabel">Breaklabel</A> *bl) {
+  bl-&gt;stacklevel = fs-&gt;stacklevel;
+  bl-&gt;breaklist = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+  bl-&gt;previous = fs-&gt;bl;
+  fs-&gt;bl = bl;
+}
+
+
+static void <A NAME="leavebreak"><SPAN CLASS="definition">leavebreak</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.c.html#Breaklabel">Breaklabel</A> *bl) {
+  fs-&gt;bl = bl-&gt;previous;
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(bl-&gt;stacklevel == fs-&gt;stacklevel, "wrong levels");
+  <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, bl-&gt;breaklist, <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs));
+}
+
+
+static void <A NAME="pushclosure"><SPAN CLASS="definition">pushclosure</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#FuncState">FuncState</A> *func) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = fs-&gt;f;
+  int i;
+  for (i=0; i&lt;func-&gt;nupvalues; i++)
+    <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, &amp;func-&gt;upvalues[i], 1);
+  <A HREF="lmem.h.html#luaM_growvector">luaM_growvector</A>(ls-&gt;L, f-&gt;kproto, f-&gt;nkproto, 1, <A HREF="lobject.h.html#Proto">Proto</A> *,
+                  "constant table overflow", <A HREF="llimits.h.html#MAXARG_A">MAXARG_A</A>);
+  f-&gt;kproto[f-&gt;nkproto++] = func-&gt;f;
+  <A HREF="lcode.c.html#luaK_code2">luaK_code2</A>(fs, <A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A>, f-&gt;nkproto-1, func-&gt;nupvalues);
+}
+
+
+static void <A NAME="open_func"><SPAN CLASS="definition">open_func</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#FuncState">FuncState</A> *fs) {
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = <A HREF="lfunc.c.html#luaF_newproto">luaF_newproto</A>(ls-&gt;L);
+  fs-&gt;prev = ls-&gt;fs;  /* linked list of funcstates */
+  fs-&gt;ls = ls;
+  fs-&gt;L = ls-&gt;L;
+  ls-&gt;fs = fs;
+  fs-&gt;stacklevel = 0;
+  fs-&gt;nactloc = 0;
+  fs-&gt;nupvalues = 0;
+  fs-&gt;bl = NULL;
+  fs-&gt;f = f;
+  f-&gt;source = ls-&gt;source;
+  fs-&gt;pc = 0;
+  fs-&gt;lasttarget = 0;
+  fs-&gt;lastline = 0;
+  fs-&gt;jlt = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+  f-&gt;code = NULL;
+  f-&gt;maxstacksize = 0;
+  f-&gt;numparams = 0;  /* default for <A HREF="lua.c.html#main">main</A> <A HREF="lparser.c.html#chunk">chunk</A> */
+  f-&gt;is_vararg = 0;  /* default for <A HREF="lua.c.html#main">main</A> <A HREF="lparser.c.html#chunk">chunk</A> */
+}
+
+
+static void <A NAME="close_func"><SPAN CLASS="definition">close_func</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L = ls-&gt;L;
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = fs-&gt;f;
+  <A HREF="lcode.c.html#luaK_code0">luaK_code0</A>(fs, <A HREF="lopcodes.h.html#OP_END">OP_END</A>);
+  <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs);  /* close eventual list of pending jumps */
+  <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, f-&gt;code, fs-&gt;pc, <A HREF="llimits.h.html#Instruction">Instruction</A>);
+  <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, f-&gt;kstr, f-&gt;nkstr, <A HREF="lobject.h.html#TString">TString</A> *);
+  <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, f-&gt;knum, f-&gt;nknum, <A HREF="llimits.h.html#Number">Number</A>);
+  <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, f-&gt;kproto, f-&gt;nkproto, <A HREF="lobject.h.html#Proto">Proto</A> *);
+  <A HREF="lparser.c.html#removelocalvars">removelocalvars</A>(ls, fs-&gt;nactloc);
+  <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, f-&gt;locvars, f-&gt;nlocvars, <A HREF="lobject.h.html#LocVar">LocVar</A>);
+  <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, f-&gt;lineinfo, f-&gt;nlineinfo+1, int);
+  f-&gt;lineinfo[f-&gt;nlineinfo++] = <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>;  /* end flag */
+  <A HREF="lfunc.c.html#luaF_protook">luaF_protook</A>(L, f, fs-&gt;pc);  /* proto is ok now */
+  ls-&gt;fs = fs-&gt;prev;
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(fs-&gt;bl == NULL, "wrong list end");
+}
+
+
+<A HREF="lobject.h.html#Proto">Proto</A> *<A NAME="luaY_parser"><SPAN CLASS="definition">luaY_parser</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lzio.h.html#ZIO">ZIO</A> *z) {
+  struct <A HREF="llex.h.html#LexState">LexState</A> lexstate;
+  struct <A HREF="lparser.h.html#FuncState">FuncState</A> funcstate;
+  <A HREF="llex.c.html#luaX_setinput">luaX_setinput</A>(L, &amp;lexstate, z, <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, <A HREF="lzio.h.html#zname">zname</A>(z)));
+  <A HREF="lparser.c.html#open_func">open_func</A>(&amp;lexstate, &amp;funcstate);
+  <A HREF="lparser.c.html#next">next</A>(&amp;lexstate);  /* read first token */
+  <A HREF="lparser.c.html#chunk">chunk</A>(&amp;lexstate);
+  <A HREF="lparser.c.html#check_condition">check_condition</A>(&amp;lexstate, (lexstate.t.token == <A HREF="llex.h.html#TK_EOS">TK_EOS</A>), "&lt;eof&gt; expected");
+  <A HREF="lparser.c.html#close_func">close_func</A>(&amp;lexstate);
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(funcstate.prev == NULL, "wrong list end");
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(funcstate.nupvalues == 0, "no upvalues in <A HREF="lua.c.html#main">main</A>");
+  return funcstate.f;
+}
+
+
+
+/*============================================================*/
+/* GRAMMAR RULES */
+/*============================================================*/
+
+
+static int <A NAME="explist1"><SPAN CLASS="definition">explist1</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#explist1">explist1</A> -&gt; <A HREF="lparser.c.html#expr">expr</A> { ',' <A HREF="lparser.c.html#expr">expr</A> } */
+  int n = 1;  /* at least one expression */
+  <A HREF="lparser.h.html#expdesc">expdesc</A> v;
+  <A HREF="lparser.c.html#expr">expr</A>(ls, &amp;v);
+  while (ls-&gt;t.token == ',') {
+    <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, &amp;v, 1);  /* gets only 1 value from previous expression */
+    <A HREF="lparser.c.html#next">next</A>(ls);  /* skip comma */
+    <A HREF="lparser.c.html#expr">expr</A>(ls, &amp;v);
+    n++;
+  }
+  <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, &amp;v, 0);  /* keep open number of values of last expression */
+  return n;
+}
+
+
+static void <A NAME="funcargs"><SPAN CLASS="definition">funcargs</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int slf) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int slevel = fs-&gt;stacklevel - slf - 1;  /* where is func in the stack */
+  switch (ls-&gt;t.token) {
+    case '(': {  /* <A HREF="lparser.c.html#funcargs">funcargs</A> -&gt; '(' [ <A HREF="lparser.c.html#explist1">explist1</A> ] ')' */
+      int line = ls-&gt;linenumber;
+      int nargs = 0;
+      <A HREF="lparser.c.html#next">next</A>(ls);
+      if (ls-&gt;t.token != ')')  /* arg list not empty? */
+        nargs = <A HREF="lparser.c.html#explist1">explist1</A>(ls);
+      <A HREF="lparser.c.html#check_match">check_match</A>(ls, ')', '(', line);
+#ifdef LUA_COMPAT_ARGRET
+      if (nargs &gt; 0)  /* arg list is not empty? */
+        <A HREF="lcode.c.html#luaK_setcallreturns">luaK_setcallreturns</A>(fs, 1);  /* last call returns only 1 value */
+#else
+      <A HREF="lobject.h.html#UNUSED">UNUSED</A>(nargs);  /* to avoid warnings */
+#endif
+      break;
+    }
+    case '{': {  /* <A HREF="lparser.c.html#funcargs">funcargs</A> -&gt; <A HREF="lparser.c.html#constructor">constructor</A> */
+      <A HREF="lparser.c.html#constructor">constructor</A>(ls);
+      break;
+    }
+    case <A HREF="llex.h.html#TK_STRING">TK_STRING</A>: {  /* <A HREF="lparser.c.html#funcargs">funcargs</A> -&gt; STRING */
+      <A HREF="lparser.c.html#code_string">code_string</A>(ls, ls-&gt;t.seminfo.ts);  /* must use `seminfo' before `<A HREF="lparser.c.html#next">next</A>' */
+      <A HREF="lparser.c.html#next">next</A>(ls);
+      break;
+    }
+    default: {
+      <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, "function arguments expected");
+      break;
+    }
+  }
+  fs-&gt;stacklevel = slevel;  /* call will remove function and arguments */
+  <A HREF="lcode.c.html#luaK_code2">luaK_code2</A>(fs, <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>, slevel, <A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>);
+}
+
+
+static void <A NAME="var_or_func_tail"><SPAN CLASS="definition">var_or_func_tail</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  for (;;) {
+    switch (ls-&gt;t.token) {
+      case '.': {  /* <A HREF="lparser.c.html#var_or_func_tail">var_or_func_tail</A> -&gt; '.' NAME */
+        <A HREF="lparser.c.html#next">next</A>(ls);
+        <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, v, 1);  /* `v' must be on stack */
+        <A HREF="lcode.c.html#luaK_kstr">luaK_kstr</A>(ls, <A HREF="lparser.c.html#checkname">checkname</A>(ls));
+        v-&gt;k = <A HREF="lparser.h.html#VINDEXED">VINDEXED</A>;
+        break;
+      }
+      case '[': {  /* <A HREF="lparser.c.html#var_or_func_tail">var_or_func_tail</A> -&gt; '[' <A HREF="lparser.c.html#exp1">exp1</A> ']' */
+        <A HREF="lparser.c.html#next">next</A>(ls);
+        <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, v, 1);  /* `v' must be on stack */
+        v-&gt;k = <A HREF="lparser.h.html#VINDEXED">VINDEXED</A>;
+        <A HREF="lparser.c.html#exp1">exp1</A>(ls);
+        <A HREF="lparser.c.html#check">check</A>(ls, ']');
+        break;
+      }
+      case ':': {  /* <A HREF="lparser.c.html#var_or_func_tail">var_or_func_tail</A> -&gt; ':' NAME <A HREF="lparser.c.html#funcargs">funcargs</A> */
+        int name;
+        <A HREF="lparser.c.html#next">next</A>(ls);
+        name = <A HREF="lparser.c.html#checkname">checkname</A>(ls);
+        <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, v, 1);  /* `v' must be on stack */
+        <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(ls-&gt;fs, <A HREF="lopcodes.h.html#OP_PUSHSELF">OP_PUSHSELF</A>, name);
+        <A HREF="lparser.c.html#funcargs">funcargs</A>(ls, 1);
+        v-&gt;k = <A HREF="lparser.h.html#VEXP">VEXP</A>;
+        v-&gt;u.l.t = v-&gt;u.l.f = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+        break;
+      }
+      case '(': case <A HREF="llex.h.html#TK_STRING">TK_STRING</A>: case '{': {  /* <A HREF="lparser.c.html#var_or_func_tail">var_or_func_tail</A> -&gt; <A HREF="lparser.c.html#funcargs">funcargs</A> */
+        <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, v, 1);  /* `v' must be on stack */
+        <A HREF="lparser.c.html#funcargs">funcargs</A>(ls, 0);
+        v-&gt;k = <A HREF="lparser.h.html#VEXP">VEXP</A>;
+        v-&gt;u.l.t = v-&gt;u.l.f = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+        break;
+      }
+      default: return;  /* should be follow... */
+    }
+  }
+}
+
+
+static void <A NAME="var_or_func"><SPAN CLASS="definition">var_or_func</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  /* <A HREF="lparser.c.html#var_or_func">var_or_func</A> -&gt; ['%'] NAME <A HREF="lparser.c.html#var_or_func_tail">var_or_func_tail</A> */
+  if (<A HREF="lparser.c.html#optional">optional</A>(ls, '%')) {  /* upvalue? */
+    <A HREF="lparser.c.html#pushupvalue">pushupvalue</A>(ls, <A HREF="lparser.c.html#str_checkname">str_checkname</A>(ls));
+    v-&gt;k = <A HREF="lparser.h.html#VEXP">VEXP</A>;
+    v-&gt;u.l.t = v-&gt;u.l.f = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+  }
+  else  /* variable name */
+    <A HREF="lparser.c.html#singlevar">singlevar</A>(ls, <A HREF="lparser.c.html#str_checkname">str_checkname</A>(ls), v);
+  <A HREF="lparser.c.html#var_or_func_tail">var_or_func_tail</A>(ls, v);
+}
+
+
+
+/*
+** {======================================================================
+** Rules for Constructors
+** =======================================================================
+*/
+
+
+static void <A NAME="recfield"><SPAN CLASS="definition">recfield</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#recfield">recfield</A> -&gt; (NAME | '['<A HREF="lparser.c.html#exp1">exp1</A>']') = <A HREF="lparser.c.html#exp1">exp1</A> */
+  switch (ls-&gt;t.token) {
+    case <A HREF="llex.h.html#TK_NAME">TK_NAME</A>: {
+      <A HREF="lcode.c.html#luaK_kstr">luaK_kstr</A>(ls, <A HREF="lparser.c.html#checkname">checkname</A>(ls));
+      break;
+    }
+    case '[': {
+      <A HREF="lparser.c.html#next">next</A>(ls);
+      <A HREF="lparser.c.html#exp1">exp1</A>(ls);
+      <A HREF="lparser.c.html#check">check</A>(ls, ']');
+      break;
+    }
+    default: <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, "&lt;name&gt; or `[' expected");
+  }
+  <A HREF="lparser.c.html#check">check</A>(ls, '=');
+  <A HREF="lparser.c.html#exp1">exp1</A>(ls);
+}
+
+
+static int <A NAME="recfields"><SPAN CLASS="definition">recfields</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#recfields">recfields</A> -&gt; <A HREF="lparser.c.html#recfield">recfield</A> { ',' <A HREF="lparser.c.html#recfield">recfield</A> } [','] */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int n = 1;  /* at least one element */
+  <A HREF="lparser.c.html#recfield">recfield</A>(ls);
+  while (ls-&gt;t.token == ',') {
+    <A HREF="lparser.c.html#next">next</A>(ls);
+    if (ls-&gt;t.token == ';' || ls-&gt;t.token == '}')
+      break;
+    <A HREF="lparser.c.html#recfield">recfield</A>(ls);
+    n++;
+    if (n%<A HREF="llimits.h.html#RFIELDS_PER_FLUSH">RFIELDS_PER_FLUSH</A> == 0)
+      <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(fs, <A HREF="lopcodes.h.html#OP_SETMAP">OP_SETMAP</A>, <A HREF="llimits.h.html#RFIELDS_PER_FLUSH">RFIELDS_PER_FLUSH</A>);
+  }
+  <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(fs, <A HREF="lopcodes.h.html#OP_SETMAP">OP_SETMAP</A>, n%<A HREF="llimits.h.html#RFIELDS_PER_FLUSH">RFIELDS_PER_FLUSH</A>);
+  return n;
+}
+
+
+static int <A NAME="listfields"><SPAN CLASS="definition">listfields</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#listfields">listfields</A> -&gt; <A HREF="lparser.c.html#exp1">exp1</A> { ',' <A HREF="lparser.c.html#exp1">exp1</A> } [','] */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int n = 1;  /* at least one element */
+  <A HREF="lparser.c.html#exp1">exp1</A>(ls);
+  while (ls-&gt;t.token == ',') {
+    <A HREF="lparser.c.html#next">next</A>(ls);
+    if (ls-&gt;t.token == ';' || ls-&gt;t.token == '}')
+      break;
+    <A HREF="lparser.c.html#exp1">exp1</A>(ls);
+    n++;
+    <A HREF="llex.c.html#luaX_checklimit">luaX_checklimit</A>(ls, n/<A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>, <A HREF="llimits.h.html#MAXARG_A">MAXARG_A</A>,
+               "`item groups' in a list initializer");
+    if (n%<A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A> == 0)
+      <A HREF="lcode.c.html#luaK_code2">luaK_code2</A>(fs, <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>, n/<A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A> - 1, <A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>);
+  }
+  <A HREF="lcode.c.html#luaK_code2">luaK_code2</A>(fs, <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>, n/<A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>, n%<A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>);
+  return n;
+}
+
+
+
+static void <A NAME="constructor_part"><SPAN CLASS="definition">constructor_part</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.c.html#Constdesc">Constdesc</A> *cd) {
+  switch (ls-&gt;t.token) {
+    case ';': case '}': {  /* <A HREF="lparser.c.html#constructor_part">constructor_part</A> -&gt; empty */
+      cd-&gt;n = 0;
+      cd-&gt;k = ls-&gt;t.token;
+      break;
+    }
+    case <A HREF="llex.h.html#TK_NAME">TK_NAME</A>: {  /* may be <A HREF="lparser.c.html#listfields">listfields</A> or <A HREF="lparser.c.html#recfields">recfields</A> */
+      <A HREF="lparser.c.html#lookahead">lookahead</A>(ls);
+      if (ls-&gt;<A HREF="lparser.c.html#lookahead">lookahead</A>.token != '=')  /* expression? */
+        goto case_default;
+      /* else go through to <A HREF="lparser.c.html#recfields">recfields</A> */
+    }
+    case '[': {  /* <A HREF="lparser.c.html#constructor_part">constructor_part</A> -&gt; <A HREF="lparser.c.html#recfields">recfields</A> */
+      cd-&gt;n = <A HREF="lparser.c.html#recfields">recfields</A>(ls);
+      cd-&gt;k = 1;  /* record */
+      break;
+    }
+    default: {  /* <A HREF="lparser.c.html#constructor_part">constructor_part</A> -&gt; <A HREF="lparser.c.html#listfields">listfields</A> */
+    case_default:
+      cd-&gt;n = <A HREF="lparser.c.html#listfields">listfields</A>(ls);
+      cd-&gt;k = 0;  /* list */
+      break;
+    }
+  }
+}
+
+
+static void <A NAME="constructor"><SPAN CLASS="definition">constructor</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#constructor">constructor</A> -&gt; '{' <A HREF="lparser.c.html#constructor_part">constructor_part</A> [';' <A HREF="lparser.c.html#constructor_part">constructor_part</A>] '}' */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int line = ls-&gt;linenumber;
+  int pc = <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(fs, <A HREF="lopcodes.h.html#OP_CREATETABLE">OP_CREATETABLE</A>, 0);
+  int nelems;
+  <A HREF="lparser.c.html#Constdesc">Constdesc</A> cd;
+  <A HREF="lparser.c.html#check">check</A>(ls, '{');
+  <A HREF="lparser.c.html#constructor_part">constructor_part</A>(ls, &amp;cd);
+  nelems = cd.n;
+  if (<A HREF="lparser.c.html#optional">optional</A>(ls, ';')) {
+    <A HREF="lparser.c.html#Constdesc">Constdesc</A> other_cd;
+    <A HREF="lparser.c.html#constructor_part">constructor_part</A>(ls, &amp;other_cd);
+    <A HREF="lparser.c.html#check_condition">check_condition</A>(ls, (cd.k != other_cd.k), "invalid <A HREF="lparser.c.html#constructor">constructor</A> syntax");
+    nelems += other_cd.n;
+  }
+  <A HREF="lparser.c.html#check_match">check_match</A>(ls, '}', '{', line);
+  <A HREF="llex.c.html#luaX_checklimit">luaX_checklimit</A>(ls, nelems, <A HREF="llimits.h.html#MAXARG_U">MAXARG_U</A>, "elements in a table <A HREF="lparser.c.html#constructor">constructor</A>");
+  <A HREF="lopcodes.h.html#SETARG_U">SETARG_U</A>(fs-&gt;f-&gt;code[pc], nelems);  /* set initial table size */
+}
+
+/* }====================================================================== */
+
+
+
+
+/*
+** {======================================================================
+** Expression parsing
+** =======================================================================
+*/
+
+
+static void <A NAME="simpleexp"><SPAN CLASS="definition">simpleexp</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  switch (ls-&gt;t.token) {
+    case <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>: {  /* <A HREF="lparser.c.html#simpleexp">simpleexp</A> -&gt; NUMBER */
+      <A HREF="llimits.h.html#Number">Number</A> r = ls-&gt;t.seminfo.r;
+      <A HREF="lparser.c.html#next">next</A>(ls);
+      <A HREF="lcode.c.html#luaK_number">luaK_number</A>(fs, r);
+      break;
+    }
+    case <A HREF="llex.h.html#TK_STRING">TK_STRING</A>: {  /* <A HREF="lparser.c.html#simpleexp">simpleexp</A> -&gt; STRING */
+      <A HREF="lparser.c.html#code_string">code_string</A>(ls, ls-&gt;t.seminfo.ts);  /* must use `seminfo' before `<A HREF="lparser.c.html#next">next</A>' */
+      <A HREF="lparser.c.html#next">next</A>(ls);
+      break;
+    }
+    case <A HREF="llex.h.html#TK_NIL">TK_NIL</A>: {  /* <A HREF="lparser.c.html#simpleexp">simpleexp</A> -&gt; NIL */
+      <A HREF="lcode.c.html#luaK_adjuststack">luaK_adjuststack</A>(fs, -1);
+      <A HREF="lparser.c.html#next">next</A>(ls);
+      break;
+    }
+    case '{': {  /* <A HREF="lparser.c.html#simpleexp">simpleexp</A> -&gt; <A HREF="lparser.c.html#constructor">constructor</A> */
+      <A HREF="lparser.c.html#constructor">constructor</A>(ls);
+      break;
+    }
+    case <A HREF="llex.h.html#TK_FUNCTION">TK_FUNCTION</A>: {  /* <A HREF="lparser.c.html#simpleexp">simpleexp</A> -&gt; FUNCTION <A HREF="lparser.c.html#body">body</A> */
+      <A HREF="lparser.c.html#next">next</A>(ls);
+      <A HREF="lparser.c.html#body">body</A>(ls, 0, ls-&gt;linenumber);
+      break;
+    }
+    case '(': {  /* <A HREF="lparser.c.html#simpleexp">simpleexp</A> -&gt; '(' <A HREF="lparser.c.html#expr">expr</A> ')' */
+      <A HREF="lparser.c.html#next">next</A>(ls);
+      <A HREF="lparser.c.html#expr">expr</A>(ls, v);
+      <A HREF="lparser.c.html#check">check</A>(ls, ')');
+      return;
+    }
+    case <A HREF="llex.h.html#TK_NAME">TK_NAME</A>: case '%': {
+      <A HREF="lparser.c.html#var_or_func">var_or_func</A>(ls, v);
+      return;
+    }
+    default: {
+      <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, "&lt;expression&gt; expected");
+      return;
+    }
+  }
+  v-&gt;k = <A HREF="lparser.h.html#VEXP">VEXP</A>;
+  v-&gt;u.l.t = v-&gt;u.l.f = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+}
+
+
+static void <A NAME="exp1"><SPAN CLASS="definition">exp1</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  <A HREF="lparser.h.html#expdesc">expdesc</A> v;
+  <A HREF="lparser.c.html#expr">expr</A>(ls, &amp;v);
+  <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, &amp;v, 1);
+}
+
+
+static <A HREF="lcode.h.html#UnOpr">UnOpr</A> <A NAME="getunopr"><SPAN CLASS="definition">getunopr</SPAN></A> (int op) {
+  switch (op) {
+    case <A HREF="llex.h.html#TK_NOT">TK_NOT</A>: return <A HREF="lcode.h.html#OPR_NOT">OPR_NOT</A>;
+    case '-': return <A HREF="lcode.h.html#OPR_MINUS">OPR_MINUS</A>;
+    default: return <A HREF="lcode.h.html#OPR_NOUNOPR">OPR_NOUNOPR</A>;
+  }
+}
+
+
+static <A HREF="lcode.h.html#BinOpr">BinOpr</A> <A NAME="getbinopr"><SPAN CLASS="definition">getbinopr</SPAN></A> (int op) {
+  switch (op) {
+    case '+': return <A HREF="lcode.h.html#OPR_ADD">OPR_ADD</A>;
+    case '-': return <A HREF="lcode.h.html#OPR_SUB">OPR_SUB</A>;
+    case '*': return <A HREF="lcode.h.html#OPR_MULT">OPR_MULT</A>;
+    case '/': return <A HREF="lcode.h.html#OPR_DIV">OPR_DIV</A>;
+    case '^': return <A HREF="lcode.h.html#OPR_POW">OPR_POW</A>;
+    case <A HREF="llex.h.html#TK_CONCAT">TK_CONCAT</A>: return <A HREF="lcode.h.html#OPR_CONCAT">OPR_CONCAT</A>;
+    case <A HREF="llex.h.html#TK_NE">TK_NE</A>: return <A HREF="lcode.h.html#OPR_NE">OPR_NE</A>;
+    case <A HREF="llex.h.html#TK_EQ">TK_EQ</A>: return <A HREF="lcode.h.html#OPR_EQ">OPR_EQ</A>;
+    case '&lt;': return <A HREF="lcode.h.html#OPR_LT">OPR_LT</A>;
+    case <A HREF="llex.h.html#TK_LE">TK_LE</A>: return <A HREF="lcode.h.html#OPR_LE">OPR_LE</A>;
+    case '&gt;': return <A HREF="lcode.h.html#OPR_GT">OPR_GT</A>;
+    case <A HREF="llex.h.html#TK_GE">TK_GE</A>: return <A HREF="lcode.h.html#OPR_GE">OPR_GE</A>;
+    case <A HREF="llex.h.html#TK_AND">TK_AND</A>: return <A HREF="lcode.h.html#OPR_AND">OPR_AND</A>;
+    case <A HREF="llex.h.html#TK_OR">TK_OR</A>: return <A HREF="lcode.h.html#OPR_OR">OPR_OR</A>;
+    default: return <A HREF="lcode.h.html#OPR_NOBINOPR">OPR_NOBINOPR</A>;
+  }
+}
+
+
+static const struct {
+  char left;  /* left <A HREF="lparser.c.html#priority">priority</A> for each binary operator */
+  char right; /* right <A HREF="lparser.c.html#priority">priority</A> */
+} <A NAME="priority"><SPAN CLASS="definition">priority</SPAN></A>[] = {  /* ORDER OPR */
+   {5, 5}, {5, 5}, {6, 6}, {6, 6},  /* arithmetic */
+   {9, 8}, {4, 3},                  /* power and concat (right associative) */
+   {2, 2}, {2, 2},                  /* equality */
+   {2, 2}, {2, 2}, {2, 2}, {2, 2},  /* order */
+   {1, 1}, {1, 1}                   /* logical */
+};
+
+#define <A NAME="UNARY_PRIORITY"><SPAN CLASS="definition">UNARY_PRIORITY</SPAN></A>  7  /* <A HREF="lparser.c.html#priority">priority</A> for unary operators */
+
+
+/*
+** <A HREF="lparser.c.html#subexpr">subexpr</A> -&gt; (simplexep | unop <A HREF="lparser.c.html#subexpr">subexpr</A>) { binop <A HREF="lparser.c.html#subexpr">subexpr</A> }
+** where `binop' is any binary operator with a <A HREF="lparser.c.html#priority">priority</A> higher than `limit'
+*/
+static <A HREF="lcode.h.html#BinOpr">BinOpr</A> <A NAME="subexpr"><SPAN CLASS="definition">subexpr</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v, int limit) {
+  <A HREF="lcode.h.html#BinOpr">BinOpr</A> op;
+  <A HREF="lcode.h.html#UnOpr">UnOpr</A> uop = <A HREF="lparser.c.html#getunopr">getunopr</A>(ls-&gt;t.token);
+  if (uop != <A HREF="lcode.h.html#OPR_NOUNOPR">OPR_NOUNOPR</A>) {
+    <A HREF="lparser.c.html#next">next</A>(ls);
+    <A HREF="lparser.c.html#subexpr">subexpr</A>(ls, v, <A HREF="lparser.c.html#UNARY_PRIORITY">UNARY_PRIORITY</A>);
+    <A HREF="lcode.c.html#luaK_prefix">luaK_prefix</A>(ls, uop, v);
+  }
+  else <A HREF="lparser.c.html#simpleexp">simpleexp</A>(ls, v);
+  /* expand while operators have priorities higher than `limit' */
+  op = <A HREF="lparser.c.html#getbinopr">getbinopr</A>(ls-&gt;t.token);
+  while (op != <A HREF="lcode.h.html#OPR_NOBINOPR">OPR_NOBINOPR</A> &amp;&amp; <A HREF="lparser.c.html#priority">priority</A>[op].left &gt; limit) {
+    <A HREF="lparser.h.html#expdesc">expdesc</A> v2;
+    <A HREF="lcode.h.html#BinOpr">BinOpr</A> nextop;
+    <A HREF="lparser.c.html#next">next</A>(ls);
+    <A HREF="lcode.c.html#luaK_infix">luaK_infix</A>(ls, op, v);
+    /* read sub-expression with higher <A HREF="lparser.c.html#priority">priority</A> */
+    nextop = <A HREF="lparser.c.html#subexpr">subexpr</A>(ls, &amp;v2, <A HREF="lparser.c.html#priority">priority</A>[op].right);
+    <A HREF="lcode.c.html#luaK_posfix">luaK_posfix</A>(ls, op, v, &amp;v2);
+    op = nextop;
+  }
+  return op;  /* return first untreated operator */
+}
+
+
+static void <A NAME="expr"><SPAN CLASS="definition">expr</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  <A HREF="lparser.c.html#subexpr">subexpr</A>(ls, v, -1);
+}
+
+/* }==================================================================== */
+
+
+/*
+** {======================================================================
+** Rules for Statements
+** =======================================================================
+*/
+
+
+static int <A NAME="block_follow"><SPAN CLASS="definition">block_follow</SPAN></A> (int token) {
+  switch (token) {
+    case <A HREF="llex.h.html#TK_ELSE">TK_ELSE</A>: case <A HREF="llex.h.html#TK_ELSEIF">TK_ELSEIF</A>: case <A HREF="llex.h.html#TK_END">TK_END</A>:
+    case <A HREF="llex.h.html#TK_UNTIL">TK_UNTIL</A>: case <A HREF="llex.h.html#TK_EOS">TK_EOS</A>:
+      return 1;
+    default: return 0;
+  }
+}
+
+
+static void <A NAME="block"><SPAN CLASS="definition">block</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#block">block</A> -&gt; <A HREF="lparser.c.html#chunk">chunk</A> */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int nactloc = fs-&gt;nactloc;
+  <A HREF="lparser.c.html#chunk">chunk</A>(ls);
+  <A HREF="lcode.c.html#luaK_adjuststack">luaK_adjuststack</A>(fs, fs-&gt;nactloc - nactloc);  /* remove local variables */
+  <A HREF="lparser.c.html#removelocalvars">removelocalvars</A>(ls, fs-&gt;nactloc - nactloc);
+}
+
+
+static int <A NAME="assignment"><SPAN CLASS="definition">assignment</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v, int nvars) {
+  int left = 0;  /* number of values left in the stack after <A HREF="lparser.c.html#assignment">assignment</A> */
+  <A HREF="llex.c.html#luaX_checklimit">luaX_checklimit</A>(ls, nvars, <A HREF="llimits.h.html#MAXVARSLH">MAXVARSLH</A>, "variables in a multiple <A HREF="lparser.c.html#assignment">assignment</A>");
+  if (ls-&gt;t.token == ',') {  /* <A HREF="lparser.c.html#assignment">assignment</A> -&gt; ',' NAME <A HREF="lparser.c.html#assignment">assignment</A> */
+    <A HREF="lparser.h.html#expdesc">expdesc</A> nv;
+    <A HREF="lparser.c.html#next">next</A>(ls);
+    <A HREF="lparser.c.html#var_or_func">var_or_func</A>(ls, &amp;nv);
+    <A HREF="lparser.c.html#check_condition">check_condition</A>(ls, (nv.k != <A HREF="lparser.h.html#VEXP">VEXP</A>), "syntax error");
+    left = <A HREF="lparser.c.html#assignment">assignment</A>(ls, &amp;nv, nvars+1);
+  }
+  else {  /* <A HREF="lparser.c.html#assignment">assignment</A> -&gt; '=' <A HREF="lparser.c.html#explist1">explist1</A> */
+    int nexps;
+    <A HREF="lparser.c.html#check">check</A>(ls, '=');
+    nexps = <A HREF="lparser.c.html#explist1">explist1</A>(ls);
+    <A HREF="lparser.c.html#adjust_mult_assign">adjust_mult_assign</A>(ls, nvars, nexps);
+  }
+  if (v-&gt;k != <A HREF="lparser.h.html#VINDEXED">VINDEXED</A>)
+    <A HREF="lcode.c.html#luaK_storevar">luaK_storevar</A>(ls, v);
+  else {  /* there may be garbage between table-index and value */
+    <A HREF="lcode.c.html#luaK_code2">luaK_code2</A>(ls-&gt;fs, <A HREF="lopcodes.h.html#OP_SETTABLE">OP_SETTABLE</A>, left+nvars+2, 1);
+    left += 2;
+  }
+  return left;
+}
+
+
+static void <A NAME="cond"><SPAN CLASS="definition">cond</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  /* <A HREF="lparser.c.html#cond">cond</A> -&gt; exp */
+  <A HREF="lparser.c.html#expr">expr</A>(ls, v);  /* read condition */
+  <A HREF="lcode.c.html#luaK_goiftrue">luaK_goiftrue</A>(ls-&gt;fs, v, 0);
+}
+
+
+static void <A NAME="whilestat"><SPAN CLASS="definition">whilestat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int line) {
+  /* <A HREF="lparser.c.html#whilestat">whilestat</A> -&gt; WHILE <A HREF="lparser.c.html#cond">cond</A> DO <A HREF="lparser.c.html#block">block</A> END */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int while_init = <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs);
+  <A HREF="lparser.h.html#expdesc">expdesc</A> v;
+  <A HREF="lparser.c.html#Breaklabel">Breaklabel</A> bl;
+  <A HREF="lparser.c.html#enterbreak">enterbreak</A>(fs, &amp;bl);
+  <A HREF="lparser.c.html#next">next</A>(ls);
+  <A HREF="lparser.c.html#cond">cond</A>(ls, &amp;v);
+  <A HREF="lparser.c.html#check">check</A>(ls, <A HREF="llex.h.html#TK_DO">TK_DO</A>);
+  <A HREF="lparser.c.html#block">block</A>(ls);
+  <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, <A HREF="lcode.c.html#luaK_jump">luaK_jump</A>(fs), while_init);
+  <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, v.u.l.f, <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs));
+  <A HREF="lparser.c.html#check_match">check_match</A>(ls, <A HREF="llex.h.html#TK_END">TK_END</A>, <A HREF="llex.h.html#TK_WHILE">TK_WHILE</A>, line);
+  <A HREF="lparser.c.html#leavebreak">leavebreak</A>(fs, &amp;bl);
+}
+
+
+static void <A NAME="repeatstat"><SPAN CLASS="definition">repeatstat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int line) {
+  /* <A HREF="lparser.c.html#repeatstat">repeatstat</A> -&gt; REPEAT <A HREF="lparser.c.html#block">block</A> UNTIL <A HREF="lparser.c.html#cond">cond</A> */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int repeat_init = <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs);
+  <A HREF="lparser.h.html#expdesc">expdesc</A> v;
+  <A HREF="lparser.c.html#Breaklabel">Breaklabel</A> bl;
+  <A HREF="lparser.c.html#enterbreak">enterbreak</A>(fs, &amp;bl);
+  <A HREF="lparser.c.html#next">next</A>(ls);
+  <A HREF="lparser.c.html#block">block</A>(ls);
+  <A HREF="lparser.c.html#check_match">check_match</A>(ls, <A HREF="llex.h.html#TK_UNTIL">TK_UNTIL</A>, <A HREF="llex.h.html#TK_REPEAT">TK_REPEAT</A>, line);
+  <A HREF="lparser.c.html#cond">cond</A>(ls, &amp;v);
+  <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, v.u.l.f, repeat_init);
+  <A HREF="lparser.c.html#leavebreak">leavebreak</A>(fs, &amp;bl);
+}
+
+
+static void <A NAME="forbody"><SPAN CLASS="definition">forbody</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int nvar, <A HREF="lopcodes.h.html#OpCode">OpCode</A> prepfor, <A HREF="lopcodes.h.html#OpCode">OpCode</A> loopfor) {
+  /* <A HREF="lparser.c.html#forbody">forbody</A> -&gt; DO <A HREF="lparser.c.html#block">block</A> END */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int prep = <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(fs, prepfor, <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>);
+  int blockinit = <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs);
+  <A HREF="lparser.c.html#check">check</A>(ls, <A HREF="llex.h.html#TK_DO">TK_DO</A>);
+  <A HREF="lparser.c.html#adjustlocalvars">adjustlocalvars</A>(ls, nvar);  /* scope for control variables */
+  <A HREF="lparser.c.html#block">block</A>(ls);
+  <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(fs, loopfor, <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>), blockinit);
+  <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, prep, <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs));
+  <A HREF="lparser.c.html#removelocalvars">removelocalvars</A>(ls, nvar);
+}
+
+
+static void <A NAME="fornum"><SPAN CLASS="definition">fornum</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lobject.h.html#TString">TString</A> *varname) {
+  /* <A HREF="lparser.c.html#fornum">fornum</A> -&gt; NAME = <A HREF="lparser.c.html#exp1">exp1</A>,<A HREF="lparser.c.html#exp1">exp1</A>[,<A HREF="lparser.c.html#exp1">exp1</A>] <A HREF="lparser.c.html#forbody">forbody</A> */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lparser.c.html#check">check</A>(ls, '=');
+  <A HREF="lparser.c.html#exp1">exp1</A>(ls);  /* initial value */
+  <A HREF="lparser.c.html#check">check</A>(ls, ',');
+  <A HREF="lparser.c.html#exp1">exp1</A>(ls);  /* limit */
+  if (<A HREF="lparser.c.html#optional">optional</A>(ls, ','))
+    <A HREF="lparser.c.html#exp1">exp1</A>(ls);  /* <A HREF="lparser.c.html#optional">optional</A> step */
+  else
+    <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(fs, <A HREF="lopcodes.h.html#OP_PUSHINT">OP_PUSHINT</A>, 1);  /* default step */
+  <A HREF="lparser.c.html#new_localvar">new_localvar</A>(ls, varname, 0);
+  <A HREF="lparser.c.html#new_localvarstr">new_localvarstr</A>(ls, "(limit)", 1);
+  <A HREF="lparser.c.html#new_localvarstr">new_localvarstr</A>(ls, "(step)", 2);
+  <A HREF="lparser.c.html#forbody">forbody</A>(ls, 3, <A HREF="lopcodes.h.html#OP_FORPREP">OP_FORPREP</A>, <A HREF="lopcodes.h.html#OP_FORLOOP">OP_FORLOOP</A>);
+}
+
+
+static void <A NAME="forlist"><SPAN CLASS="definition">forlist</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lobject.h.html#TString">TString</A> *indexname) {
+  /* <A HREF="lparser.c.html#forlist">forlist</A> -&gt; NAME,NAME <A HREF="lundump.h.html#IN">IN</A> <A HREF="lparser.c.html#exp1">exp1</A> <A HREF="lparser.c.html#forbody">forbody</A> */
+  <A HREF="lobject.h.html#TString">TString</A> *valname;
+  <A HREF="lparser.c.html#check">check</A>(ls, ',');
+  valname = <A HREF="lparser.c.html#str_checkname">str_checkname</A>(ls);
+  /* <A HREF="lparser.c.html#next">next</A> test is dirty, but avoids `in' being a reserved word */
+  <A HREF="lparser.c.html#check_condition">check_condition</A>(ls,
+       (ls-&gt;t.token == <A HREF="llex.h.html#TK_NAME">TK_NAME</A> &amp;&amp; ls-&gt;t.seminfo.ts == <A HREF="lstring.c.html#luaS_new">luaS_new</A>(ls-&gt;L, "in")),
+       "`in' expected");
+  <A HREF="lparser.c.html#next">next</A>(ls);  /* skip `in' */
+  <A HREF="lparser.c.html#exp1">exp1</A>(ls);  /* table */
+  <A HREF="lparser.c.html#new_localvarstr">new_localvarstr</A>(ls, "(table)", 0);
+  <A HREF="lparser.c.html#new_localvar">new_localvar</A>(ls, indexname, 1);
+  <A HREF="lparser.c.html#new_localvar">new_localvar</A>(ls, valname, 2);
+  <A HREF="lparser.c.html#forbody">forbody</A>(ls, 3, <A HREF="lopcodes.h.html#OP_LFORPREP">OP_LFORPREP</A>, <A HREF="lopcodes.h.html#OP_LFORLOOP">OP_LFORLOOP</A>);
+}
+
+
+static void <A NAME="forstat"><SPAN CLASS="definition">forstat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int line) {
+  /* <A HREF="lparser.c.html#forstat">forstat</A> -&gt; <A HREF="lparser.c.html#fornum">fornum</A> | <A HREF="lparser.c.html#forlist">forlist</A> */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lobject.h.html#TString">TString</A> *varname;
+  <A HREF="lparser.c.html#Breaklabel">Breaklabel</A> bl;
+  <A HREF="lparser.c.html#enterbreak">enterbreak</A>(fs, &amp;bl);
+  <A HREF="lparser.c.html#next">next</A>(ls);  /* skip `for' */
+  varname = <A HREF="lparser.c.html#str_checkname">str_checkname</A>(ls);  /* first variable name */
+  switch (ls-&gt;t.token) {
+    case '=': <A HREF="lparser.c.html#fornum">fornum</A>(ls, varname); break;
+    case ',': <A HREF="lparser.c.html#forlist">forlist</A>(ls, varname); break;
+    default: <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, "`=' or `,' expected");
+  }
+  <A HREF="lparser.c.html#check_match">check_match</A>(ls, <A HREF="llex.h.html#TK_END">TK_END</A>, <A HREF="llex.h.html#TK_FOR">TK_FOR</A>, line);
+  <A HREF="lparser.c.html#leavebreak">leavebreak</A>(fs, &amp;bl);
+}
+
+
+static void <A NAME="test_then_block"><SPAN CLASS="definition">test_then_block</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  /* <A HREF="lparser.c.html#test_then_block">test_then_block</A> -&gt; [IF | ELSEIF] <A HREF="lparser.c.html#cond">cond</A> THEN <A HREF="lparser.c.html#block">block</A> */
+  <A HREF="lparser.c.html#next">next</A>(ls);  /* skip IF or ELSEIF */
+  <A HREF="lparser.c.html#cond">cond</A>(ls, v);
+  <A HREF="lparser.c.html#check">check</A>(ls, <A HREF="llex.h.html#TK_THEN">TK_THEN</A>);
+  <A HREF="lparser.c.html#block">block</A>(ls);  /* `then' part */
+}
+
+
+static void <A NAME="ifstat"><SPAN CLASS="definition">ifstat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int line) {
+  /* <A HREF="lparser.c.html#ifstat">ifstat</A> -&gt; IF <A HREF="lparser.c.html#cond">cond</A> THEN <A HREF="lparser.c.html#block">block</A> {ELSEIF <A HREF="lparser.c.html#cond">cond</A> THEN <A HREF="lparser.c.html#block">block</A>} [ELSE <A HREF="lparser.c.html#block">block</A>] END */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lparser.h.html#expdesc">expdesc</A> v;
+  int escapelist = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+  <A HREF="lparser.c.html#test_then_block">test_then_block</A>(ls, &amp;v);  /* IF <A HREF="lparser.c.html#cond">cond</A> THEN <A HREF="lparser.c.html#block">block</A> */
+  while (ls-&gt;t.token == <A HREF="llex.h.html#TK_ELSEIF">TK_ELSEIF</A>) {
+    <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;escapelist, <A HREF="lcode.c.html#luaK_jump">luaK_jump</A>(fs));
+    <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, v.u.l.f, <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs));
+    <A HREF="lparser.c.html#test_then_block">test_then_block</A>(ls, &amp;v);  /* ELSEIF <A HREF="lparser.c.html#cond">cond</A> THEN <A HREF="lparser.c.html#block">block</A> */
+  }
+  if (ls-&gt;t.token == <A HREF="llex.h.html#TK_ELSE">TK_ELSE</A>) {
+    <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;escapelist, <A HREF="lcode.c.html#luaK_jump">luaK_jump</A>(fs));
+    <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, v.u.l.f, <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs));
+    <A HREF="lparser.c.html#next">next</A>(ls);  /* skip ELSE */
+    <A HREF="lparser.c.html#block">block</A>(ls);  /* `else' part */
+  }
+  else
+    <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;escapelist, v.u.l.f);
+  <A HREF="lcode.c.html#luaK_patchlist">luaK_patchlist</A>(fs, escapelist, <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs));
+  <A HREF="lparser.c.html#check_match">check_match</A>(ls, <A HREF="llex.h.html#TK_END">TK_END</A>, <A HREF="llex.h.html#TK_IF">TK_IF</A>, line);
+}
+
+
+static void <A NAME="localstat"><SPAN CLASS="definition">localstat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; LOCAL NAME {',' NAME} ['=' <A HREF="lparser.c.html#explist1">explist1</A>] */
+  int nvars = 0;
+  int nexps;
+  do {
+    <A HREF="lparser.c.html#next">next</A>(ls);  /* skip LOCAL or ',' */
+    <A HREF="lparser.c.html#new_localvar">new_localvar</A>(ls, <A HREF="lparser.c.html#str_checkname">str_checkname</A>(ls), nvars++);
+  } while (ls-&gt;t.token == ',');
+  if (<A HREF="lparser.c.html#optional">optional</A>(ls, '='))
+    nexps = <A HREF="lparser.c.html#explist1">explist1</A>(ls);
+  else
+    nexps = 0;
+  <A HREF="lparser.c.html#adjust_mult_assign">adjust_mult_assign</A>(ls, nvars, nexps);
+  <A HREF="lparser.c.html#adjustlocalvars">adjustlocalvars</A>(ls, nvars);
+}
+
+
+static int <A NAME="funcname"><SPAN CLASS="definition">funcname</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  /* <A HREF="lparser.c.html#funcname">funcname</A> -&gt; NAME [':' NAME | '.' NAME] */
+  int needself = 0;
+  <A HREF="lparser.c.html#singlevar">singlevar</A>(ls, <A HREF="lparser.c.html#str_checkname">str_checkname</A>(ls), v);
+  if (ls-&gt;t.token == ':' || ls-&gt;t.token == '.') {
+    needself = (ls-&gt;t.token == ':');
+    <A HREF="lparser.c.html#next">next</A>(ls);
+    <A HREF="lcode.c.html#luaK_tostack">luaK_tostack</A>(ls, v, 1);
+    <A HREF="lcode.c.html#luaK_kstr">luaK_kstr</A>(ls, <A HREF="lparser.c.html#checkname">checkname</A>(ls));
+    v-&gt;k = <A HREF="lparser.h.html#VINDEXED">VINDEXED</A>;
+  }
+  return needself;
+}
+
+
+static void <A NAME="funcstat"><SPAN CLASS="definition">funcstat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int line) {
+  /* <A HREF="lparser.c.html#funcstat">funcstat</A> -&gt; FUNCTION <A HREF="lparser.c.html#funcname">funcname</A> <A HREF="lparser.c.html#body">body</A> */
+  int needself;
+  <A HREF="lparser.h.html#expdesc">expdesc</A> v;
+  <A HREF="lparser.c.html#next">next</A>(ls);  /* skip FUNCTION */
+  needself = <A HREF="lparser.c.html#funcname">funcname</A>(ls, &amp;v);
+  <A HREF="lparser.c.html#body">body</A>(ls, needself, line);
+  <A HREF="lcode.c.html#luaK_storevar">luaK_storevar</A>(ls, &amp;v);
+}
+
+
+static void <A NAME="namestat"><SPAN CLASS="definition">namestat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; func | ['%'] NAME <A HREF="lparser.c.html#assignment">assignment</A> */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lparser.h.html#expdesc">expdesc</A> v;
+  <A HREF="lparser.c.html#var_or_func">var_or_func</A>(ls, &amp;v);
+  if (v.k == <A HREF="lparser.h.html#VEXP">VEXP</A>) {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; func */
+    <A HREF="lparser.c.html#check_condition">check_condition</A>(ls, <A HREF="lcode.c.html#luaK_lastisopen">luaK_lastisopen</A>(fs), "syntax error");  /* an upvalue? */
+    <A HREF="lcode.c.html#luaK_setcallreturns">luaK_setcallreturns</A>(fs, 0);  /* call statement uses no results */
+  }
+  else {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; ['%'] NAME <A HREF="lparser.c.html#assignment">assignment</A> */
+    int left = <A HREF="lparser.c.html#assignment">assignment</A>(ls, &amp;v, 1);
+    <A HREF="lcode.c.html#luaK_adjuststack">luaK_adjuststack</A>(fs, left);  /* remove eventual garbage left on stack */
+  }
+}
+
+
+static void <A NAME="retstat"><SPAN CLASS="definition">retstat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; RETURN explist */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  <A HREF="lparser.c.html#next">next</A>(ls);  /* skip RETURN */
+  if (!<A HREF="lparser.c.html#block_follow">block_follow</A>(ls-&gt;t.token) &amp;&amp; ls-&gt;t.token != ';')
+    <A HREF="lparser.c.html#explist1">explist1</A>(ls);  /* <A HREF="lparser.c.html#optional">optional</A> return values */
+  <A HREF="lcode.c.html#luaK_code1">luaK_code1</A>(fs, <A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A>, ls-&gt;fs-&gt;nactloc);
+  fs-&gt;stacklevel = fs-&gt;nactloc;  /* removes all temp values */
+}
+
+
+static void <A NAME="breakstat"><SPAN CLASS="definition">breakstat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; BREAK [NAME] */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> *fs = ls-&gt;fs;
+  int currentlevel = fs-&gt;stacklevel;
+  <A HREF="lparser.c.html#Breaklabel">Breaklabel</A> *bl = fs-&gt;bl;
+  if (!bl)
+    <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, "no loop to break");
+  <A HREF="lparser.c.html#next">next</A>(ls);  /* skip BREAK */
+  <A HREF="lcode.c.html#luaK_adjuststack">luaK_adjuststack</A>(fs, currentlevel - bl-&gt;stacklevel);
+  <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;bl-&gt;breaklist, <A HREF="lcode.c.html#luaK_jump">luaK_jump</A>(fs));
+  /* correct stack for compiler and symbolic execution */
+  <A HREF="lcode.c.html#luaK_adjuststack">luaK_adjuststack</A>(fs, bl-&gt;stacklevel - currentlevel);
+}
+
+
+static int <A NAME="stat"><SPAN CLASS="definition">stat</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  int line = ls-&gt;linenumber;  /* may be needed for error messages */
+  switch (ls-&gt;t.token) {
+    case <A HREF="llex.h.html#TK_IF">TK_IF</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#ifstat">ifstat</A> */
+      <A HREF="lparser.c.html#ifstat">ifstat</A>(ls, line);
+      return 0;
+    }
+    case <A HREF="llex.h.html#TK_WHILE">TK_WHILE</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#whilestat">whilestat</A> */
+      <A HREF="lparser.c.html#whilestat">whilestat</A>(ls, line);
+      return 0;
+    }
+    case <A HREF="llex.h.html#TK_DO">TK_DO</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; DO <A HREF="lparser.c.html#block">block</A> END */
+      <A HREF="lparser.c.html#next">next</A>(ls);  /* skip DO */
+      <A HREF="lparser.c.html#block">block</A>(ls);
+      <A HREF="lparser.c.html#check_match">check_match</A>(ls, <A HREF="llex.h.html#TK_END">TK_END</A>, <A HREF="llex.h.html#TK_DO">TK_DO</A>, line);
+      return 0;
+    }
+    case <A HREF="llex.h.html#TK_FOR">TK_FOR</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#forstat">forstat</A> */
+      <A HREF="lparser.c.html#forstat">forstat</A>(ls, line);
+      return 0;
+    }
+    case <A HREF="llex.h.html#TK_REPEAT">TK_REPEAT</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#repeatstat">repeatstat</A> */
+      <A HREF="lparser.c.html#repeatstat">repeatstat</A>(ls, line);
+      return 0;
+    }
+    case <A HREF="llex.h.html#TK_FUNCTION">TK_FUNCTION</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#funcstat">funcstat</A> */
+      <A HREF="lparser.c.html#funcstat">funcstat</A>(ls, line);
+      return 0;
+    }
+    case <A HREF="llex.h.html#TK_LOCAL">TK_LOCAL</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#localstat">localstat</A> */
+      <A HREF="lparser.c.html#localstat">localstat</A>(ls);
+      return 0;
+    }
+    case <A HREF="llex.h.html#TK_NAME">TK_NAME</A>: case '%': {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#namestat">namestat</A> */
+      <A HREF="lparser.c.html#namestat">namestat</A>(ls);
+      return 0;
+    }
+    case <A HREF="llex.h.html#TK_RETURN">TK_RETURN</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#retstat">retstat</A> */
+      <A HREF="lparser.c.html#retstat">retstat</A>(ls);
+      return 1;  /* must be last statement */
+    }
+    case <A HREF="llex.h.html#TK_BREAK">TK_BREAK</A>: {  /* <A HREF="lparser.c.html#stat">stat</A> -&gt; <A HREF="lparser.c.html#breakstat">breakstat</A> */
+      <A HREF="lparser.c.html#breakstat">breakstat</A>(ls);
+      return 1;  /* must be last statement */
+    }
+    default: {
+      <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, "&lt;statement&gt; expected");
+      return 0;  /* to avoid warnings */
+    }
+  }
+}
+
+
+static void <A NAME="parlist"><SPAN CLASS="definition">parlist</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#parlist">parlist</A> -&gt; [ param { ',' param } ] */
+  int nparams = 0;
+  int dots = 0;
+  if (ls-&gt;t.token != ')') {  /* is `<A HREF="lparser.c.html#parlist">parlist</A>' not empty? */
+    do {
+      switch (ls-&gt;t.token) {
+        case <A HREF="llex.h.html#TK_DOTS">TK_DOTS</A>: <A HREF="lparser.c.html#next">next</A>(ls); dots = 1; break;
+        case <A HREF="llex.h.html#TK_NAME">TK_NAME</A>: <A HREF="lparser.c.html#new_localvar">new_localvar</A>(ls, <A HREF="lparser.c.html#str_checkname">str_checkname</A>(ls), nparams++); break;
+        default: <A HREF="lcode.c.html#luaK_error">luaK_error</A>(ls, "&lt;name&gt; or `...' expected");
+      }
+    } while (!dots &amp;&amp; <A HREF="lparser.c.html#optional">optional</A>(ls, ','));
+  }
+  <A HREF="lparser.c.html#code_params">code_params</A>(ls, nparams, dots);
+}
+
+
+static void <A NAME="body"><SPAN CLASS="definition">body</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int needself, int line) {
+  /* <A HREF="lparser.c.html#body">body</A> -&gt;  '(' <A HREF="lparser.c.html#parlist">parlist</A> ')' <A HREF="lparser.c.html#chunk">chunk</A> END */
+  <A HREF="lparser.h.html#FuncState">FuncState</A> new_fs;
+  <A HREF="lparser.c.html#open_func">open_func</A>(ls, &amp;new_fs);
+  new_fs.f-&gt;lineDefined = line;
+  <A HREF="lparser.c.html#check">check</A>(ls, '(');
+  if (needself) {
+    <A HREF="lparser.c.html#new_localvarstr">new_localvarstr</A>(ls, "self", 0);
+    <A HREF="lparser.c.html#adjustlocalvars">adjustlocalvars</A>(ls, 1);
+  }
+  <A HREF="lparser.c.html#parlist">parlist</A>(ls);
+  <A HREF="lparser.c.html#check">check</A>(ls, ')');
+  <A HREF="lparser.c.html#chunk">chunk</A>(ls);
+  <A HREF="lparser.c.html#check_match">check_match</A>(ls, <A HREF="llex.h.html#TK_END">TK_END</A>, <A HREF="llex.h.html#TK_FUNCTION">TK_FUNCTION</A>, line);
+  <A HREF="lparser.c.html#close_func">close_func</A>(ls);
+  <A HREF="lparser.c.html#pushclosure">pushclosure</A>(ls, &amp;new_fs);
+}
+
+
+/* }====================================================================== */
+
+
+static void <A NAME="chunk"><SPAN CLASS="definition">chunk</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  /* <A HREF="lparser.c.html#chunk">chunk</A> -&gt; { <A HREF="lparser.c.html#stat">stat</A> [';'] } */
+  int islast = 0;
+  while (!islast &amp;&amp; !<A HREF="lparser.c.html#block_follow">block_follow</A>(ls-&gt;t.token)) {
+    islast = <A HREF="lparser.c.html#stat">stat</A>(ls);
+    <A HREF="lparser.c.html#optional">optional</A>(ls, ';');
+    <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(ls-&gt;fs-&gt;stacklevel == ls-&gt;fs-&gt;nactloc,
+               "stack size != # local vars");
+  }
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

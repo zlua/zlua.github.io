@@ -1,0 +1,126 @@
+<HEAD>
+<TITLE>6.4 I/O Facilities</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_3.html>6.3 Mathematical Functions</A>
+<H2><A NAME=S0640>6.4 I/O Facilities</A></H2>
+ <A NAME=libio></A>
+<P>
+All I/O operations in Lua are done over two <I>current</I> files,
+one for reading and one for writing.
+Initially, the current input file is <TT><B><B>stdin</B></B></TT>,
+and the current output file is <TT><B><B>stdout</B></B></TT>.
+<P>
+Unless otherwised stated, all I/O functions return 1 on success and <B>nil</B> 
+on failure.
+<P>
+<H3><A NAME=S0641> <TT><B><B>readfrom (filename)</B></B></TT></A></H3>
+<P>
+This function opens a file named <TT><B><B>filename</B></B></TT> and sets it as the
+<I>current</I> input file.
+When called without parameters, this function restores <TT><B><B>stdin</B></B></TT> as the
+current input file.
+<P>
+<H3><A NAME=S0642> <TT><B><B>writeto (filename)</B></B></TT></A></H3>
+<P>
+This function opens a file named <TT><B><B>filename</B></B></TT> and sets it as the
+<I>current</I> output file.
+Notice that, if the file already exists, it is completely erased with this
+operation.
+When called without parameters, this function restores <TT><B><B>stdout</B></B></TT> as the
+current output file.
+<P>
+<H3><A NAME=S0643> <TT><B><B>appendto (filename)</B></B></TT></A></H3>
+<P>
+This function opens a file named <TT><B><B>filename</B></B></TT> and sets it as the
+<I>current</I> output file.
+Unlike the <TT><B><B>writeto</B></B></TT> operation, this function does not erase any
+previous content of the file.
+When called without parameters, this function restores <TT><B><B>stdout</B></B></TT> as the
+current output file.
+This function returns 2 if the file already exists, 1 if it creates a new file,
+and <B>nil</B> on failure.
+<P>
+<H3><A NAME=S0644> <TT><B><B>read ([format])</B></B></TT></A></H3>
+<P>
+This function returns a value read from the current input.
+An optional string argument specifies the way the input is interpreted.
+<P>
+Without a format argument, <TT><B><B>read</B></B></TT> first skips blanks, tabs and newlines.
+Then it checks whether the current character is <TT><B><B>"</B></B></TT> or <TT><B><B>'</B></B></TT>.
+If so, it reads a string up to the ending quotation mark, 
+and returns this string, without the quotation marks.
+Otherwise it reads up to a blank, tab or newline.
+<P>
+The format string can have the following format:
+<TT><B><B><PRE>
+   ?[n]</PRE></B></B></TT>
+where <TT><B><B>?</B></B></TT> can be:
+<DL ><DT>'s' or 'S'
+<DD> to read a string;
+<DT>'f' or 'F'
+<DD> to read a real number;
+<DT>'i' or 'I'
+<DD> to read an integer.
+<P>
+ </DL>
+The optional <TT><B><B>n</B></B></TT> is a number which specifies how many characters 
+must be read to compose the input value.
+<P>
+<H3><A NAME=S0645> <TT><B><B>write (value, [format])</B></B></TT></A></H3>
+<P>
+This function writes the value of its first argument to the current output.
+An optional second argument specifies the format to be used.
+This format is given as a string, composed of four parts.
+The first part is the only not optional, and must be one of the
+following characters:
+<DL ><DT>'s' or 'S'
+<DD> to write strings;
+<DT>'f' or 'F'
+<DD> to write floats;
+<DT>'i' or 'I'
+<DD> to write integers.
+<P>
+ </DL>
+These characters can be followed by
+<TT><B><B><PRE>
+   [?][m][.n]</PRE></B></B></TT>
+where:
+<DL ><DT><TT><B><B>?</B></B></TT>
+<DD> indicates justification inside the field.
+<UL><DT>'<TT><B><B><</B></B></TT>'
+<DD> right justification;
+<DT>'<TT><B><B>></B></B></TT>'
+<DD> left justification;
+<DT>'<TT><B><B>|</B></B></TT>'
+<DD> center justification.
+</UL>
+<DT><TT><B><B>m</B></B></TT>
+<DD> Indicates the field size in characters.
+<DT><TT><B><B>.n</B></B></TT>
+<DD> For reals, indicates the number of digital places.
+For integers, it is the minimum number of digits.
+This option has no meaning for strings.
+<P>
+ </DL>
+<P>
+When called without a format string,
+this function writes numbers using the <TT><B><B>%g</B></B></TT> format
+and strings with <TT><B><B>%s</B></B></TT>.
+<P>
+<H3><A NAME=S0646> <TT><B><B>debug ()</B></B></TT></A></H3>
+<P>
+This function, when called, repeatedly presents a prompt <TT><B><B>lua_debug> </B></B></TT>
+in the error output stream (<TT><B><B>stderr</B></B></TT>),
+reads a line from the standard input,
+and executes (``dostring'') the line.
+The loop ends when the user types <TT><B><B>cont</B></B></TT> to the prompt.
+This function then returns and the execution of the program continues.
+<P>
+<B> Next:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_3.html>6.3 Mathematical Functions</A>
+
+</BODY>

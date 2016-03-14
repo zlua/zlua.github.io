@@ -1,0 +1,656 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lstrlib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstrlib.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstrlib.c,v 1.56 2000/10/27 16:15:53 roberto Exp $
+** Standard library for string operations and pattern-matching
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;ctype.h&gt;
+#include &lt;stddef.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+
+static int <A NAME="str_len"><SPAN CLASS="definition">str_len</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t l;
+  <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 1, &amp;l);
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, l);
+  return 1;
+}
+
+
+static long <A NAME="posrelat"><SPAN CLASS="definition">posrelat</SPAN></A> (long pos, size_t len) {
+  /* relative string position: negative means back from end */
+  return (pos&gt;=0) ? pos : (long)len+pos+1;
+}
+
+
+static int <A NAME="str_sub"><SPAN CLASS="definition">str_sub</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t l;
+  const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 1, &amp;l);
+  long start = <A HREF="lstrlib.c.html#posrelat">posrelat</A>(<A HREF="lauxlib.h.html#luaL_check_long">luaL_check_long</A>(L, 2), l);
+  long end = <A HREF="lstrlib.c.html#posrelat">posrelat</A>(<A HREF="lauxlib.h.html#luaL_opt_long">luaL_opt_long</A>(L, 3, -1), l);
+  if (start &lt; 1) start = 1;
+  if (end &gt; (long)l) end = l;
+  if (start &lt;= end)
+    <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, s+start-1, end-start+1);
+  else <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, "");
+  return 1;
+}
+
+
+static int <A NAME="str_lower"><SPAN CLASS="definition">str_lower</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t l;
+  size_t i;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 1, &amp;l);
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  for (i=0; i&lt;l; i++)
+    <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, tolower((unsigned char)(s[i])));
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  return 1;
+}
+
+
+static int <A NAME="str_upper"><SPAN CLASS="definition">str_upper</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t l;
+  size_t i;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 1, &amp;l);
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  for (i=0; i&lt;l; i++)
+    <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, toupper((unsigned char)(s[i])));
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  return 1;
+}
+
+static int <A NAME="str_rep"><SPAN CLASS="definition">str_rep</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t l;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 1, &amp;l);
+  int n = <A HREF="lauxlib.h.html#luaL_check_int">luaL_check_int</A>(L, 2);
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  while (n-- &gt; 0)
+    <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A>(&amp;b, s, l);
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  return 1;
+}
+
+
+static int <A NAME="str_byte"><SPAN CLASS="definition">str_byte</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t l;
+  const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 1, &amp;l);
+  long pos = <A HREF="lstrlib.c.html#posrelat">posrelat</A>(<A HREF="lauxlib.h.html#luaL_opt_long">luaL_opt_long</A>(L, 2, 1), l);
+  <A HREF="lauxlib.h.html#luaL_arg_check">luaL_arg_check</A>(L, 0&lt;pos &amp;&amp; (size_t)pos&lt;=l, 2,  "out of range");
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, (unsigned char)s[pos-1]);
+  return 1;
+}
+
+
+static int <A NAME="str_char"><SPAN CLASS="definition">str_char</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);  /* number of arguments */
+  int i;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  for (i=1; i&lt;=n; i++) {
+    int c = <A HREF="lauxlib.h.html#luaL_check_int">luaL_check_int</A>(L, i);
+    <A HREF="lauxlib.h.html#luaL_arg_check">luaL_arg_check</A>(L, (unsigned char)c == c, i, "invalid value");
+    <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, (unsigned char)c);
+  }
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  return 1;
+}
+
+
+
+/*
+** {======================================================
+** PATTERN MATCHING
+** =======================================================
+*/
+
+#ifndef <A HREF="lstrlib.c.html#MAX_CAPTURES">MAX_CAPTURES</A>
+#define <A NAME="MAX_CAPTURES"><SPAN CLASS="definition">MAX_CAPTURES</SPAN></A> 32  /* arbitrary limit */
+#endif
+
+
+struct <A NAME="Capture"><SPAN CLASS="definition">Capture</SPAN></A> {
+  const char *src_end;  /* end ('\0') of source string */
+  int level;  /* total number of captures (finished or unfinished) */
+  struct {
+    const char *init;
+    long len;  /* -1 signals unfinished capture */
+  } capture[<A HREF="lstrlib.c.html#MAX_CAPTURES">MAX_CAPTURES</A>];
+};
+
+
+#define <A NAME="ESC"><SPAN CLASS="definition">ESC</SPAN></A>             '%'
+#define <A NAME="SPECIALS"><SPAN CLASS="definition">SPECIALS</SPAN></A>        "^$*+?.([%-"
+
+
+static int <A NAME="check_capture"><SPAN CLASS="definition">check_capture</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int l, struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  l -= '1';
+  if (!(0 &lt;= l &amp;&amp; l &lt; cap-&gt;level &amp;&amp; cap-&gt;capture[l].len != -1))
+    <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "invalid capture index");
+  return l;
+}
+
+
+static int <A NAME="capture_to_close"><SPAN CLASS="definition">capture_to_close</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  int level = cap-&gt;level;
+  for (level--; level&gt;=0; level--)
+    if (cap-&gt;capture[level].len == -1) return level;
+  <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "invalid pattern capture");
+  return 0;  /* to avoid warnings */
+}
+
+
+const char *<A NAME="luaI_classend"><SPAN CLASS="definition">luaI_classend</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *p) {
+  switch (*p++) {
+    case <A HREF="lstrlib.c.html#ESC">ESC</A>:
+      if (*p == '\0') <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "malformed pattern (ends with `%')");
+      return p+1;
+    case '[':
+      if (*p == '^') p++;
+      do {  /* look for a ']' */
+        if (*p == '\0') <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "malformed pattern (missing `]')");
+        if (*(p++) == <A HREF="lstrlib.c.html#ESC">ESC</A> &amp;&amp; *p != '\0') p++;  /* skip escapes (e.g. '%]') */
+      } while (*p != ']');
+      return p+1;
+    default:
+      return p;
+  }
+}
+
+
+static int <A NAME="match_class"><SPAN CLASS="definition">match_class</SPAN></A> (int c, int cl) {
+  int res;
+  switch (tolower(cl)) {
+    case 'a' : res = isalpha(c); break;
+    case 'c' : res = iscntrl(c); break;
+    case 'd' : res = isdigit(c); break;
+    case 'l' : res = islower(c); break;
+    case 'p' : res = ispunct(c); break;
+    case 's' : res = isspace(c); break;
+    case 'u' : res = isupper(c); break;
+    case 'w' : res = isalnum(c); break;
+    case 'x' : res = isxdigit(c); break;
+    case 'z' : res = (c == '\0'); break;
+    default: return (cl == c);
+  }
+  return (islower(cl) ? res : !res);
+}
+
+
+
+static int <A NAME="matchbracketclass"><SPAN CLASS="definition">matchbracketclass</SPAN></A> (int c, const char *p, const char *endclass) {
+  int sig = 1;
+  if (*(p+1) == '^') {
+    sig = 0;
+    p++;  /* skip the '^' */
+  }
+  while (++p &lt; endclass) {
+    if (*p == <A HREF="lstrlib.c.html#ESC">ESC</A>) {
+      p++;
+      if (<A HREF="lstrlib.c.html#match_class">match_class</A>(c, (unsigned char)*p))
+        return sig;
+    }
+    else if ((*(p+1) == '-') &amp;&amp; (p+2 &lt; endclass)) {
+      p+=2;
+      if ((int)(unsigned char)*(p-2) &lt;= c &amp;&amp; c &lt;= (int)(unsigned char)*p)
+        return sig;
+    }
+    else if ((int)(unsigned char)*p == c) return sig;
+  }
+  return !sig;
+}
+
+
+
+int <A NAME="luaI_singlematch"><SPAN CLASS="definition">luaI_singlematch</SPAN></A> (int c, const char *p, const char *ep) {
+  switch (*p) {
+    case '.':  /* matches any char */
+      return 1;
+    case <A HREF="lstrlib.c.html#ESC">ESC</A>:
+      return <A HREF="lstrlib.c.html#match_class">match_class</A>(c, (unsigned char)*(p+1));
+    case '[':
+      return <A HREF="lstrlib.c.html#matchbracketclass">matchbracketclass</A>(c, p, ep-1);
+    default:
+      return ((unsigned char)*p == c);
+  }
+}
+
+
+static const char *<A HREF="lstrlib.c.html#match">match</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, const char *p,
+                          struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap);
+
+
+static const char *<A NAME="matchbalance"><SPAN CLASS="definition">matchbalance</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, const char *p,
+                                 struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  if (*p == 0 || *(p+1) == 0)
+    <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "unbalanced pattern");
+  if (*s != *p) return NULL;
+  else {
+    int b = *p;
+    int e = *(p+1);
+    int cont = 1;
+    while (++s &lt; cap-&gt;src_end) {
+      if (*s == e) {
+        if (--cont == 0) return s+1;
+      }
+      else if (*s == b) cont++;
+    }
+  }
+  return NULL;  /* string ends out of balance */
+}
+
+
+static const char *<A NAME="max_expand"><SPAN CLASS="definition">max_expand</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, const char *p,
+                               const char *ep, struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  long i = 0;  /* counts maximum expand for item */
+  while ((s+i)&lt;cap-&gt;src_end &amp;&amp; <A HREF="lstrlib.c.html#luaI_singlematch">luaI_singlematch</A>((unsigned char)*(s+i), p, ep))
+    i++;
+  /* keeps trying to <A HREF="lstrlib.c.html#match">match</A> with the maximum repetitions */
+  while (i&gt;=0) {
+    const char *res = <A HREF="lstrlib.c.html#match">match</A>(L, (s+i), ep+1, cap);
+    if (res) return res;
+    i--;  /* else didn't <A HREF="lstrlib.c.html#match">match</A>; reduce 1 repetition to try again */
+  }
+  return NULL;
+}
+
+
+static const char *<A NAME="min_expand"><SPAN CLASS="definition">min_expand</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, const char *p,
+                               const char *ep, struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  for (;;) {
+    const char *res = <A HREF="lstrlib.c.html#match">match</A>(L, s, ep+1, cap);
+    if (res != NULL)
+      return res;
+    else if (s&lt;cap-&gt;src_end &amp;&amp; <A HREF="lstrlib.c.html#luaI_singlematch">luaI_singlematch</A>((unsigned char)*s, p, ep))
+      s++;  /* try with one more repetition */
+    else return NULL;
+  }
+}
+
+
+static const char *<A NAME="start_capture"><SPAN CLASS="definition">start_capture</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, const char *p,
+                                  struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  const char *res;
+  int level = cap-&gt;level;
+  if (level &gt;= <A HREF="lstrlib.c.html#MAX_CAPTURES">MAX_CAPTURES</A>) <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "too many captures");
+  cap-&gt;capture[level].init = s;
+  cap-&gt;capture[level].len = -1;
+  cap-&gt;level = level+1;
+  if ((res=<A HREF="lstrlib.c.html#match">match</A>(L, s, p+1, cap)) == NULL)  /* <A HREF="lstrlib.c.html#match">match</A> failed? */
+    cap-&gt;level--;  /* undo capture */
+  return res;
+}
+
+
+static const char *<A NAME="end_capture"><SPAN CLASS="definition">end_capture</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, const char *p,
+                                struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  int l = <A HREF="lstrlib.c.html#capture_to_close">capture_to_close</A>(L, cap);
+  const char *res;
+  cap-&gt;capture[l].len = s - cap-&gt;capture[l].init;  /* close capture */
+  if ((res = <A HREF="lstrlib.c.html#match">match</A>(L, s, p+1, cap)) == NULL)  /* <A HREF="lstrlib.c.html#match">match</A> failed? */
+    cap-&gt;capture[l].len = -1;  /* undo capture */
+  return res;
+}
+
+
+static const char *<A NAME="match_capture"><SPAN CLASS="definition">match_capture</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, int level,
+                                  struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  int l = <A HREF="lstrlib.c.html#check_capture">check_capture</A>(L, level, cap);
+  size_t len = cap-&gt;capture[l].len;
+  if ((size_t)(cap-&gt;src_end-s) &gt;= len &amp;&amp;
+      memcmp(cap-&gt;capture[l].init, s, len) == 0)
+    return s+len;
+  else return NULL;
+}
+
+
+static const char *<A NAME="match"><SPAN CLASS="definition">match</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, const char *p,
+                          struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  init: /* using goto's to optimize tail recursion */
+  switch (*p) {
+    case '(':  /* start capture */
+      return <A HREF="lstrlib.c.html#start_capture">start_capture</A>(L, s, p, cap);
+    case ')':  /* end capture */
+      return <A HREF="lstrlib.c.html#end_capture">end_capture</A>(L, s, p, cap);
+    case <A HREF="lstrlib.c.html#ESC">ESC</A>:  /* may be %[0-9] or %b */
+      if (isdigit((unsigned char)(*(p+1)))) {  /* capture? */
+        s = <A HREF="lstrlib.c.html#match_capture">match_capture</A>(L, s, *(p+1), cap);
+        if (s == NULL) return NULL;
+        p+=2; goto init;  /* else return <A HREF="lstrlib.c.html#match">match</A>(L, s, p+2, cap) */
+      }
+      else if (*(p+1) == 'b') {  /* balanced string? */
+        s = <A HREF="lstrlib.c.html#matchbalance">matchbalance</A>(L, s, p+2, cap);
+        if (s == NULL) return NULL;
+        p+=4; goto init;  /* else return <A HREF="lstrlib.c.html#match">match</A>(L, s, p+4, cap); */
+      }
+      else goto dflt;  /* case default */
+    case '\0':  /* end of pattern */
+      return s;  /* <A HREF="lstrlib.c.html#match">match</A> succeeded */
+    case '$':
+      if (*(p+1) == '\0')  /* is the '$' the last char in pattern? */
+        return (s == cap-&gt;src_end) ? s : NULL;  /* check end of string */
+      else goto dflt;
+    default: dflt: {  /* it is a pattern item */
+      const char *ep = <A HREF="lstrlib.c.html#luaI_classend">luaI_classend</A>(L, p);  /* points to what is next */
+      int m = s&lt;cap-&gt;src_end &amp;&amp; <A HREF="lstrlib.c.html#luaI_singlematch">luaI_singlematch</A>((unsigned char)*s, p, ep);
+      switch (*ep) {
+        case '?': {  /* optional */
+          const char *res;
+          if (m &amp;&amp; ((res=<A HREF="lstrlib.c.html#match">match</A>(L, s+1, ep+1, cap)) != NULL))
+            return res;
+          p=ep+1; goto init;  /* else return <A HREF="lstrlib.c.html#match">match</A>(L, s, ep+1, cap); */
+        }
+        case '*':  /* 0 or more repetitions */
+          return <A HREF="lstrlib.c.html#max_expand">max_expand</A>(L, s, p, ep, cap);
+        case '+':  /* 1 or more repetitions */
+          return (m ? <A HREF="lstrlib.c.html#max_expand">max_expand</A>(L, s+1, p, ep, cap) : NULL);
+        case '-':  /* 0 or more repetitions (minimum) */
+          return <A HREF="lstrlib.c.html#min_expand">min_expand</A>(L, s, p, ep, cap);
+        default:
+          if (!m) return NULL;
+          s++; p=ep; goto init;  /* else return <A HREF="lstrlib.c.html#match">match</A>(L, s+1, ep, cap); */
+      }
+    }
+  }
+}
+
+
+
+static const char *<A NAME="lmemfind"><SPAN CLASS="definition">lmemfind</SPAN></A> (const char *s1, size_t l1,
+                             const char *s2, size_t l2) {
+  if (l2 == 0) return s1;  /* empty strings are everywhere */
+  else if (l2 &gt; l1) return NULL;  /* avoids a negative `l1' */
+  else {
+    const char *init;  /* to search for a `*s2' inside `s1' */
+    l2--;  /* 1st char will be checked by `memchr' */
+    l1 = l1-l2;  /* `s2' cannot be found after that */
+    while (l1 &gt; 0 &amp;&amp; (init = (const char *)memchr(s1, *s2, l1)) != NULL) {
+      init++;   /* 1st char is already checked */
+      if (memcmp(init, s2+1, l2) == 0)
+        return init-1;
+      else {  /* correct `l1' and `s1' to try again */
+        l1 -= init-s1;
+        s1 = init;
+      }
+    }
+    return NULL;  /* not found */
+  }
+}
+
+
+static int <A NAME="push_captures"><SPAN CLASS="definition">push_captures</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  int i;
+  <A HREF="lauxlib.c.html#luaL_checkstack">luaL_checkstack</A>(L, cap-&gt;level, "too many captures");
+  for (i=0; i&lt;cap-&gt;level; i++) {
+    int l = cap-&gt;capture[i].len;
+    if (l == -1) <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "unfinished capture");
+    <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, cap-&gt;capture[i].init, l);
+  }
+  return cap-&gt;level;  /* number of strings pushed */
+}
+
+
+static int <A NAME="str_find"><SPAN CLASS="definition">str_find</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t l1, l2;
+  const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 1, &amp;l1);
+  const char *p = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 2, &amp;l2);
+  long init = <A HREF="lstrlib.c.html#posrelat">posrelat</A>(<A HREF="lauxlib.h.html#luaL_opt_long">luaL_opt_long</A>(L, 3, 1), l1) - 1;
+  struct <A HREF="lstrlib.c.html#Capture">Capture</A> cap;
+  <A HREF="lauxlib.h.html#luaL_arg_check">luaL_arg_check</A>(L, 0 &lt;= init &amp;&amp; (size_t)init &lt;= l1, 3, "out of range");
+  if (<A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) &gt; 3 ||  /* extra argument? */
+      strpbrk(p, <A HREF="lstrlib.c.html#SPECIALS">SPECIALS</A>) == NULL) {  /* or no special characters? */
+    const char *s2 = <A HREF="lstrlib.c.html#lmemfind">lmemfind</A>(s+init, l1-init, p, l2);
+    if (s2) {
+      <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, s2-s+1);
+      <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, s2-s+l2);
+      return 2;
+    }
+  }
+  else {
+    int anchor = (*p == '^') ? (p++, 1) : 0;
+    const char *s1=s+init;
+    cap.src_end = s+l1;
+    do {
+      const char *res;
+      cap.level = 0;
+      if ((res=<A HREF="lstrlib.c.html#match">match</A>(L, s1, p, &amp;cap)) != NULL) {
+        <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, s1-s+1);  /* start */
+        <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, res-s);   /* end */
+        return <A HREF="lstrlib.c.html#push_captures">push_captures</A>(L, &amp;cap) + 2;
+      }
+    } while (s1++&lt;cap.src_end &amp;&amp; !anchor);
+  }
+  <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);  /* not found */
+  return 1;
+}
+
+
+static void <A NAME="add_s"><SPAN CLASS="definition">add_s</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *b, struct <A HREF="lstrlib.c.html#Capture">Capture</A> *cap) {
+  if (<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>(L, 3)) {
+    const char *news = <A HREF="lapi.c.html#lua_tostring">lua_tostring</A>(L, 3);
+    size_t l = <A HREF="lapi.c.html#lua_strlen">lua_strlen</A>(L, 3);
+    size_t i;
+    for (i=0; i&lt;l; i++) {
+      if (news[i] != <A HREF="lstrlib.c.html#ESC">ESC</A>)
+        <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(b, news[i]);
+      else {
+        i++;  /* skip <A HREF="lstrlib.c.html#ESC">ESC</A> */
+        if (!isdigit((unsigned char)news[i]))
+          <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(b, news[i]);
+        else {
+          int level = <A HREF="lstrlib.c.html#check_capture">check_capture</A>(L, news[i], cap);
+          <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A>(b, cap-&gt;capture[level].init, cap-&gt;capture[level].len);
+        }
+      }
+    }
+  }
+  else {  /* is a function */
+    int n;
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 3);
+    n = <A HREF="lstrlib.c.html#push_captures">push_captures</A>(L, cap);
+    <A HREF="lapi.c.html#lua_rawcall">lua_rawcall</A>(L, n, 1);
+    if (<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>(L, -1))
+      <A HREF="lauxlib.c.html#luaL_addvalue">luaL_addvalue</A>(b);  /* add return to accumulated result */
+    else
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* function result is not a string: pop it */
+  }
+}
+
+
+static int <A NAME="str_gsub"><SPAN CLASS="definition">str_gsub</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t srcl;
+  const char *src = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, 1, &amp;srcl);
+  const char *p = <A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, 2);
+  int max_s = <A HREF="lauxlib.h.html#luaL_opt_int">luaL_opt_int</A>(L, 4, srcl+1);
+  int anchor = (*p == '^') ? (p++, 1) : 0;
+  int n = 0;
+  struct <A HREF="lstrlib.c.html#Capture">Capture</A> cap;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  <A HREF="lauxlib.h.html#luaL_arg_check">luaL_arg_check</A>(L,
+    <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) &gt;= 3 &amp;&amp; (<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>(L, 3) || <A HREF="lua.h.html#lua_isfunction">lua_isfunction</A>(L, 3)),
+    3, "string or function expected");
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  cap.src_end = src+srcl;
+  while (n &lt; max_s) {
+    const char *e;
+    cap.level = 0;
+    e = <A HREF="lstrlib.c.html#match">match</A>(L, src, p, &amp;cap);
+    if (e) {
+      n++;
+      <A HREF="lstrlib.c.html#add_s">add_s</A>(L, &amp;b, &amp;cap);
+    }
+    if (e &amp;&amp; e&gt;src) /* non empty <A HREF="lstrlib.c.html#match">match</A>? */
+      src = e;  /* skip it */
+    else if (src &lt; cap.src_end)
+      <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, *src++);
+    else break;
+    if (anchor) break;
+  }
+  <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A>(&amp;b, src, cap.src_end-src);
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, n);  /* number of substitutions */
+  return 2;
+}
+
+/* }====================================================== */
+
+
+static void <A NAME="luaI_addquoted"><SPAN CLASS="definition">luaI_addquoted</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *b, int arg) {
+  size_t l;
+  const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, arg, &amp;l);
+  <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(b, '"');
+  while (l--) {
+    switch (*s) {
+      case '"':  case '\\':  case '\n':
+        <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(b, '\\');
+        <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(b, *s);
+        break;
+      case '\0': <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A>(b, "\\000", 4); break;
+      default: <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(b, *s);
+    }
+    s++;
+  }
+  <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(b, '"');
+}
+
+/* maximum size of each formatted item (&gt; len(format('%99.99f', -1e308))) */
+#define <A NAME="MAX_ITEM"><SPAN CLASS="definition">MAX_ITEM</SPAN></A>        512
+/* maximum size of each format specification (such as '%-099.99d') */
+#define <A NAME="MAX_FORMAT"><SPAN CLASS="definition">MAX_FORMAT</SPAN></A>      20
+
+static int <A NAME="str_format"><SPAN CLASS="definition">str_format</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int arg = 1;
+  const char *strfrmt = <A HREF="lauxlib.h.html#luaL_check_string">luaL_check_string</A>(L, arg);
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  while (*strfrmt) {
+    if (*strfrmt != '%')
+      <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, *strfrmt++);
+    else if (*++strfrmt == '%')
+      <A HREF="lauxlib.h.html#luaL_putchar">luaL_putchar</A>(&amp;b, *strfrmt++);  /* %% */
+    else { /* format item */
+      struct <A HREF="lstrlib.c.html#Capture">Capture</A> cap;
+      char form[<A HREF="lstrlib.c.html#MAX_FORMAT">MAX_FORMAT</A>];  /* to store the format ('%...') */
+      char buff[<A HREF="lstrlib.c.html#MAX_ITEM">MAX_ITEM</A>];  /* to store the formatted item */
+      const char *initf = strfrmt;
+      form[0] = '%';
+      if (isdigit((unsigned char)*initf) &amp;&amp; *(initf+1) == '$') {
+        arg = *initf - '0';
+        initf += 2;  /* skip the 'n$' */
+      }
+      arg++;
+      cap.src_end = strfrmt+strlen(strfrmt)+1;
+      cap.level = 0;
+      strfrmt = <A HREF="lstrlib.c.html#match">match</A>(L, initf, "[-+ #0]*(%d*)%.?(%d*)", &amp;cap);
+      if (cap.capture[0].len &gt; 2 || cap.capture[1].len &gt; 2 ||  /* &lt; 100? */
+          strfrmt-initf &gt; <A HREF="lstrlib.c.html#MAX_FORMAT">MAX_FORMAT</A>-2)
+        <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "invalid format (width or precision too long)");
+      strncpy(form+1, initf, strfrmt-initf+1); /* +1 to include conversion */
+      form[strfrmt-initf+2] = 0;
+      switch (*strfrmt++) {
+        case 'c':  case 'd':  case 'i':
+          sprintf(buff, form, <A HREF="lauxlib.h.html#luaL_check_int">luaL_check_int</A>(L, arg));
+          break;
+        case 'o':  case 'u':  case 'x':  case 'X':
+          sprintf(buff, form, (unsigned int)<A HREF="lauxlib.c.html#luaL_check_number">luaL_check_number</A>(L, arg));
+          break;
+        case 'e':  case 'E': case 'f': case 'g': case 'G':
+          sprintf(buff, form, <A HREF="lauxlib.c.html#luaL_check_number">luaL_check_number</A>(L, arg));
+          break;
+        case 'q':
+          <A HREF="lstrlib.c.html#luaI_addquoted">luaI_addquoted</A>(L, &amp;b, arg);
+          continue;  /* skip the "addsize" at the end */
+        case 's': {
+          size_t l;
+          const char *s = <A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, arg, &amp;l);
+          if (cap.capture[1].len == 0 &amp;&amp; l &gt;= 100) {
+            /* no precision and string is too long to be formatted;
+               keep original string */
+            <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, arg);
+            <A HREF="lauxlib.c.html#luaL_addvalue">luaL_addvalue</A>(&amp;b);
+            continue;  /* skip the "addsize" at the end */
+          }
+          else {
+            sprintf(buff, form, s);
+            break;
+          }
+        }
+        default:  /* also treat cases 'pnLlh' */
+          <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "invalid option in `format'");
+      }
+      <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A>(&amp;b, buff, strlen(buff));
+    }
+  }
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  return 1;
+}
+
+
+static const struct <A HREF="lauxlib.h.html#luaL_reg">luaL_reg</A> <A NAME="strlib"><SPAN CLASS="definition">strlib</SPAN></A>[] = {
+{"strlen", <A HREF="lstrlib.c.html#str_len">str_len</A>},
+{"strsub", <A HREF="lstrlib.c.html#str_sub">str_sub</A>},
+{"strlower", <A HREF="lstrlib.c.html#str_lower">str_lower</A>},
+{"strupper", <A HREF="lstrlib.c.html#str_upper">str_upper</A>},
+{"strchar", <A HREF="lstrlib.c.html#str_char">str_char</A>},
+{"strrep", <A HREF="lstrlib.c.html#str_rep">str_rep</A>},
+{"ascii", <A HREF="lstrlib.c.html#str_byte">str_byte</A>},  /* for compatibility with 3.0 and earlier */
+{"strbyte", <A HREF="lstrlib.c.html#str_byte">str_byte</A>},
+{"format", <A HREF="lstrlib.c.html#str_format">str_format</A>},
+{"strfind", <A HREF="lstrlib.c.html#str_find">str_find</A>},
+{"gsub", <A HREF="lstrlib.c.html#str_gsub">str_gsub</A>}
+};
+
+
+/*
+** Open string library
+*/
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="lua_strlibopen"><SPAN CLASS="definition">lua_strlibopen</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.h.html#luaL_openl">luaL_openl</A>(L, <A HREF="lstrlib.c.html#strlib">strlib</A>);
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

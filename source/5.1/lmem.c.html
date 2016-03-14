@@ -1,0 +1,121 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lmem.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lmem.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lmem.c,v 1.70.1.1 2007/12/27 13:02:25 roberto Exp $
+** Interface to Memory Manager
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stddef.h&gt;
+
+#define <A NAME="lmem_c"><SPAN CLASS="definition">lmem_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+
+/*
+** About the realloc function:
+** void * frealloc (void *ud, void *ptr, size_t osize, size_t nsize);
+** (`osize' is the old size, `nsize' is the new size)
+**
+** Lua ensures that (ptr == NULL) iff (osize == 0).
+**
+** * frealloc(ud, NULL, 0, x) creates a new block of size `x'
+**
+** * frealloc(ud, p, x, 0) frees the block `p'
+** (in this specific case, frealloc must return NULL).
+** particularly, frealloc(ud, NULL, 0, 0) does nothing
+** (which is equivalent to free(NULL) in ANSI C)
+**
+** frealloc returns NULL if it cannot create or reallocate the area
+** (any reallocation to an equal or smaller size cannot fail!)
+*/
+
+
+
+#define <A NAME="MINSIZEARRAY"><SPAN CLASS="definition">MINSIZEARRAY</SPAN></A>    4
+
+
+void *<A NAME="luaM_growaux_"><SPAN CLASS="definition">luaM_growaux_</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, int *size, size_t size_elems,
+                     int limit, const char *errormsg) {
+  void *newblock;
+  int newsize;
+  if (*size &gt;= limit/2) {  /* cannot double it? */
+    if (*size &gt;= limit)  /* cannot grow even a little? */
+      <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, errormsg);
+    newsize = limit;  /* still have at least one free place */
+  }
+  else {
+    newsize = (*size)*2;
+    if (newsize &lt; <A HREF="lmem.c.html#MINSIZEARRAY">MINSIZEARRAY</A>)
+      newsize = <A HREF="lmem.c.html#MINSIZEARRAY">MINSIZEARRAY</A>;  /* minimum size */
+  }
+  newblock = <A HREF="lmem.h.html#luaM_reallocv">luaM_reallocv</A>(L, block, *size, newsize, size_elems);
+  *size = newsize;  /* update only when everything else is OK */
+  return newblock;
+}
+
+
+void *<A NAME="luaM_toobig"><SPAN CLASS="definition">luaM_toobig</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "memory allocation error: block too big");
+  return NULL;  /* to avoid warnings */
+}
+
+
+
+/*
+** generic allocation routine.
+*/
+void *<A NAME="luaM_realloc_"><SPAN CLASS="definition">luaM_realloc_</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, size_t osize, size_t nsize) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>((osize == 0) == (block == NULL));
+  block = (*g-&gt;frealloc)(g-&gt;ud, block, osize, nsize);
+  if (block == NULL &amp;&amp; nsize &gt; 0)
+    <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, <A HREF="lua.h.html#LUA_ERRMEM">LUA_ERRMEM</A>);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>((nsize == 0) == (block == NULL));
+  g-&gt;totalbytes = (g-&gt;totalbytes - osize) + nsize;
+  return block;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,105 @@
+<HEAD>
+<TITLE>4.7 Fallbacks</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_4_8.html>4.8 Error Handling</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_6.html>4.6 Function Definitions</A>
+<HR>
+<H2><A NAME=S0470>4.7 Fallbacks</A></H2>
+ <A NAME=fallback></A>
+<P>
+Lua provides a powerful mechanism to extend its semantics,
+called <I>fallbacks</I>.
+Basically, a fallback is a programmer defined function
+which is called whenever Lua does not know how to proceed.
+<P>
+Lua supports the following fallbacks,
+identified by the given strings:
+<DL ><DT>``arith''
+<DD>
+called when an arithmetic operation is applied to non numerical operands,
+or when the binary <TT><B>^</B></TT> operation is called.
+It receives three arguments:
+the two operands (the second one is nil when the operation is unary minus)
+and one of the following strings describing the offended operator:
+<TT><B><PRE>
+  add  sub  mul  div  pow  unm</PRE></B></TT>
+Its return value is the final result of the arithmetic operation.
+The default function issues an error.
+<DT>``order''
+<DD>
+called when an order comparison is applied to non numerical or
+non string operands.
+It receives three arguments:
+the two operands and
+one of the following strings describing the offended operator:
+<TT><B><PRE>
+  lt gt le ge</PRE></B></TT>
+Its return value is the final result of the comparison operation.
+The default function issues an error.
+<DT>``concat''
+<DD>
+called when a concatenation is applied to non string operands.
+It receives the two operands as arguments.
+Its return value is the final result of the concatenation operation.
+The default function issues an error.
+<DT>``index''
+<DD>
+called when Lua tries to retrieve the value of an index
+not present in a table.
+It receives as arguments the table and the index.
+Its return value is the final result of the indexing operation.
+The default function returns nil.
+<DT>``gettable''
+<DD>
+called when Lua tries to index a non table value.
+It receives as arguments the non table value and the index.
+Its return value is the final result of the indexing operation.
+The default function issues an error.
+<DT>``settable''
+<DD>
+called when Lua tries to assign indexed a non table value.
+It receives as arguments the non table value,
+the index, and the assigned value.
+The default function issues an error.
+<DT>``function''
+<DD>
+called when Lua tries to call a non function value.
+It receives as arguments the non function value and the
+arguments given in the original call.
+Its return values are the final results of the call operation.
+The default function issues an error.
+<DT>``gc''
+<DD>
+called during garbage collection.
+It receives as argument the table being collected.
+After each run of the collector this function is called with argument nil.
+Because this function operates during garbage collection,
+it must be used with great care,
+and programmers should avoid the creation of new objects
+(tables or strings) in this function.
+The default function does nothing.
+<DT>``error''
+<DD>
+called when an error occurs.
+It receives as argument a string describing the error.
+The default function prints the message on the standard error output.
+<P>
+ </DL>
+<P>
+The function <TT><B>setfallback</B></TT> is used to change a fallback action.
+Its first argument is a string describing the fallback,
+and the second the new function to be called.
+It returns the old function for the given fallback.
+<P>
+Section <A HREF=subsection3_7_4.html#exfallback>7.4</A> shows an example of the use of fallbacks.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_4_8.html>4.8 Error Handling</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_6.html>4.6 Function Definitions</A>
+<HR>
+
+</BODY>

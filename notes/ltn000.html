@@ -1,0 +1,183 @@
+<HTML>
+<HEAD>
+<TITLE>Lua: technical note 0</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+</HEAD>
+
+<BODY>
+
+<HR>
+<H1>
+<A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua" BORDER=0></A>
+Technical Note 0
+</H1>
+
+<H2>How to write a Lua Technical Note</H2>
+
+There are no official guidelines for writing a Lua Technical Note.
+You may read
+<A HREF="http://developer.apple.com/technotes/tn/tn_ag.html">Author's Guide</A>
+and
+<A HREF="http://developer.apple.com/technotes/tn/tn1007.html">On the Elements of a Technote</A>,
+from the
+<A HREF="http://developer.apple.com/technotes/">Macintosh Technical Notes</A>,
+but
+read these documents just for an idea of what technical notes look like;
+Lua Technical Notes are much more informal.
+<P>
+
+Below is a personal (and self-referential!) view of how to write LTNs.
+<HR>
+
+<H2>How to write an LTN</H2>
+by <A HREF="http://rrt.sc3d.org/">Reuben Thomas</A>
+
+
+<H2>Abstract</H2>
+
+An LTN should have the following structure:
+
+<UL>
+<LI><B>Abstract</B>
+<LI><B>The problem</B>	- Motivation and statement
+<LI><B>The solution</B>	- Description
+<LI><B>Explanation</B>   and justification
+<LI><B>Weaknesses</B>    and suggested improvements
+<LI><B>Conclusion</B>
+</UL>
+
+
+<H2>The problem</H2>
+
+Lua is a brilliantly economical tool for solving many programming problems.
+Unfortunately, its economy and flexibility of design can confuse the
+newcomer: they may find a clumsy solution to their problem, or worse, not
+see one at all, when there is a simple and elegant solution waiting to be
+found. Unlike users of most languages, who simply program in them, Lua
+programmers will often want to embed, interface to, or even change Lua.
+<P>
+
+Various libraries and tools have grown up to meet many of these needs, such
+as tolua, CGILua and LuaSocket. However, some needs are more abstract, and
+cannot easily be met by a tool or library; questions such as: How can I
+integrate Lua into my C++ program? How can I interface Lua to another
+language? How can I avoid pausing my game for garbage collection? Questions
+like these are best tackled by HOWTO-like documents, and this is what the
+LTN series aims to do. But how should LTNs best be written in order to meet
+this need?
+<P>
+
+An LTN should have the following properties:
+
+<UL>
+
+<LI>
+It should address a real need. As a rule of thumb, if you can be motivated
+to write an LTN, it's probably addressing a real need, though it's even
+better if others have asked for solutions to the problem it addresses.
+
+<LI>
+It should be brief. This allows others to read, understand and use the
+knowledge it contains as quickly as possible; or, on the other hand, to
+discard it if it's no good to them. As part of this, it should not be
+necessary to read the whole LTN to know if it's what you need.
+
+<LI>
+It should be authoritative. An inaccurate or badly thought out LTN may
+well be worse than nothing. Again, if you feel like writing an LTN, you'll
+probably know what you're talking about. The Lua designers act as editors
+for the series, which also helps.
+
+</UL>
+
+
+<H2>The solution</H2>
+
+There are two parts to the solution: form and content. The content is up to
+the author; the suggested form for an LTN is as follows:
+<P>
+
+<DL>
+<DT>Abstract
+<DD>Summarise the LTN.
+
+<DT>The problem
+<DD>Motivate the problem: why is it important. End with a clear
+statement. This will help both you and the reader to focus. By the end of
+this section the reader should know if the LTN is useful for them.
+
+<DT>The solution
+<DD>Describe the solution, without elaborating on the whys and
+wherefores more than necessary. By the end of this section, a reader who's
+in a hurry should be able to implement the solution.
+
+<DT>Explanation
+<DD>Explain and justify why you designed your solution the way you
+did. This will hopefully convince the skeptical and reassure the cautious
+that your solution is good and you know what you're doing. Peripheral
+matters and non-critical subtleties can be explored here (but keep it
+relevant!).
+
+<DT>Weaknesses
+<DD>Discuss weaknesses of your solution, say why they're not
+critical to its success, and suggest future improvements. This is where
+you'll really convince the skeptic you know your stuff.
+
+<DT>Conclusion
+<DD>Summarise, and give a wider perspective on the problem and solution.
+</DL>
+
+
+<H2>Explanation</H2>
+
+This structure follows standard practice for good technical writing. The
+simple five-part structure encourages brevity, fits most conceivable LTNs,
+is simple for the author and reader to follow, and allows most readers to
+get everything they need from the LTN by starting at the top and reading
+until they've had enough.
+<P>
+
+
+<H2>Weaknesses</H2>
+
+One size never fits all. The proposed structure will be too detailed for
+some, not enough for others, and simply irrelevant to others. I have said
+nothing about how actually to write
+(see
+<A HREF="http://www.bartleby.com/141/">"The Elements of Style"</A>
+by Strunk and White for clear, brief guidance on this).
+Nonetheless, if most authors
+follow this structure, they will hopefully find LTNs easier to write, and
+readers will certainly find them easier to read because, if nothing else, of
+their common structure.
+<P>
+
+
+<H2>Conclusion</H2>
+
+Lua's brilliance lies largely in providing generally applicable mechanisms
+rather than solutions to specific problems. Nevertheless, many problems crop
+up frequently in the use of Lua. Some of the more concrete ones are
+addressed by the variety of libraries and tools available; LTNs attempt to
+address some of the more abstract kind. This LTN proposes a structure for
+LTNs to make them more likely to be useful.
+<P>
+
+Finally, Lua programmers and LTN authors alike should always bear in mind
+the first rule of Lua: "Do it in Lua". Lua almost always provides you with
+the tools you need to solve your problem; it's just a case of seeing how to
+use them. You should rarely have to use Lua API seriously, and even more
+rarely have to change Lua itself. In terms of the three cardinal virtues,
+Lua ranks laziness above impatience, and impatience above hubris. But of
+course, hubris is just what it takes to write an LTN!
+<P>
+
+<HR>
+<SMALL>
+Last update:
+Thu Mar 18 14:03:37 BRT 2004
+by <A HREF="http://www.tecgraf.puc-rio.br/~lhf/">lhf</A>.
+</SMALL>
+
+</BODY>
+</HTML>

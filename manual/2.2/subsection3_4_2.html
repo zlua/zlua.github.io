@@ -1,0 +1,28 @@
+<HEAD>
+<TITLE>4.2 Coercion</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_4_3.html>4.3 Adjustment</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_1.html>4.1 Lexical Conventions</A>
+<HR>
+<H2><A NAME=S0420>4.2 Coercion</A></H2>
+ <A NAME=coercion></A>
+<P>
+Lua provides some automatic conversions.
+Any arithmetic operation applied to a string tries to convert
+that string to a number, following the usual rules.
+Conversely, whenever a number is used when a string is expected,
+that number is converted to a string, according to the following rule:
+if the number is an integer, it is written without exponent or decimal point;
+otherwise, it is formatted following the ``<TT><B>%g</B></TT>''
+conversion specification of the standard <TT><B>printf</B></TT> C function.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_4_3.html>4.3 Adjustment</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_1.html>4.1 Lexical Conventions</A>
+<HR>
+
+</BODY>

@@ -1,0 +1,176 @@
+<HEAD>
+<TITLE>4.5 Expressions</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_4_6.html>4.6 Function Definitions</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_4.html>4.4 Statements</A>
+<HR>
+<H2><A NAME=S0450>4.5 Expressions</A></H2>
+<P>
+<H3><A NAME=S0451>4.5.1 Simple Expressions</A></H3>
+<P>
+Simple expressions are:
+<PRE>
+   <I>exp</I> ::= '('<I> exp </I>')'<BR>   <I>exp</I> ::= <TT><B>nil</B></TT><BR>   <I>exp</I> ::= 'number'<BR>   <I>exp</I> ::= 'literal'<BR>   <I>exp</I> ::= <I>var</I><BR></PRE>Numbers (numerical constants) and
+string literals are explained in Section <A HREF=subsection3_4_1.html#lexical>4.1</A>.
+Variables are explained in Section <A HREF=subsection3_4_4.html#assignment>4.4.2</A>.
+<P>
+<H3><A NAME=S0452>4.5.2 Arithmetic Operators</A></H3>
+<P>
+Lua supports the usual arithmetic operators.
+These operators are the binary
+<TT><B>+</B></TT>, <TT><B>-</B></TT>, <TT><B>*</B></TT>, <TT><B>/</B></TT> and <TT><B>^</B></TT> (exponentiation),
+and the unary <TT><B>-</B></TT>.
+If the operands are numbers, or strings that can be converted to
+numbers, according to the rules given in Section <A HREF=subsection3_4_2.html#coercion>4.2</A>,
+all operations but exponentiation have the usual meaning.
+Otherwise, the fallback ``arith'' is called; see Section <A HREF=subsection3_4_7.html#fallback>4.7</A>.
+An exponentiation always calls this fallback.
+The standard mathematical library redefines this fallback,
+giving the expected meaning to exponentiation;
+see Section <A HREF=subsection3_6_3.html#mathlib>6.3</A>.
+<P>
+<H3><A NAME=S0453>4.5.3 Relational Operators</A></H3>
+<P>
+Lua offers  the following relational operators:
+<TT><B><PRE>
+       &lt;   &gt;   &lt;=  &gt;=  ~=  ==</PRE></B></TT>
+All return <B>nil</B> as false and 1 as true.
+<P>
+Equality first compares the types of its operands.
+If they are different, the result is <B>nil</B>.
+Otherwise, their values are compared.
+Numbers and strings are compared in the usual way.
+Tables, CFunctions, and functions are compared by reference,
+that is, two tables are considered equal only if they are the same table.
+The operator <TT><B>~=</B></TT> is exactly the negation of equality (<TT><B>=</B></TT>).
+<P>
+The other operators work as follows.
+If both arguments are numbers, they are compared as such.
+Otherwise, if both arguments can be converted to strings,
+their values are compared using lexicographical order.
+Otherwise, the fallback ``order'' is called; see Section <A HREF=subsection3_4_7.html#fallback>4.7</A>.
+<P>
+<H3><A NAME=S0454>4.5.4 Logical Operators</A></H3>
+<P>
+All logical operators, like control structures,
+consider <B>nil</B> as false and anything else as true.
+The logical operators are:
+
+<TT><B><PRE>
+             and   or   not</PRE></B></TT>
+The operators <TT><B>and</B></TT> and <TT><B>or</B></TT> use short-cut evaluation,
+that is,
+the second operand is evaluated only if necessary.
+<P>
+<H3><A NAME=S0455>4.5.5 Concatenation</A></H3>
+<P>
+Lua offers a string concatenation operator,
+denoted by ``<TT><B>..</B></TT>''.
+If operands are strings or numbers, they are converted to
+strings according to the rules in Section <A HREF=subsection3_4_2.html#coercion>4.2</A>.
+Otherwise, the fallback ``concat'' is called; see Section <A HREF=subsection3_4_7.html#fallback>4.7</A>.
+<P>
+<H3><A NAME=S0456>4.5.6 Precedence</A></H3>
+<P>
+Operator precedence follows the table below,
+from the lower to the higher priority:
+<TT><B><PRE>
+             and   or
+             &lt;   &gt;   &lt;=  &gt;=  ~=  =
+             ..
+             +   -
+             *   /
+             not  - (unary)
+             ^</PRE></B></TT>
+All binary operators are left associative, except for <TT><B>^</B></TT>,
+which is right associative.
+<P>
+<H3><A NAME=S0457>4.5.7 Table Constructors</A></H3>
+ <A NAME=tableconstructor></A>
+Table constructors are expressions that create tables;
+every time a constructor is evaluated, a new table is created.
+Constructors can be used to create empty tables,
+or to create a table and initialize some fields.
+<P>
+The general syntax for constructors is:
+<PRE>
+   <I>tableconstructor</I> ::= '{'<I> fieldlist </I>'}'<BR>   <I>fieldlist</I> ::= <I>lfieldlist </I>|<I> ffieldlist </I>|<I> lfieldlist </I>';'<I> ffieldlist</I><BR>   <I>lfieldlist</I> ::= [<I> lfieldlist1 </I>]<BR>   <I>ffieldlist</I> ::= [<I> ffieldlist1 </I>]<BR></PRE>
+<P>
+The form <I>lfieldlist1</I> is used to initialize lists.
+<PRE>
+   <I>lfieldlist1</I> ::= <I>exp </I>{ ','<I> exp </I>} [ ',' ]<BR></PRE>The expressions in the list are assigned to consecutive numerical indexes,
+starting with 1.
+As an example:
+<TT><B><PRE>
+   a = {&quot;v1&quot;, &quot;v2&quot;, 34}</PRE></B></TT>
+is equivalent to:
+<TT><B><PRE>
+   temp = {}
+   temp[1] = &quot;v1&quot;
+   temp[2] = &quot;v2&quot;
+   temp[3] = 34
+   a = temp</PRE></B></TT>
+<P>
+The next form initializes named fields in a table.
+<PRE>
+   <I>ffieldlist1</I> ::= <I>ffield </I>{ ','<I> ffield </I>} [ ',' ]<BR>   <I>ffield</I> ::= <I>name </I>'='<I> exp</I><BR></PRE>As an example:
+<TT><B><PRE>
+   a = {x = 1, y = 3}</PRE></B></TT>
+is equivalent to:
+<TT><B><PRE>
+   temp = {}
+   temp.x = 1
+   temp.y = 3
+   a = temp</PRE></B></TT>
+<P>
+<H3><A NAME=S0458>4.5.8 Function Calls</A></H3>
+  <A NAME=functioncall></A>
+A function call has the following syntax:
+<PRE>
+   <I>functioncall</I> ::= <I>var realParams</I><BR></PRE>Here, <TT><B>var</B></TT> can be any variable (global, local, indexed, etc).
+If its type is <I>function</I> or <I>CFunction</I>,
+this function is called.
+Otherwise, the fallback ``function'' is called,
+having as first parameter the value of <TT><B>var</B></TT>,
+and then the original call parameters.
+<P>
+The form:
+<PRE>
+   <I>functioncall</I> ::= <I>var </I>':'<I> name realParams</I><BR></PRE>can be used to call ``methods''.
+A call <TT><B>var:name(...)</B></TT>
+is syntactic sugar for
+<TT><B><PRE>
+  var.name(var, ...)</PRE></B></TT>
+except that <TT><B>var</B></TT> is evaluated only once.
+<P>
+<PRE>
+   <I>realParams</I> ::= '(' [<I> explist1 </I>] ')'<BR>   <I>realParams</I> ::= <I>tableconstructor</I><BR>   <I>explist1</I> ::= <I>exp1 </I>{ ','<I> exp1 </I>}<BR></PRE>All argument expressions are evaluated before the call;
+then the list of arguments is adjusted to
+the length of the list of parameters (see Section <A HREF=subsection3_4_3.html#adjust>4.3</A>);
+finally, this list is assigned to the formal parameters.
+A call of the form <TT><B>f{...}</B></TT> is syntactic sugar for
+<TT><B>f({...})</B></TT>, that is,
+the parameter list is a single new table.
+<P>
+Because a function can return any number of results
+(see Section <A HREF=subsection3_4_4.html#return>4.4.3</A>),
+the number of results must be adjusted before used.
+If the function is called as an statement (see Section <A HREF=subsection3_4_4.html#statexp>4.4.4</A>),
+its return list is adjusted to 0.
+If the function is called in a place that needs a single value
+(syntactically denoted by the non-terminal <TT><B>exp1</B></TT>),
+its return list is adjusted to 1.
+If the function is called in a place that can hold many values
+(syntactically denoted by the non-terminal <TT><B>exp</B></TT>),
+no adjustment is done.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_4_6.html>4.6 Function Definitions</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_4.html>4.4 Statements</A>
+<HR>
+
+</BODY>

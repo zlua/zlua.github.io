@@ -1,0 +1,293 @@
+<HTML>
+<HEAD>
+<TITLE>Lua: technical note 7</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+</HEAD>
+
+<BODY>
+
+<HR>
+<H1><A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua" BORDER=0></A>
+Technical Note 7
+</H1>
+
+<H2>Modules &#038; Packages</H2>
+by <A HREF="http://www.inf.puc-rio.br/~roberto/">Roberto Ierusalimschy</A>
+
+<H2>Abstract</H2>
+This note describes a simple way to implement
+modules (also called packages) in Lua.
+The proposed method provides namespaces, privacy,
+and some other benefits.
+
+<H2>The Problem</H2>
+Many languages provide mechanisms to organize their space of global names,
+such as <em>modules</em> in Modula, <em>packages</em> in Java and Perl,
+and <em>namespaces</em> in C++.
+Each of these mechanisms has different rules regarding the
+use of elements declared inside a module,
+visibility rules, and other details.
+But all of them provide a basic mechanism
+to avoid collision among names defined in different libraries.
+Each library creates its own namespace,
+and names defined inside this namespace do not interfere
+with names in other namespaces.
+
+<p>Lua does not provide any explicit mechanism for packages.
+However, we can easily implement them using the basic
+mechanisms that the language provides.
+Actually, there are several ways to do that,
+and that creates a problem:
+There is no standard way to write a package in Lua.
+Moreover, it is up to you to follow the rules;
+there is neither a fixed way to implement packages,
+nor fixed operations to manipulate them.
+
+<H2>Solutions</H2>
+A first solution,
+used by languages with no support for packages (such as C),
+is to choose a prefix,
+and use that prefix for all names in the package.
+(Lua itself is implemented that way;
+all its external names start with the prefix <code>lua</code>.)
+Despite its naivety,
+this is a quite satisfactory solution
+(at least it did not stop people from using C in huge projects).
+
+<p>In Lua, a better solution is to implement packages with tables:
+We only have to put our identifiers as keys in a table,
+instead of as global variables.
+The main point here is that we can store functions inside a table,
+just as any other value.
+For instance, suppose we are writing a library to manipulate
+complex numbers.
+We represent each number as a table,
+with fields <code>r</code> (real part) and <code>i</code> (imaginary part).
+To avoid polluting the global namespace,
+we will declare all our new operations in a table
+that acts as a new package:
+<pre>
+Complex = {}
+Complex.i = {r=0, i=1}
+
+function Complex.new (r, i) return {r=r, i=i} end
+
+function Complex.add (c1, c2)
+  return {r=c1.r+c2.r, i=c1.i+c2.i}
+end
+
+function Complex.sub (c1, c2)
+  return {r=c1.r-c2.r, i=c1.i-c2.i}
+end
+
+function Complex.mul (c1, c2)
+  return {r = c1.r*c2.r - c1.i*c2.i,
+          i = c1.r*c2.i + c1.i*c2.r}
+end
+
+function Complex.inv (c)
+  local n = c.r^2 + c.i^2
+  return {r=c.r/n, i=c.i/n}
+end
+</pre>
+
+<p>With this definition,
+we can use any complex operation qualifying the operation name,
+like this:
+<pre>
+c = Complex.add(Complex.i, Complex.new(10, 20))
+</pre>
+
+<p>The use of tables for packages does not provide exactly the same
+functionality as provided by real packages.
+In Lua, we must explicitly put the package name in every function
+definition.
+Moreover, a function that calls another function
+inside the same package must qualify the name of the called function.
+We can ameliorate those problems using a fixed local name
+for the package (<code>Public</code>, for instance),
+and then assigning this local to the final name of the package.
+Following this guideline, we would write our previous definition like
+this:
+<pre>
+local Public = {}
+Complex = Public           -- package name
+
+Public.i = {r=0, i=1}
+function Public.new (r, i) return {r=r, i=i} end
+
+...
+</pre>
+Whenever a function calls another function inside the same package
+(or whenever it calls itself recursively),
+it should access the called function through an upvalue of the
+local name of the package.
+For instance:
+<pre>
+function Public.div (c1, c2)
+  return %Public.mul(c1, %Public.inv(c2))
+end
+</pre>
+Following these guidelines, the connection between the two functions
+does not depend on the package name.
+Moreover, there is only one place in the whole package
+where we write the package name.
+
+<h3>Privacy</h3>
+
+<p>Usually, all names inside a package are <em>exported</em>;
+that is, they can be used by any client of the package.
+Sometimes, however, it is useful to have private names in a package,
+that is, names that only the package itself can use.
+A convenient way to do that is
+to define another local table for
+the private names in a package.
+That way, we distribute a package in two tables,
+one for public and the other for private names.
+Because we assign the public table to a global variable (the package name),
+all its components are accessible from the outside.
+But as we do not assign the private table to any global variable,
+it remains locked inside the package.
+To illustrate this technique,
+let us add to our example a private function that checks whether a value
+is a valid complex number.
+Our example now looks like this:
+<pre>
+local Public, Private = {}, {}
+Complex = Public
+
+function Private.checkComplex (c)
+  assert((type(c) == "table") and tonumber(c.r) and tonumber(c.i),
+         "bad complex number")
+end
+
+function Public.add (c1, c2)
+  %Private.checkComplex(c1);
+  %Private.checkComplex(c2);
+  return {r=c1.r+c2.r, i=c1.i+c2.i}
+end
+
+...
+</pre>
+
+<p>
+So, what are the pros and cons of this approach?
+All names in a package live in a separate namespace.
+Each entity in a package is clearly marked as public or private.
+Moreover, we have real privacy:
+Private entities are inaccessible outside the package.
+The main drawback of this approach is its verbosity when accessing
+other entities inside the same package:
+Every access needs a prefix (<code>%Public.</code> or <code>%Private.</code>).
+Despite the verbosity, these accesses are quite efficient;
+and we can mitigate this verbosity by providing shorter aliases
+for these two variables
+(with something like <code>local E, I = Public, Private</code>).
+There is also the problem that we have to change the prefixes whenever
+we change the status of a function between public and private.
+Nevertheless, I like this approach overall.
+For me, the negative side (its verbosity) is more than paid for by
+the simplicity of the language.
+After all, we can implement a quite satisfactory package system
+without needing any extra feature from the language.
+
+<h3>Other Facilities</h3>
+
+<p>An obvious benefit of using tables to implement packages
+is that we can manipulate packages like any other table,
+and use the whole power of Lua to create extra facilities.
+There are endless possibilities.
+Here we will give only a few suggestions.
+
+<p>We do not need to define all public items of a package together.
+For instance, we can add a new item to our <code>Complex</code> package
+in a separate chunk:
+<pre>
+function Complex.div (c1, c2)
+  return %Complex.mul(c1, %Complex.inv(c2))
+end
+</pre>
+(But notice that the private part is restricted to one file,
+which I think is a good thing.)
+Conversely, we can define more than one package in the same file.
+All we have to do is to enclose each one inside a <code>do ... end</code> block,
+so that its <code>Public</code> and <code>Private</code> variables are restricted to
+that block.
+
+<p>If we are going to use some operations often,
+we can give them global (or local) names:
+<pre>
+add = Complex.add
+local i = Complex.i
+
+c1 = add(Complex.new(10, 20), i)
+</pre>
+Or else, if we do not want to write the whole package name over and over,
+we can give a shorter local name to the whole package at once:
+<pre>
+local C = Complex
+c1 = C.add(C.new(10, 20), C.i)
+</pre>
+
+<p>It is easy to write a function that opens the whole package,
+putting all its names in the global namespace:
+<pre>
+function openpackage (ns)
+  for n,v in ns do setglobal(n,v) end
+end
+</pre>
+<pre>
+openpackage(Complex)
+c1 = mul(new(10, 20), i)
+</pre>
+If you are afraid of name clashes when opening a package,
+you can check the name before the assignment:
+<pre>
+function openpackage (ns)
+  for n,v in ns do
+    if getglobal(n) ~= nil then
+      error(format("name clash: `%s' is already defined", n))
+    end
+    setglobal(n,v)
+  end
+end
+</pre>
+
+<p>Because packages themselves are tables,
+we can even nest packages;
+that is, we can create a whole package inside another one.
+However, such facility is seldom necessary.
+
+<p>
+Typically, when we write a package,
+we put its whole code in a single file.
+Then, to <em>open</em> or import a package
+(that is, to make it available) we just execute that file.
+For instance, if we have a file <code>complex.lua</code> with the
+definition of our complex package,
+the command <code>dofile("complex.lua")</code> will open the package.
+To avoid waste when a package is loaded multiple times,
+we can start a package checking whether it is already loaded:
+<pre>
+if Complex then return end
+
+local Public, Private = {}, {}
+Complex = Public
+
+...
+</pre>
+Now, if you run <code>dofile("complex.lua")</code> when
+<code>Complex</code> is already defined,
+the whole file is skipped.
+(Notice: the new function <code>require</code>,
+to be available in Lua 4.1, will turn this check obsolete.)
+<P>
+
+<HR>
+<SMALL>
+Last update:
+Mon Aug 12 15:51:10 EST 2002
+</SMALL>
+
+</BODY>
+</HTML>

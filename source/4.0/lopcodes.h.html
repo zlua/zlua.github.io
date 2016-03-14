@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lopcodes.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lopcodes.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lopcodes.h,v 1.68 2000/10/24 16:05:59 roberto Exp $
+** Opcodes for Lua virtual machine
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lopcodes.h.html#lopcodes_h">lopcodes_h</A>
+#define <A NAME="lopcodes_h"><SPAN CLASS="definition">lopcodes_h</SPAN></A>
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+
+
+/*===========================================================================
+  We assume that instructions are unsigned numbers.
+  All instructions have an opcode in the first 6 bits. Moreover,
+  an instruction can have 0, 1, or 2 arguments. Instructions can
+  have the following types:
+  type 0: no arguments
+  type 1: 1 unsigned argument in the higher bits (called `U')
+  type 2: 1 signed argument in the higher bits          (`S')
+  type 3: 1st unsigned argument in the higher bits      (`A')
+          2nd unsigned argument in the middle bits      (`B')
+
+  A signed argument is represented in excess K; that is, the number
+  value is the unsigned value minus K. K is exactly the maximum value
+  for that argument (so that -max is represented by 0, and +max is
+  represented by 2*max), which is half the maximum for the corresponding
+  unsigned argument.
+
+  The size of each argument is defined in `llimits.h'. The usual is an
+  instruction with 32 bits, U arguments with 26 bits (32-6), B arguments
+  with 9 bits, and A arguments with 17 bits (32-6-9). For small
+  installations, the instruction size can be 16, so U has 10 bits,
+  and A and B have 5 bits each.
+===========================================================================*/
+
+
+
+
+/* creates a mask with `n' 1 bits at position `p' */
+#define <A NAME="MASK1"><SPAN CLASS="definition">MASK1</SPAN></A>(n,p)      ((~((~(<A HREF="llimits.h.html#Instruction">Instruction</A>)0)&lt;&lt;n))&lt;&lt;p)
+
+/* creates a mask with `n' 0 bits at position `p' */
+#define <A NAME="MASK0"><SPAN CLASS="definition">MASK0</SPAN></A>(n,p)      (~<A HREF="lopcodes.h.html#MASK1">MASK1</A>(n,p))
+
+/*
+** the following macros help to manipulate instructions
+*/
+
+#define <A NAME="CREATE_0"><SPAN CLASS="definition">CREATE_0</SPAN></A>(o)      ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(o))
+#define <A NAME="GET_OPCODE"><SPAN CLASS="definition">GET_OPCODE</SPAN></A>(i)   ((<A HREF="lopcodes.h.html#OpCode">OpCode</A>)((i)&amp;<A HREF="lopcodes.h.html#MASK1">MASK1</A>(<A HREF="llimits.h.html#SIZE_OP">SIZE_OP</A>,0)))
+#define <A NAME="SET_OPCODE"><SPAN CLASS="definition">SET_OPCODE</SPAN></A>(i,o) ((i) = (((i)&amp;<A HREF="lopcodes.h.html#MASK0">MASK0</A>(<A HREF="llimits.h.html#SIZE_OP">SIZE_OP</A>,0)) | (<A HREF="llimits.h.html#Instruction">Instruction</A>)(o)))
+
+#define <A NAME="CREATE_U"><SPAN CLASS="definition">CREATE_U</SPAN></A>(o,u)    ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(o) | ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(u)&lt;&lt;<A HREF="llimits.h.html#POS_U">POS_U</A>))
+#define <A NAME="GETARG_U"><SPAN CLASS="definition">GETARG_U</SPAN></A>(i)     ((int)((i)&gt;&gt;<A HREF="llimits.h.html#POS_U">POS_U</A>))
+#define <A NAME="SETARG_U"><SPAN CLASS="definition">SETARG_U</SPAN></A>(i,u)   ((i) = (((i)&amp;<A HREF="lopcodes.h.html#MASK0">MASK0</A>(<A HREF="llimits.h.html#SIZE_U">SIZE_U</A>,<A HREF="llimits.h.html#POS_U">POS_U</A>)) | \
+                               ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(u)&lt;&lt;<A HREF="llimits.h.html#POS_U">POS_U</A>)))
+
+#define <A NAME="CREATE_S"><SPAN CLASS="definition">CREATE_S</SPAN></A>(o,s)   <A HREF="lopcodes.h.html#CREATE_U">CREATE_U</A>((o),(s)+<A HREF="llimits.h.html#MAXARG_S">MAXARG_S</A>)
+#define <A NAME="GETARG_S"><SPAN CLASS="definition">GETARG_S</SPAN></A>(i)     (<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)-<A HREF="llimits.h.html#MAXARG_S">MAXARG_S</A>)
+#define <A NAME="SETARG_S"><SPAN CLASS="definition">SETARG_S</SPAN></A>(i,s)   <A HREF="lopcodes.h.html#SETARG_U">SETARG_U</A>((i),(s)+<A HREF="llimits.h.html#MAXARG_S">MAXARG_S</A>)
+
+
+#define <A NAME="CREATE_AB"><SPAN CLASS="definition">CREATE_AB</SPAN></A>(o,a,b) ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(o) | ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(a)&lt;&lt;<A HREF="llimits.h.html#POS_A">POS_A</A>) \
+                                           |  ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(b)&lt;&lt;<A HREF="llimits.h.html#POS_B">POS_B</A>))
+#define <A NAME="GETARG_A"><SPAN CLASS="definition">GETARG_A</SPAN></A>(i)     ((int)((i)&gt;&gt;<A HREF="llimits.h.html#POS_A">POS_A</A>))
+#define <A NAME="SETARG_A"><SPAN CLASS="definition">SETARG_A</SPAN></A>(i,a)   ((i) = (((i)&amp;<A HREF="lopcodes.h.html#MASK0">MASK0</A>(<A HREF="llimits.h.html#SIZE_A">SIZE_A</A>,<A HREF="llimits.h.html#POS_A">POS_A</A>)) | \
+                               ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(a)&lt;&lt;<A HREF="llimits.h.html#POS_A">POS_A</A>)))
+#define <A NAME="GETARG_B"><SPAN CLASS="definition">GETARG_B</SPAN></A>(i)     ((int)(((i)&gt;&gt;<A HREF="llimits.h.html#POS_B">POS_B</A>) &amp; <A HREF="lopcodes.h.html#MASK1">MASK1</A>(<A HREF="llimits.h.html#SIZE_B">SIZE_B</A>,0)))
+#define <A NAME="SETARG_B"><SPAN CLASS="definition">SETARG_B</SPAN></A>(i,b)   ((i) = (((i)&amp;<A HREF="lopcodes.h.html#MASK0">MASK0</A>(<A HREF="llimits.h.html#SIZE_B">SIZE_B</A>,<A HREF="llimits.h.html#POS_B">POS_B</A>)) | \
+                               ((<A HREF="llimits.h.html#Instruction">Instruction</A>)(b)&lt;&lt;<A HREF="llimits.h.html#POS_B">POS_B</A>)))
+
+
+/*
+** K = U argument used as index to `kstr'
+** J = S argument used as jump offset (relative to pc of next instruction)
+** L = unsigned argument used as index of local variable
+** N = U argument used as index to `knum'
+*/
+
+typedef enum {
+/*----------------------------------------------------------------------
+name            args    stack before    stack after     side effects
+------------------------------------------------------------------------*/
+<A NAME="OP_END"><SPAN CLASS="definition">OP_END</SPAN></A>,/*       -       -               (return)        no results      */
+<A NAME="OP_RETURN"><SPAN CLASS="definition">OP_RETURN</SPAN></A>,/*    U       v_n-v_x(at u)   (return)        returns v_x-v_n */
+
+<A NAME="OP_CALL"><SPAN CLASS="definition">OP_CALL</SPAN></A>,/*      A B     v_n-v_1 f(at a) r_b-r_1         f(v1,...,v_n)   */
+<A NAME="OP_TAILCALL"><SPAN CLASS="definition">OP_TAILCALL</SPAN></A>,/*  A B     v_n-v_1 f(at a) (return)        f(v1,...,v_n)   */
+
+<A NAME="OP_PUSHNIL"><SPAN CLASS="definition">OP_PUSHNIL</SPAN></A>,/*   U       -               nil_1-nil_u                     */
+<A NAME="OP_POP"><SPAN CLASS="definition">OP_POP</SPAN></A>,/*       U       a_u-a_1         -                               */
+
+<A NAME="OP_PUSHINT"><SPAN CLASS="definition">OP_PUSHINT</SPAN></A>,/*   S       -               (<A HREF="llimits.h.html#Number">Number</A>)s                       */
+<A NAME="OP_PUSHSTRING"><SPAN CLASS="definition">OP_PUSHSTRING</SPAN></A>,/* K      -               KSTR[k]                         */
+<A NAME="OP_PUSHNUM"><SPAN CLASS="definition">OP_PUSHNUM</SPAN></A>,/*   N       -               KNUM[n]                         */
+<A NAME="OP_PUSHNEGNUM"><SPAN CLASS="definition">OP_PUSHNEGNUM</SPAN></A>,/* N      -               -KNUM[n]                        */
+
+<A NAME="OP_PUSHUPVALUE"><SPAN CLASS="definition">OP_PUSHUPVALUE</SPAN></A>,/* U     -               <A HREF="lobject.h.html#Closure">Closure</A>[u]                      */
+
+<A NAME="OP_GETLOCAL"><SPAN CLASS="definition">OP_GETLOCAL</SPAN></A>,/*  L       -               LOC[l]                          */
+<A NAME="OP_GETGLOBAL"><SPAN CLASS="definition">OP_GETGLOBAL</SPAN></A>,/* K       -               VAR[KSTR[k]]                    */
+
+<A NAME="OP_GETTABLE"><SPAN CLASS="definition">OP_GETTABLE</SPAN></A>,/*  -       i t             t[i]                            */
+<A NAME="OP_GETDOTTED"><SPAN CLASS="definition">OP_GETDOTTED</SPAN></A>,/* K       t               t[KSTR[k]]                      */
+<A NAME="OP_GETINDEXED"><SPAN CLASS="definition">OP_GETINDEXED</SPAN></A>,/* L      t               t[LOC[l]]                       */
+<A NAME="OP_PUSHSELF"><SPAN CLASS="definition">OP_PUSHSELF</SPAN></A>,/*  K       t               t t[KSTR[k]]                    */
+
+<A NAME="OP_CREATETABLE"><SPAN CLASS="definition">OP_CREATETABLE</SPAN></A>,/* U     -               newarray(size = u)              */
+
+<A NAME="OP_SETLOCAL"><SPAN CLASS="definition">OP_SETLOCAL</SPAN></A>,/*  L       x               -               LOC[l]=x        */
+<A NAME="OP_SETGLOBAL"><SPAN CLASS="definition">OP_SETGLOBAL</SPAN></A>,/* K       x               -               VAR[KSTR[k]]=x  */
+<A NAME="OP_SETTABLE"><SPAN CLASS="definition">OP_SETTABLE</SPAN></A>,/*  A B     v a_a-a_1 i t   (pops b values) t[i]=v          */
+
+<A NAME="OP_SETLIST"><SPAN CLASS="definition">OP_SETLIST</SPAN></A>,/*   A B     v_b-v_1 t       t               t[i+a*FPF]=v_i  */
+<A NAME="OP_SETMAP"><SPAN CLASS="definition">OP_SETMAP</SPAN></A>,/*    U       v_u k_u - v_1 k_1 t     t       t[k_i]=v_i      */
+
+<A NAME="OP_ADD"><SPAN CLASS="definition">OP_ADD</SPAN></A>,/*       -       y x             x+y                             */
+<A NAME="OP_ADDI"><SPAN CLASS="definition">OP_ADDI</SPAN></A>,/*      S       x               x+s                             */
+<A NAME="OP_SUB"><SPAN CLASS="definition">OP_SUB</SPAN></A>,/*       -       y x             x-y                             */
+<A NAME="OP_MULT"><SPAN CLASS="definition">OP_MULT</SPAN></A>,/*      -       y x             x*y                             */
+<A NAME="OP_DIV"><SPAN CLASS="definition">OP_DIV</SPAN></A>,/*       -       y x             x/y                             */
+<A NAME="OP_POW"><SPAN CLASS="definition">OP_POW</SPAN></A>,/*       -       y x             x^y                             */
+<A NAME="OP_CONCAT"><SPAN CLASS="definition">OP_CONCAT</SPAN></A>,/*    U       v_u-v_1         v1..-..v_u                      */
+<A NAME="OP_MINUS"><SPAN CLASS="definition">OP_MINUS</SPAN></A>,/*     -       x               -x                              */
+<A NAME="OP_NOT"><SPAN CLASS="definition">OP_NOT</SPAN></A>,/*       -       x               (x==nil)? 1 : nil               */
+
+<A NAME="OP_JMPNE"><SPAN CLASS="definition">OP_JMPNE</SPAN></A>,/*     J       y x             -               (x~=y)? PC+=s   */
+<A NAME="OP_JMPEQ"><SPAN CLASS="definition">OP_JMPEQ</SPAN></A>,/*     J       y x             -               (x==y)? PC+=s   */
+<A NAME="OP_JMPLT"><SPAN CLASS="definition">OP_JMPLT</SPAN></A>,/*     J       y x             -               (x&lt;y)? PC+=s    */
+<A NAME="OP_JMPLE"><SPAN CLASS="definition">OP_JMPLE</SPAN></A>,/*     J       y x             -               (x&lt;y)? PC+=s    */
+<A NAME="OP_JMPGT"><SPAN CLASS="definition">OP_JMPGT</SPAN></A>,/*     J       y x             -               (x&gt;y)? PC+=s    */
+<A NAME="OP_JMPGE"><SPAN CLASS="definition">OP_JMPGE</SPAN></A>,/*     J       y x             -               (x&gt;=y)? PC+=s   */
+
+<A NAME="OP_JMPT"><SPAN CLASS="definition">OP_JMPT</SPAN></A>,/*      J       x               -               (x~=nil)? PC+=s */
+<A NAME="OP_JMPF"><SPAN CLASS="definition">OP_JMPF</SPAN></A>,/*      J       x               -               (x==nil)? PC+=s */
+<A NAME="OP_JMPONT"><SPAN CLASS="definition">OP_JMPONT</SPAN></A>,/*    J       x               (x~=nil)? x : - (x~=nil)? PC+=s */
+<A NAME="OP_JMPONF"><SPAN CLASS="definition">OP_JMPONF</SPAN></A>,/*    J       x               (x==nil)? x : - (x==nil)? PC+=s */
+<A NAME="OP_JMP"><SPAN CLASS="definition">OP_JMP</SPAN></A>,/*       J       -               -               PC+=s           */
+
+<A NAME="OP_PUSHNILJMP"><SPAN CLASS="definition">OP_PUSHNILJMP</SPAN></A>,/* -      -               nil             PC++;           */
+
+<A NAME="OP_FORPREP"><SPAN CLASS="definition">OP_FORPREP</SPAN></A>,/*   J                                                       */
+<A NAME="OP_FORLOOP"><SPAN CLASS="definition">OP_FORLOOP</SPAN></A>,/*   J                                                       */
+
+<A NAME="OP_LFORPREP"><SPAN CLASS="definition">OP_LFORPREP</SPAN></A>,/*  J                                                       */
+<A NAME="OP_LFORLOOP"><SPAN CLASS="definition">OP_LFORLOOP</SPAN></A>,/*  J                                                       */
+
+<A NAME="OP_CLOSURE"><SPAN CLASS="definition">OP_CLOSURE</SPAN></A>/*    A B     v_b-v_1         closure(KPROTO[a], v_1-v_b)     */
+
+} <A NAME="OpCode"><SPAN CLASS="definition">OpCode</SPAN></A>;
+
+#define <A NAME="NUM_OPCODES"><SPAN CLASS="definition">NUM_OPCODES</SPAN></A>     ((int)<A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A>+1)
+
+
+#define <A NAME="ISJUMP"><SPAN CLASS="definition">ISJUMP</SPAN></A>(o)       (<A HREF="lopcodes.h.html#OP_JMPNE">OP_JMPNE</A> &lt;= (o) &amp;&amp; (o) &lt;= <A HREF="lopcodes.h.html#OP_JMP">OP_JMP</A>)
+
+
+
+/* special code to fit a <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A> inside an argB */
+#define <A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>        255     /* (&lt;=<A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>) */
+#if <A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>&gt;<A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>
+#undef <A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>
+#define <A NAME="MULT_RET"><SPAN CLASS="definition">MULT_RET</SPAN></A>        <A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>
+#endif
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

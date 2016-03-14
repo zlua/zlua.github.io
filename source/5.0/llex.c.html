@@ -1,0 +1,452 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - llex.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+llex.c
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: llex.c,v 1.119 2003/03/24 12:39:34 roberto Exp $
+** Lexical Analyzer
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;ctype.h&gt;
+#include &lt;string.h&gt;
+
+#define <A NAME="llex_c"><SPAN CLASS="definition">llex_c</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="llex.h.html">llex.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lparser.h.html">lparser.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+
+#define <A HREF="llex.c.html#next">next</A>(LS) (LS-&gt;current = <A HREF="lzio.h.html#zgetc">zgetc</A>(LS-&gt;z))
+
+
+
+/* ORDER <A HREF="llex.h.html#RESERVED">RESERVED</A> */
+static const char *const <A NAME="token2string"><SPAN CLASS="definition">token2string</SPAN></A> [] = {
+    "and", "break", "do", "else", "elseif",
+    "end", "false", "for", "function", "if",
+    "in", "local", "nil", "not", "or", "repeat",
+    "return", "then", "true", "until", "while", "*name",
+    "..", "...", "==", "&gt;=", "&lt;=", "~=",
+    "*number", "*string", "&lt;eof&gt;"
+};
+
+
+void <A NAME="luaX_init"><SPAN CLASS="definition">luaX_init</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int i;
+  for (i=0; i&lt;<A HREF="llex.h.html#NUM_RESERVED">NUM_RESERVED</A>; i++) {
+    <A HREF="lobject.h.html#TString">TString</A> *ts = <A HREF="lstring.h.html#luaS_new">luaS_new</A>(L, <A HREF="llex.c.html#token2string">token2string</A>[i]);
+    <A HREF="lstring.h.html#luaS_fix">luaS_fix</A>(ts);  /* reserved words are never collected */
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(strlen(<A HREF="llex.c.html#token2string">token2string</A>[i])+1 &lt;= <A HREF="llex.h.html#TOKEN_LEN">TOKEN_LEN</A>);
+    ts-&gt;tsv.reserved = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_byte">lu_byte</A>, i+1);  /* reserved word */
+  }
+}
+
+
+#define <A NAME="MAXSRC"><SPAN CLASS="definition">MAXSRC</SPAN></A>          80
+
+
+void <A NAME="luaX_checklimit"><SPAN CLASS="definition">luaX_checklimit</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int val, int limit, const char *msg) {
+  if (val &gt; limit) {
+    msg = <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(ls-&gt;L, "too many %s (limit=%d)", msg, limit);
+    <A HREF="llex.c.html#luaX_syntaxerror">luaX_syntaxerror</A>(ls, msg);
+  }
+}
+
+
+void <A NAME="luaX_errorline"><SPAN CLASS="definition">luaX_errorline</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *s, const char *token, int line) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L = ls-&gt;L;
+  char buff[<A HREF="llex.c.html#MAXSRC">MAXSRC</A>];
+  <A HREF="lobject.c.html#luaO_chunkid">luaO_chunkid</A>(buff, <A HREF="lobject.h.html#getstr">getstr</A>(ls-&gt;source), <A HREF="llex.c.html#MAXSRC">MAXSRC</A>);
+  <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(L, "%s:%d: %s near `%s'", buff, line, s, token); 
+  <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, <A HREF="lua.h.html#LUA_ERRSYNTAX">LUA_ERRSYNTAX</A>);
+}
+
+
+static void <A NAME="luaX_error"><SPAN CLASS="definition">luaX_error</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *s, const char *token) {
+  <A HREF="llex.c.html#luaX_errorline">luaX_errorline</A>(ls, s, token, ls-&gt;linenumber);
+}
+
+
+void <A NAME="luaX_syntaxerror"><SPAN CLASS="definition">luaX_syntaxerror</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *msg) {
+  const char *lasttoken;
+  switch (ls-&gt;t.token) {
+    case <A HREF="llex.h.html#TK_NAME">TK_NAME</A>:
+      lasttoken = <A HREF="lobject.h.html#getstr">getstr</A>(ls-&gt;t.seminfo.ts);
+      break;
+    case <A HREF="llex.h.html#TK_STRING">TK_STRING</A>:
+    case <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>:
+      lasttoken = <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(ls-&gt;buff);
+      break;
+    default:
+      lasttoken = <A HREF="llex.c.html#luaX_token2str">luaX_token2str</A>(ls, ls-&gt;t.token);
+      break;
+  }
+  <A HREF="llex.c.html#luaX_error">luaX_error</A>(ls, msg, lasttoken);
+}
+
+
+const char *<A NAME="luaX_token2str"><SPAN CLASS="definition">luaX_token2str</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int token) {
+  if (token &lt; <A HREF="llex.h.html#FIRST_RESERVED">FIRST_RESERVED</A>) {
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(token == (unsigned char)token);
+    return <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(ls-&gt;L, "%c", token);
+  }
+  else
+    return <A HREF="llex.c.html#token2string">token2string</A>[token-<A HREF="llex.h.html#FIRST_RESERVED">FIRST_RESERVED</A>];
+}
+
+
+static void <A NAME="luaX_lexerror"><SPAN CLASS="definition">luaX_lexerror</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *s, int token) {
+  if (token == <A HREF="llex.h.html#TK_EOS">TK_EOS</A>)
+    <A HREF="llex.c.html#luaX_error">luaX_error</A>(ls, s, <A HREF="llex.c.html#luaX_token2str">luaX_token2str</A>(ls, token));
+  else
+    <A HREF="llex.c.html#luaX_error">luaX_error</A>(ls, s, <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(ls-&gt;buff));
+}
+
+
+static void <A NAME="inclinenumber"><SPAN CLASS="definition">inclinenumber</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *LS) {
+  <A HREF="llex.c.html#next">next</A>(LS);  /* skip `\n' */
+  ++LS-&gt;linenumber;
+  <A HREF="llex.c.html#luaX_checklimit">luaX_checklimit</A>(LS, LS-&gt;linenumber, <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>, "lines in a chunk");
+}
+
+
+void <A NAME="luaX_setinput"><SPAN CLASS="definition">luaX_setinput</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="llex.h.html#LexState">LexState</A> *LS, <A HREF="lzio.h.html#ZIO">ZIO</A> *z, <A HREF="lobject.h.html#TString">TString</A> *source) {
+  LS-&gt;L = L;
+  LS-&gt;lookahead.token = <A HREF="llex.h.html#TK_EOS">TK_EOS</A>;  /* no look-ahead token */
+  LS-&gt;z = z;
+  LS-&gt;fs = NULL;
+  LS-&gt;linenumber = 1;
+  LS-&gt;lastline = 1;
+  LS-&gt;source = source;
+  <A HREF="llex.c.html#next">next</A>(LS);  /* read first char */
+  if (LS-&gt;current == '#') {
+    do {  /* skip first line */
+      <A HREF="llex.c.html#next">next</A>(LS);
+    } while (LS-&gt;current != '\n' &amp;&amp; LS-&gt;current != <A HREF="lzio.h.html#EOZ">EOZ</A>);
+  }
+}
+
+
+
+/*
+** =======================================================
+** LEXICAL ANALYZER
+** =======================================================
+*/
+
+
+/* use buffer to store names, literal strings and numbers */
+
+/* extra space to allocate when growing buffer */
+#define <A NAME="EXTRABUFF"><SPAN CLASS="definition">EXTRABUFF</SPAN></A>       32
+
+/* maximum number of chars that can be read without checking buffer size */
+#define <A NAME="MAXNOCHECK"><SPAN CLASS="definition">MAXNOCHECK</SPAN></A>      5
+
+#define <A NAME="checkbuffer"><SPAN CLASS="definition">checkbuffer</SPAN></A>(LS, len)    \
+    if (((len)+<A HREF="llex.c.html#MAXNOCHECK">MAXNOCHECK</A>)*sizeof(char) &gt; <A HREF="lzio.h.html#luaZ_sizebuffer">luaZ_sizebuffer</A>((LS)-&gt;buff)) \
+      <A HREF="lzio.c.html#luaZ_openspace">luaZ_openspace</A>((LS)-&gt;L, (LS)-&gt;buff, (len)+<A HREF="llex.c.html#EXTRABUFF">EXTRABUFF</A>)
+
+#define <A NAME="save"><SPAN CLASS="definition">save</SPAN></A>(LS, c, l) \
+        (<A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>((LS)-&gt;buff)[l++] = <A HREF="llimits.h.html#cast">cast</A>(char, c))
+#define <A NAME="save_and_next"><SPAN CLASS="definition">save_and_next</SPAN></A>(LS, l)  (<A HREF="llex.c.html#save">save</A>(LS, LS-&gt;current, l), <A HREF="llex.c.html#next">next</A>(LS))
+
+
+static size_t <A NAME="readname"><SPAN CLASS="definition">readname</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *LS) {
+  size_t l = 0;
+  <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+  do {
+    <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+    <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+  } while (isalnum(LS-&gt;current) || LS-&gt;current == '_');
+  <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+  return l-1;
+}
+
+
+/* LUA_NUMBER */
+static void <A NAME="read_numeral"><SPAN CLASS="definition">read_numeral</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *LS, int comma, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo) {
+  size_t l = 0;
+  <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+  if (comma) <A HREF="llex.c.html#save">save</A>(LS, '.', l);
+  while (isdigit(LS-&gt;current)) {
+    <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+    <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+  }
+  if (LS-&gt;current == '.') {
+    <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+    if (LS-&gt;current == '.') {
+      <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+      <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+      <A HREF="llex.c.html#luaX_lexerror">luaX_lexerror</A>(LS,
+                 "ambiguous syntax (decimal point x string concatenation)",
+                 <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>);
+    }
+  }
+  while (isdigit(LS-&gt;current)) {
+    <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+    <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+  }
+  if (LS-&gt;current == 'e' || LS-&gt;current == 'E') {
+    <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);  /* read `E' */
+    if (LS-&gt;current == '+' || LS-&gt;current == '-')
+      <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);  /* optional exponent sign */
+    while (isdigit(LS-&gt;current)) {
+      <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+      <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+    }
+  }
+  <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+  if (!<A HREF="lobject.c.html#luaO_str2d">luaO_str2d</A>(<A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(LS-&gt;buff), &amp;seminfo-&gt;r))
+    <A HREF="llex.c.html#luaX_lexerror">luaX_lexerror</A>(LS, "malformed number", <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>);
+}
+
+
+static void <A NAME="read_long_string"><SPAN CLASS="definition">read_long_string</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *LS, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo) {
+  int cont = 0;
+  size_t l = 0;
+  <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+  <A HREF="llex.c.html#save">save</A>(LS, '[', l);  /* <A HREF="llex.c.html#save">save</A> first `[' */
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);  /* pass the second `[' */
+  if (LS-&gt;current == '\n')  /* string starts with a newline? */
+    <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(LS);  /* skip it */
+  for (;;) {
+    <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+    switch (LS-&gt;current) {
+      case <A HREF="lzio.h.html#EOZ">EOZ</A>:
+        <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+        <A HREF="llex.c.html#luaX_lexerror">luaX_lexerror</A>(LS, (seminfo) ? "unfinished long string" :
+                                   "unfinished long comment", <A HREF="llex.h.html#TK_EOS">TK_EOS</A>);
+        break;  /* to avoid warnings */
+      case '[':
+        <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+        if (LS-&gt;current == '[') {
+          cont++;
+          <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+        }
+        continue;
+      case ']':
+        <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+        if (LS-&gt;current == ']') {
+          if (cont == 0) goto endloop;
+          cont--;
+          <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+        }
+        continue;
+      case '\n':
+        <A HREF="llex.c.html#save">save</A>(LS, '\n', l);
+        <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(LS);
+        if (!seminfo) l = 0;  /* reset buffer to avoid wasting space */
+        continue;
+      default:
+        <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+    }
+  } endloop:
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);  /* skip the second `]' */
+  <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+  if (seminfo)
+    seminfo-&gt;ts = <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(LS-&gt;L, <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(LS-&gt;buff) + 2, l - 5);
+}
+
+
+static void <A NAME="read_string"><SPAN CLASS="definition">read_string</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *LS, int del, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo) {
+  size_t l = 0;
+  <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+  while (LS-&gt;current != del) {
+    <A HREF="llex.c.html#checkbuffer">checkbuffer</A>(LS, l);
+    switch (LS-&gt;current) {
+      case <A HREF="lzio.h.html#EOZ">EOZ</A>:
+        <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+        <A HREF="llex.c.html#luaX_lexerror">luaX_lexerror</A>(LS, "unfinished string", <A HREF="llex.h.html#TK_EOS">TK_EOS</A>);
+        break;  /* to avoid warnings */
+      case '\n':
+        <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+        <A HREF="llex.c.html#luaX_lexerror">luaX_lexerror</A>(LS, "unfinished string", <A HREF="llex.h.html#TK_STRING">TK_STRING</A>);
+        break;  /* to avoid warnings */
+      case '\\':
+        <A HREF="llex.c.html#next">next</A>(LS);  /* do not <A HREF="llex.c.html#save">save</A> the `\' */
+        switch (LS-&gt;current) {
+          case 'a': <A HREF="llex.c.html#save">save</A>(LS, '\a', l); <A HREF="llex.c.html#next">next</A>(LS); break;
+          case 'b': <A HREF="llex.c.html#save">save</A>(LS, '\b', l); <A HREF="llex.c.html#next">next</A>(LS); break;
+          case 'f': <A HREF="llex.c.html#save">save</A>(LS, '\f', l); <A HREF="llex.c.html#next">next</A>(LS); break;
+          case 'n': <A HREF="llex.c.html#save">save</A>(LS, '\n', l); <A HREF="llex.c.html#next">next</A>(LS); break;
+          case 'r': <A HREF="llex.c.html#save">save</A>(LS, '\r', l); <A HREF="llex.c.html#next">next</A>(LS); break;
+          case 't': <A HREF="llex.c.html#save">save</A>(LS, '\t', l); <A HREF="llex.c.html#next">next</A>(LS); break;
+          case 'v': <A HREF="llex.c.html#save">save</A>(LS, '\v', l); <A HREF="llex.c.html#next">next</A>(LS); break;
+          case '\n': <A HREF="llex.c.html#save">save</A>(LS, '\n', l); <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(LS); break;
+          case <A HREF="lzio.h.html#EOZ">EOZ</A>: break;  /* will raise an error <A HREF="llex.c.html#next">next</A> loop */
+          default: {
+            if (!isdigit(LS-&gt;current))
+              <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);  /* handles \\, \", \', and \? */
+            else {  /* \xxx */
+              int c = 0;
+              int i = 0;
+              do {
+                c = 10*c + (LS-&gt;current-'0');
+                <A HREF="llex.c.html#next">next</A>(LS);
+              } while (++i&lt;3 &amp;&amp; isdigit(LS-&gt;current));
+              if (c &gt; UCHAR_MAX) {
+                <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+                <A HREF="llex.c.html#luaX_lexerror">luaX_lexerror</A>(LS, "escape sequence too large", <A HREF="llex.h.html#TK_STRING">TK_STRING</A>);
+              }
+              <A HREF="llex.c.html#save">save</A>(LS, c, l);
+            }
+          }
+        }
+        break;
+      default:
+        <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);
+    }
+  }
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(LS, l);  /* skip delimiter */
+  <A HREF="llex.c.html#save">save</A>(LS, '\0', l);
+  seminfo-&gt;ts = <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(LS-&gt;L, <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(LS-&gt;buff) + 1, l - 3);
+}
+
+
+int <A NAME="luaX_lex"><SPAN CLASS="definition">luaX_lex</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *LS, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo) {
+  for (;;) {
+    switch (LS-&gt;current) {
+
+      case '\n': {
+        <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(LS);
+        continue;
+      }
+      case '-': {
+        <A HREF="llex.c.html#next">next</A>(LS);
+        if (LS-&gt;current != '-') return '-';
+        /* else is a comment */
+        <A HREF="llex.c.html#next">next</A>(LS);
+        if (LS-&gt;current == '[' &amp;&amp; (<A HREF="llex.c.html#next">next</A>(LS), LS-&gt;current == '['))
+          <A HREF="llex.c.html#read_long_string">read_long_string</A>(LS, NULL);  /* long comment */
+        else  /* short comment */
+          while (LS-&gt;current != '\n' &amp;&amp; LS-&gt;current != <A HREF="lzio.h.html#EOZ">EOZ</A>)
+            <A HREF="llex.c.html#next">next</A>(LS);
+        continue;
+      }
+      case '[': {
+        <A HREF="llex.c.html#next">next</A>(LS);
+        if (LS-&gt;current != '[') return '[';
+        else {
+          <A HREF="llex.c.html#read_long_string">read_long_string</A>(LS, seminfo);
+          return <A HREF="llex.h.html#TK_STRING">TK_STRING</A>;
+        }
+      }
+      case '=': {
+        <A HREF="llex.c.html#next">next</A>(LS);
+        if (LS-&gt;current != '=') return '=';
+        else { <A HREF="llex.c.html#next">next</A>(LS); return <A HREF="llex.h.html#TK_EQ">TK_EQ</A>; }
+      }
+      case '&lt;': {
+        <A HREF="llex.c.html#next">next</A>(LS);
+        if (LS-&gt;current != '=') return '&lt;';
+        else { <A HREF="llex.c.html#next">next</A>(LS); return <A HREF="llex.h.html#TK_LE">TK_LE</A>; }
+      }
+      case '&gt;': {
+        <A HREF="llex.c.html#next">next</A>(LS);
+        if (LS-&gt;current != '=') return '&gt;';
+        else { <A HREF="llex.c.html#next">next</A>(LS); return <A HREF="llex.h.html#TK_GE">TK_GE</A>; }
+      }
+      case '~': {
+        <A HREF="llex.c.html#next">next</A>(LS);
+        if (LS-&gt;current != '=') return '~';
+        else { <A HREF="llex.c.html#next">next</A>(LS); return <A HREF="llex.h.html#TK_NE">TK_NE</A>; }
+      }
+      case '"':
+      case '\'': {
+        <A HREF="llex.c.html#read_string">read_string</A>(LS, LS-&gt;current, seminfo);
+        return <A HREF="llex.h.html#TK_STRING">TK_STRING</A>;
+      }
+      case '.': {
+        <A HREF="llex.c.html#next">next</A>(LS);
+        if (LS-&gt;current == '.') {
+          <A HREF="llex.c.html#next">next</A>(LS);
+          if (LS-&gt;current == '.') {
+            <A HREF="llex.c.html#next">next</A>(LS);
+            return <A HREF="llex.h.html#TK_DOTS">TK_DOTS</A>;   /* ... */
+          }
+          else return <A HREF="llex.h.html#TK_CONCAT">TK_CONCAT</A>;   /* .. */
+        }
+        else if (!isdigit(LS-&gt;current)) return '.';
+        else {
+          <A HREF="llex.c.html#read_numeral">read_numeral</A>(LS, 1, seminfo);
+          return <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>;
+        }
+      }
+      case <A HREF="lzio.h.html#EOZ">EOZ</A>: {
+        return <A HREF="llex.h.html#TK_EOS">TK_EOS</A>;
+      }
+      default: {
+        if (isspace(LS-&gt;current)) {
+          <A HREF="llex.c.html#next">next</A>(LS);
+          continue;
+        }
+        else if (isdigit(LS-&gt;current)) {
+          <A HREF="llex.c.html#read_numeral">read_numeral</A>(LS, 0, seminfo);
+          return <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>;
+        }
+        else if (isalpha(LS-&gt;current) || LS-&gt;current == '_') {
+          /* identifier or reserved word */
+          size_t l = <A HREF="llex.c.html#readname">readname</A>(LS);
+          <A HREF="lobject.h.html#TString">TString</A> *ts = <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(LS-&gt;L, <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(LS-&gt;buff), l);
+          if (ts-&gt;tsv.reserved &gt; 0)  /* reserved word? */
+            return ts-&gt;tsv.reserved - 1 + <A HREF="llex.h.html#FIRST_RESERVED">FIRST_RESERVED</A>;
+          seminfo-&gt;ts = ts;
+          return <A HREF="llex.h.html#TK_NAME">TK_NAME</A>;
+        }
+        else {
+          int c = LS-&gt;current;
+          if (iscntrl(c))
+            <A HREF="llex.c.html#luaX_error">luaX_error</A>(LS, "invalid control char",
+                           <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(LS-&gt;L, "char(%d)", c));
+          <A HREF="llex.c.html#next">next</A>(LS);
+          return c;  /* single-char tokens (+ - / ...) */
+        }
+      }
+    }
+  }
+}
+
+#undef <A NAME="next"><SPAN CLASS="definition">next</SPAN></A>
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

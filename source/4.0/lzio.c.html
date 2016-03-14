@@ -1,0 +1,119 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lzio.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lzio.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lzio.c,v 1.13 2000/06/12 13:52:05 roberto Exp $
+** a generic input stream interface
+** See Copyright Notice in lua.h
+*/
+
+
+
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+
+/* ----------------------------------------------------- memory buffers --- */
+
+static int <A NAME="zmfilbuf"><SPAN CLASS="definition">zmfilbuf</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z) {
+  (void)z;  /* to avoid warnings */
+  return <A HREF="lzio.h.html#EOZ">EOZ</A>;
+}
+
+
+<A HREF="lzio.h.html#ZIO">ZIO</A>* <A NAME="zmopen"><SPAN CLASS="definition">zmopen</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z, const char* b, size_t size, const char *name) {
+  if (b==NULL) return NULL;
+  z-&gt;n = size;
+  z-&gt;p = (const unsigned char *)b;
+  z-&gt;filbuf = <A HREF="lzio.c.html#zmfilbuf">zmfilbuf</A>;
+  z-&gt;u = NULL;
+  z-&gt;name = name;
+  return z;
+}
+
+/* ------------------------------------------------------------ strings --- */
+
+<A HREF="lzio.h.html#ZIO">ZIO</A>* <A NAME="zsopen"><SPAN CLASS="definition">zsopen</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z, const char* s, const char *name) {
+  if (s==NULL) return NULL;
+  return <A HREF="lzio.c.html#zmopen">zmopen</A>(z, s, strlen(s), name);
+}
+
+/* -------------------------------------------------------------- FILEs --- */
+
+static int <A NAME="zffilbuf"><SPAN CLASS="definition">zffilbuf</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z) {
+  size_t n;
+  if (feof((FILE *)z-&gt;u)) return <A HREF="lzio.h.html#EOZ">EOZ</A>;
+  n = fread(z-&gt;buffer, 1, <A HREF="lzio.h.html#ZBSIZE">ZBSIZE</A>, (FILE *)z-&gt;u);
+  if (n==0) return <A HREF="lzio.h.html#EOZ">EOZ</A>;
+  z-&gt;n = n-1;
+  z-&gt;p = z-&gt;buffer;
+  return *(z-&gt;p++);
+}
+
+
+<A HREF="lzio.h.html#ZIO">ZIO</A>* <A NAME="zFopen"><SPAN CLASS="definition">zFopen</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z, FILE* f, const char *name) {
+  if (f==NULL) return NULL;
+  z-&gt;n = 0;
+  z-&gt;p = z-&gt;buffer;
+  z-&gt;filbuf = <A HREF="lzio.c.html#zffilbuf">zffilbuf</A>;
+  z-&gt;u = f;
+  z-&gt;name = name;
+  return z;
+}
+
+
+/* --------------------------------------------------------------- read --- */
+size_t <A NAME="zread"><SPAN CLASS="definition">zread</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A> *z, void *b, size_t n) {
+  while (n) {
+    size_t m;
+    if (z-&gt;n == 0) {
+      if (z-&gt;filbuf(z) == <A HREF="lzio.h.html#EOZ">EOZ</A>)
+        return n;  /* return number of missing bytes */
+      <A HREF="lzio.h.html#zungetc">zungetc</A>(z);  /* put result from `filbuf' in the buffer */
+    }
+    m = (n &lt;= z-&gt;n) ? n : z-&gt;n;  /* min. between n and z-&gt;n */
+    memcpy(b, z-&gt;p, m);
+    z-&gt;n -= m;
+    z-&gt;p += m;
+    b = (char *)b + m;
+    n -= m;
+  }
+  return 0;
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

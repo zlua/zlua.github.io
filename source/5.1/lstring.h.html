@@ -1,0 +1,66 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lstring.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstring.h
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstring.h,v 1.43.1.1 2007/12/27 13:02:25 roberto Exp $
+** String table (keep all strings handled by Lua)
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lstring.h.html#lstring_h">lstring_h</A>
+#define <A NAME="lstring_h"><SPAN CLASS="definition">lstring_h</SPAN></A>
+
+
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+#define <A NAME="sizestring"><SPAN CLASS="definition">sizestring</SPAN></A>(s)   (sizeof(union <A HREF="lobject.h.html#TString">TString</A>)+((s)-&gt;len+1)*sizeof(char))
+
+#define <A NAME="sizeudata"><SPAN CLASS="definition">sizeudata</SPAN></A>(u)    (sizeof(union <A HREF="lobject.h.html#Udata">Udata</A>)+(u)-&gt;len)
+
+#define <A NAME="luaS_new"><SPAN CLASS="definition">luaS_new</SPAN></A>(L, s)  (<A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, s, strlen(s)))
+#define <A NAME="luaS_newliteral"><SPAN CLASS="definition">luaS_newliteral</SPAN></A>(L, s)   (<A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, "" s, \
+                                 (sizeof(s)/sizeof(char))-1))
+
+#define <A NAME="luaS_fix"><SPAN CLASS="definition">luaS_fix</SPAN></A>(s)     <A HREF="lgc.h.html#l_setbit">l_setbit</A>((s)-&gt;tsv.marked, <A HREF="lgc.h.html#FIXEDBIT">FIXEDBIT</A>)
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lstring.c.html#luaS_resize">luaS_resize</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int newsize);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#Udata">Udata</A> *<A HREF="lstring.c.html#luaS_newudata">luaS_newudata</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t s, <A HREF="lobject.h.html#Table">Table</A> *e);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#TString">TString</A> *<A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

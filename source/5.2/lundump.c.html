@@ -1,0 +1,293 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lundump.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lundump.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lundump.c,v 2.22.1.1 2013/04/12 18:48:47 roberto Exp $
+** load precompiled Lua chunks
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;string.h&gt;
+
+#define <A NAME="lundump_c"><SPAN CLASS="definition">lundump_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+typedef struct {
+ <A HREF="lstate.h.html#lua_State">lua_State</A>* L;
+ <A HREF="lzio.h.html#ZIO">ZIO</A>* Z;
+ <A HREF="lzio.h.html#Mbuffer">Mbuffer</A>* b;
+ const char* name;
+} <A NAME="LoadState"><SPAN CLASS="definition">LoadState</SPAN></A>;
+
+static <A HREF="llimits.h.html#l_noret">l_noret</A> <A NAME="error"><SPAN CLASS="definition">error</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S, const char* why)
+{
+ <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(S-&gt;L,"%s: %s precompiled chunk",S-&gt;name,why);
+ <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(S-&gt;L,<A HREF="lua.h.html#LUA_ERRSYNTAX">LUA_ERRSYNTAX</A>);
+}
+
+#define <A NAME="LoadMem"><SPAN CLASS="definition">LoadMem</SPAN></A>(S,b,n,size)     <A HREF="lundump.c.html#LoadBlock">LoadBlock</A>(S,b,(n)*(size))
+#define <A NAME="LoadByte"><SPAN CLASS="definition">LoadByte</SPAN></A>(S)             (<A HREF="llimits.h.html#lu_byte">lu_byte</A>)<A HREF="lundump.c.html#LoadChar">LoadChar</A>(S)
+#define <A NAME="LoadVar"><SPAN CLASS="definition">LoadVar</SPAN></A>(S,x)            <A HREF="lundump.c.html#LoadMem">LoadMem</A>(S,&amp;x,1,sizeof(x))
+#define <A NAME="LoadVector"><SPAN CLASS="definition">LoadVector</SPAN></A>(S,b,n,size)  <A HREF="lundump.c.html#LoadMem">LoadMem</A>(S,b,n,size)
+
+#if !defined(<A HREF="lundump.c.html#luai_verifycode">luai_verifycode</A>)
+#define <A NAME="luai_verifycode"><SPAN CLASS="definition">luai_verifycode</SPAN></A>(L,b,f)  /* empty */
+#endif
+
+static void <A NAME="LoadBlock"><SPAN CLASS="definition">LoadBlock</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S, void* b, size_t size)
+{
+ if (<A HREF="lzio.c.html#luaZ_read">luaZ_read</A>(S-&gt;Z,b,size)!=0) <A HREF="lundump.c.html#error">error</A>(S,"truncated");
+}
+
+static int <A NAME="LoadChar"><SPAN CLASS="definition">LoadChar</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S)
+{
+ char x;
+ <A HREF="lundump.c.html#LoadVar">LoadVar</A>(S,x);
+ return x;
+}
+
+static int <A NAME="LoadInt"><SPAN CLASS="definition">LoadInt</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S)
+{
+ int x;
+ <A HREF="lundump.c.html#LoadVar">LoadVar</A>(S,x);
+ if (x&lt;0) <A HREF="lundump.c.html#error">error</A>(S,"corrupted");
+ return x;
+}
+
+static <A HREF="lua.h.html#lua_Number">lua_Number</A> <A NAME="LoadNumber"><SPAN CLASS="definition">LoadNumber</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S)
+{
+ <A HREF="lua.h.html#lua_Number">lua_Number</A> x;
+ <A HREF="lundump.c.html#LoadVar">LoadVar</A>(S,x);
+ return x;
+}
+
+static <A HREF="lobject.h.html#TString">TString</A>* <A NAME="LoadString"><SPAN CLASS="definition">LoadString</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S)
+{
+ size_t size;
+ <A HREF="lundump.c.html#LoadVar">LoadVar</A>(S,size);
+ if (size==0)
+  return NULL;
+ else
+ {
+  char* s=<A HREF="lzio.c.html#luaZ_openspace">luaZ_openspace</A>(S-&gt;L,S-&gt;b,size);
+  <A HREF="lundump.c.html#LoadBlock">LoadBlock</A>(S,s,size*sizeof(char));
+  return <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(S-&gt;L,s,size-1);           /* remove trailing '\0' */
+ }
+}
+
+static void <A NAME="LoadCode"><SPAN CLASS="definition">LoadCode</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S, <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ f-&gt;code=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(S-&gt;L,n,<A HREF="llimits.h.html#Instruction">Instruction</A>);
+ f-&gt;sizecode=n;
+ <A HREF="lundump.c.html#LoadVector">LoadVector</A>(S,f-&gt;code,n,sizeof(<A HREF="llimits.h.html#Instruction">Instruction</A>));
+}
+
+static void <A HREF="lundump.c.html#LoadFunction">LoadFunction</A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S, <A HREF="lobject.h.html#Proto">Proto</A>* f);
+
+static void <A NAME="LoadConstants"><SPAN CLASS="definition">LoadConstants</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S, <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n;
+ n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ f-&gt;k=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(S-&gt;L,n,<A HREF="lobject.h.html#TValue">TValue</A>);
+ f-&gt;sizek=n;
+ for (i=0; i&lt;n; i++) <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(&amp;f-&gt;k[i]);
+ for (i=0; i&lt;n; i++)
+ {
+  <A HREF="lobject.h.html#TValue">TValue</A>* o=&amp;f-&gt;k[i];
+  int t=<A HREF="lundump.c.html#LoadChar">LoadChar</A>(S);
+  switch (t)
+  {
+   case <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>:
+        <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(o);
+        break;
+   case <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>:
+        <A HREF="lobject.h.html#setbvalue">setbvalue</A>(o,<A HREF="lundump.c.html#LoadChar">LoadChar</A>(S));
+        break;
+   case <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>:
+        <A HREF="lobject.h.html#setnvalue">setnvalue</A>(o,<A HREF="lundump.c.html#LoadNumber">LoadNumber</A>(S));
+        break;
+   case <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>:
+        <A HREF="lobject.h.html#setsvalue2n">setsvalue2n</A>(S-&gt;L,o,<A HREF="lundump.c.html#LoadString">LoadString</A>(S));
+        break;
+    default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0);
+  }
+ }
+ n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ f-&gt;p=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(S-&gt;L,n,<A HREF="lobject.h.html#Proto">Proto</A>*);
+ f-&gt;sizep=n;
+ for (i=0; i&lt;n; i++) f-&gt;p[i]=NULL;
+ for (i=0; i&lt;n; i++)
+ {
+  f-&gt;p[i]=<A HREF="lfunc.c.html#luaF_newproto">luaF_newproto</A>(S-&gt;L);
+  <A HREF="lundump.c.html#LoadFunction">LoadFunction</A>(S,f-&gt;p[i]);
+ }
+}
+
+static void <A NAME="LoadUpvalues"><SPAN CLASS="definition">LoadUpvalues</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S, <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n;
+ n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ f-&gt;upvalues=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(S-&gt;L,n,<A HREF="lobject.h.html#Upvaldesc">Upvaldesc</A>);
+ f-&gt;sizeupvalues=n;
+ for (i=0; i&lt;n; i++) f-&gt;upvalues[i].name=NULL;
+ for (i=0; i&lt;n; i++)
+ {
+  f-&gt;upvalues[i].instack=<A HREF="lundump.c.html#LoadByte">LoadByte</A>(S);
+  f-&gt;upvalues[i].idx=<A HREF="lundump.c.html#LoadByte">LoadByte</A>(S);
+ }
+}
+
+static void <A NAME="LoadDebug"><SPAN CLASS="definition">LoadDebug</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S, <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n;
+ f-&gt;source=<A HREF="lundump.c.html#LoadString">LoadString</A>(S);
+ n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ f-&gt;lineinfo=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(S-&gt;L,n,int);
+ f-&gt;sizelineinfo=n;
+ <A HREF="lundump.c.html#LoadVector">LoadVector</A>(S,f-&gt;lineinfo,n,sizeof(int));
+ n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ f-&gt;locvars=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(S-&gt;L,n,<A HREF="lobject.h.html#LocVar">LocVar</A>);
+ f-&gt;sizelocvars=n;
+ for (i=0; i&lt;n; i++) f-&gt;locvars[i].varname=NULL;
+ for (i=0; i&lt;n; i++)
+ {
+  f-&gt;locvars[i].varname=<A HREF="lundump.c.html#LoadString">LoadString</A>(S);
+  f-&gt;locvars[i].startpc=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+  f-&gt;locvars[i].endpc=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ }
+ n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ for (i=0; i&lt;n; i++) f-&gt;upvalues[i].name=<A HREF="lundump.c.html#LoadString">LoadString</A>(S);
+}
+
+static void <A NAME="LoadFunction"><SPAN CLASS="definition">LoadFunction</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S, <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ f-&gt;linedefined=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ f-&gt;lastlinedefined=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(S);
+ f-&gt;numparams=<A HREF="lundump.c.html#LoadByte">LoadByte</A>(S);
+ f-&gt;is_vararg=<A HREF="lundump.c.html#LoadByte">LoadByte</A>(S);
+ f-&gt;maxstacksize=<A HREF="lundump.c.html#LoadByte">LoadByte</A>(S);
+ <A HREF="lundump.c.html#LoadCode">LoadCode</A>(S,f);
+ <A HREF="lundump.c.html#LoadConstants">LoadConstants</A>(S,f);
+ <A HREF="lundump.c.html#LoadUpvalues">LoadUpvalues</A>(S,f);
+ <A HREF="lundump.c.html#LoadDebug">LoadDebug</A>(S,f);
+}
+
+/* the code below must be consistent with the code in <A HREF="lundump.c.html#luaU_header">luaU_header</A> */
+#define <A NAME="N0"><SPAN CLASS="definition">N0</SPAN></A>      <A HREF="lundump.h.html#LUAC_HEADERSIZE">LUAC_HEADERSIZE</A>
+#define <A NAME="N1"><SPAN CLASS="definition">N1</SPAN></A>      (sizeof(<A HREF="lua.h.html#LUA_SIGNATURE">LUA_SIGNATURE</A>)-sizeof(char))
+#define <A NAME="N2"><SPAN CLASS="definition">N2</SPAN></A>      <A HREF="lundump.c.html#N1">N1</A>+2
+#define <A NAME="N3"><SPAN CLASS="definition">N3</SPAN></A>      <A HREF="lundump.c.html#N2">N2</A>+6
+
+static void <A NAME="LoadHeader"><SPAN CLASS="definition">LoadHeader</SPAN></A>(<A HREF="lundump.c.html#LoadState">LoadState</A>* S)
+{
+ <A HREF="llimits.h.html#lu_byte">lu_byte</A> h[<A HREF="lundump.h.html#LUAC_HEADERSIZE">LUAC_HEADERSIZE</A>];
+ <A HREF="llimits.h.html#lu_byte">lu_byte</A> s[<A HREF="lundump.h.html#LUAC_HEADERSIZE">LUAC_HEADERSIZE</A>];
+ <A HREF="lundump.c.html#luaU_header">luaU_header</A>(h);
+ memcpy(s,h,sizeof(char));                      /* first char already read */
+ <A HREF="lundump.c.html#LoadBlock">LoadBlock</A>(S,s+sizeof(char),<A HREF="lundump.h.html#LUAC_HEADERSIZE">LUAC_HEADERSIZE</A>-sizeof(char));
+ if (memcmp(h,s,<A HREF="lundump.c.html#N0">N0</A>)==0) return;
+ if (memcmp(h,s,<A HREF="lundump.c.html#N1">N1</A>)!=0) <A HREF="lundump.c.html#error">error</A>(S,"not a");
+ if (memcmp(h,s,<A HREF="lundump.c.html#N2">N2</A>)!=0) <A HREF="lundump.c.html#error">error</A>(S,"version mismatch in");
+ if (memcmp(h,s,<A HREF="lundump.c.html#N3">N3</A>)!=0) <A HREF="lundump.c.html#error">error</A>(S,"incompatible"); else <A HREF="lundump.c.html#error">error</A>(S,"corrupted");
+}
+
+/*
+** load precompiled chunk
+*/
+<A HREF="lobject.h.html#Closure">Closure</A>* <A NAME="luaU_undump"><SPAN CLASS="definition">luaU_undump</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, <A HREF="lzio.h.html#Mbuffer">Mbuffer</A>* buff, const char* name)
+{
+ <A HREF="lundump.c.html#LoadState">LoadState</A> S;
+ <A HREF="lobject.h.html#Closure">Closure</A>* cl;
+ if (*name=='@' || *name=='=')
+  S.name=name+1;
+ else if (*name==<A HREF="lua.h.html#LUA_SIGNATURE">LUA_SIGNATURE</A>[0])
+  S.name="binary string";
+ else
+  S.name=name;
+ S.L=L;
+ S.Z=Z;
+ S.b=buff;
+ <A HREF="lundump.c.html#LoadHeader">LoadHeader</A>(&amp;S);
+ cl=<A HREF="lfunc.c.html#luaF_newLclosure">luaF_newLclosure</A>(L,1);
+ <A HREF="lobject.h.html#setclLvalue">setclLvalue</A>(L,L-&gt;top,cl); <A HREF="ldo.h.html#incr_top">incr_top</A>(L);
+ cl-&gt;l.p=<A HREF="lfunc.c.html#luaF_newproto">luaF_newproto</A>(L);
+ <A HREF="lundump.c.html#LoadFunction">LoadFunction</A>(&amp;S,cl-&gt;l.p);
+ if (cl-&gt;l.p-&gt;sizeupvalues != 1)
+ {
+  <A HREF="lobject.h.html#Proto">Proto</A>* p=cl-&gt;l.p;
+  cl=<A HREF="lfunc.c.html#luaF_newLclosure">luaF_newLclosure</A>(L,cl-&gt;l.p-&gt;sizeupvalues);
+  cl-&gt;l.p=p;
+  <A HREF="lobject.h.html#setclLvalue">setclLvalue</A>(L,L-&gt;top-1,cl);
+ }
+ <A HREF="lundump.c.html#luai_verifycode">luai_verifycode</A>(L,buff,cl-&gt;l.p);
+ return cl;
+}
+
+#define <A NAME="MYINT"><SPAN CLASS="definition">MYINT</SPAN></A>(s)        (s[0]-'0')
+#define <A NAME="VERSION"><SPAN CLASS="definition">VERSION</SPAN></A>         <A HREF="lundump.c.html#MYINT">MYINT</A>(<A HREF="lua.h.html#LUA_VERSION_MAJOR">LUA_VERSION_MAJOR</A>)*16+<A HREF="lundump.c.html#MYINT">MYINT</A>(<A HREF="lua.h.html#LUA_VERSION_MINOR">LUA_VERSION_MINOR</A>)
+#define <A NAME="FORMAT"><SPAN CLASS="definition">FORMAT</SPAN></A>          0               /* this is the official format */
+
+/*
+* make header for precompiled chunks
+* if you change the code below be sure to update <A HREF="lundump.c.html#LoadHeader">LoadHeader</A> and <A HREF="lundump.c.html#FORMAT">FORMAT</A> above
+* and <A HREF="lundump.h.html#LUAC_HEADERSIZE">LUAC_HEADERSIZE</A> in lundump.h
+*/
+void <A NAME="luaU_header"><SPAN CLASS="definition">luaU_header</SPAN></A> (<A HREF="llimits.h.html#lu_byte">lu_byte</A>* h)
+{
+ int x=1;
+ memcpy(h,<A HREF="lua.h.html#LUA_SIGNATURE">LUA_SIGNATURE</A>,sizeof(<A HREF="lua.h.html#LUA_SIGNATURE">LUA_SIGNATURE</A>)-sizeof(char));
+ h+=sizeof(<A HREF="lua.h.html#LUA_SIGNATURE">LUA_SIGNATURE</A>)-sizeof(char);
+ *h++=<A HREF="llimits.h.html#cast_byte">cast_byte</A>(<A HREF="lundump.c.html#VERSION">VERSION</A>);
+ *h++=<A HREF="llimits.h.html#cast_byte">cast_byte</A>(<A HREF="lundump.c.html#FORMAT">FORMAT</A>);
+ *h++=<A HREF="llimits.h.html#cast_byte">cast_byte</A>(*(char*)&amp;x);                    /* endianness */
+ *h++=<A HREF="llimits.h.html#cast_byte">cast_byte</A>(sizeof(int));
+ *h++=<A HREF="llimits.h.html#cast_byte">cast_byte</A>(sizeof(size_t));
+ *h++=<A HREF="llimits.h.html#cast_byte">cast_byte</A>(sizeof(<A HREF="llimits.h.html#Instruction">Instruction</A>));
+ *h++=<A HREF="llimits.h.html#cast_byte">cast_byte</A>(sizeof(<A HREF="lua.h.html#lua_Number">lua_Number</A>));
+ *h++=<A HREF="llimits.h.html#cast_byte">cast_byte</A>(((<A HREF="lua.h.html#lua_Number">lua_Number</A>)0.5)==0);          /* is <A HREF="lua.h.html#lua_Number">lua_Number</A> integral? */
+ memcpy(h,<A HREF="lundump.h.html#LUAC_TAIL">LUAC_TAIL</A>,sizeof(<A HREF="lundump.h.html#LUAC_TAIL">LUAC_TAIL</A>)-sizeof(char));
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:41 2016
+</P>
+
+</BODY>
+</HTML>

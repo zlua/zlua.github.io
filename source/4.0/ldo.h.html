@@ -1,0 +1,68 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - ldo.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldo.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldo.h,v 1.28 2000/10/06 12:45:25 roberto Exp $
+** Stack and Call structure of Lua
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="ldo.h.html#ldo_h">ldo_h</A>
+#define <A NAME="ldo_h"><SPAN CLASS="definition">ldo_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+/*
+** macro to increment stack top.
+** There must be always an empty slot at the L-&gt;stack.top
+*/
+#define <A NAME="incr_top"><SPAN CLASS="definition">incr_top</SPAN></A> {if (L-&gt;top == L-&gt;stack_last) <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, 1); L-&gt;top++;}
+
+
+void <A HREF="ldo.c.html#luaD_init">luaD_init</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int stacksize);
+void <A HREF="ldo.c.html#luaD_adjusttop">luaD_adjusttop</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> base, int extra);
+void <A HREF="ldo.c.html#luaD_lineHook">luaD_lineHook</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> func, int line, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> linehook);
+void <A HREF="ldo.c.html#luaD_call">luaD_call</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> func, int nResults);
+void <A HREF="ldo.c.html#luaD_callTM">luaD_callTM</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Closure">Closure</A> *f, int nParams, int nResults);
+void <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n);
+
+void <A HREF="ldo.c.html#luaD_breakrun">luaD_breakrun</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int errcode);
+int <A HREF="ldo.c.html#luaD_runprotected">luaD_runprotected</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void (*f)(<A HREF="lstate.h.html#lua_State">lua_State</A> *, void *), void *ud);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

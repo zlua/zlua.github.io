@@ -1,0 +1,112 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - ltm.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ltm.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ltm.c,v 2.14.1.1 2013/04/12 18:48:47 roberto Exp $
+** Tag methods
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;string.h&gt;
+
+#define <A NAME="ltm_c"><SPAN CLASS="definition">ltm_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+
+
+static const char <A NAME="udatatypename"><SPAN CLASS="definition">udatatypename</SPAN></A>[] = "userdata";
+
+<A HREF="luaconf.h.html#LUAI_DDEF">LUAI_DDEF</A> const char *const <A NAME="luaT_typenames_"><SPAN CLASS="definition">luaT_typenames_</SPAN></A>[<A HREF="lobject.h.html#LUA_TOTALTAGS">LUA_TOTALTAGS</A>] = {
+  "no value",
+  "nil", "boolean", <A HREF="ltm.c.html#udatatypename">udatatypename</A>, "number",
+  "string", "table", "function", <A HREF="ltm.c.html#udatatypename">udatatypename</A>, "thread",
+  "proto", "upval"  /* these last two cases are used for tests only */
+};
+
+
+void <A NAME="luaT_init"><SPAN CLASS="definition">luaT_init</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  static const char *const luaT_eventname[] = {  /* ORDER TM */
+    "__index", "__newindex",
+    "__gc", "__mode", "__len", "__eq",
+    "__add", "__sub", "__mul", "__div", "__mod",
+    "__pow", "__unm", "__lt", "__le",
+    "__concat", "__call"
+  };
+  int i;
+  for (i=0; i&lt;<A HREF="ltm.h.html#TM_N">TM_N</A>; i++) {
+    <A HREF="lstate.h.html#G">G</A>(L)-&gt;tmname[i] = <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, luaT_eventname[i]);
+    <A HREF="lstring.h.html#luaS_fix">luaS_fix</A>(<A HREF="lstate.h.html#G">G</A>(L)-&gt;tmname[i]);  /* never collect these names */
+  }
+}
+
+
+/*
+** function to be used with macro "<A HREF="ltm.h.html#fasttm">fasttm</A>": optimized for absence of
+** tag methods
+*/
+const <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="luaT_gettm"><SPAN CLASS="definition">luaT_gettm</SPAN></A> (<A HREF="lobject.h.html#Table">Table</A> *events, <A HREF="ltm.h.html#TMS">TMS</A> event, <A HREF="lobject.h.html#TString">TString</A> *ename) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *tm = <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>(events, ename);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(event &lt;= <A HREF="ltm.h.html#TM_EQ">TM_EQ</A>);
+  if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(tm)) {  /* no tag method? */
+    events-&gt;flags |= <A HREF="llimits.h.html#cast_byte">cast_byte</A>(1u&lt;&lt;event);  /* cache this fact */
+    return NULL;
+  }
+  else return tm;
+}
+
+
+const <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="luaT_gettmbyobj"><SPAN CLASS="definition">luaT_gettmbyobj</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *o, <A HREF="ltm.h.html#TMS">TMS</A> event) {
+  <A HREF="lobject.h.html#Table">Table</A> *mt;
+  switch (<A HREF="lobject.h.html#ttypenv">ttypenv</A>(o)) {
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>:
+      mt = <A HREF="lobject.h.html#hvalue">hvalue</A>(o)-&gt;metatable;
+      break;
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>:
+      mt = <A HREF="lobject.h.html#uvalue">uvalue</A>(o)-&gt;metatable;
+      break;
+    default:
+      mt = <A HREF="lstate.h.html#G">G</A>(L)-&gt;mt[<A HREF="lobject.h.html#ttypenv">ttypenv</A>(o)];
+  }
+  return (mt ? <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>(mt, <A HREF="lstate.h.html#G">G</A>(L)-&gt;tmname[event]) : <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>);
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:41 2016
+</P>
+
+</BODY>
+</HTML>

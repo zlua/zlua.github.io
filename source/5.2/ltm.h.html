@@ -1,0 +1,92 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - ltm.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ltm.h
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ltm.h,v 2.11.1.1 2013/04/12 18:48:47 roberto Exp $
+** Tag methods
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="ltm.h.html#ltm_h">ltm_h</A>
+#define <A NAME="ltm_h"><SPAN CLASS="definition">ltm_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+
+
+/*
+* WARNING: if you change the order of this enumeration,
+* grep "ORDER TM"
+*/
+typedef enum {
+  <A NAME="TM_INDEX"><SPAN CLASS="definition">TM_INDEX</SPAN></A>,
+  <A NAME="TM_NEWINDEX"><SPAN CLASS="definition">TM_NEWINDEX</SPAN></A>,
+  <A NAME="TM_GC"><SPAN CLASS="definition">TM_GC</SPAN></A>,
+  <A NAME="TM_MODE"><SPAN CLASS="definition">TM_MODE</SPAN></A>,
+  <A NAME="TM_LEN"><SPAN CLASS="definition">TM_LEN</SPAN></A>,
+  <A NAME="TM_EQ"><SPAN CLASS="definition">TM_EQ</SPAN></A>,  /* last tag method with `fast' access */
+  <A NAME="TM_ADD"><SPAN CLASS="definition">TM_ADD</SPAN></A>,
+  <A NAME="TM_SUB"><SPAN CLASS="definition">TM_SUB</SPAN></A>,
+  <A NAME="TM_MUL"><SPAN CLASS="definition">TM_MUL</SPAN></A>,
+  <A NAME="TM_DIV"><SPAN CLASS="definition">TM_DIV</SPAN></A>,
+  <A NAME="TM_MOD"><SPAN CLASS="definition">TM_MOD</SPAN></A>,
+  <A NAME="TM_POW"><SPAN CLASS="definition">TM_POW</SPAN></A>,
+  <A NAME="TM_UNM"><SPAN CLASS="definition">TM_UNM</SPAN></A>,
+  <A NAME="TM_LT"><SPAN CLASS="definition">TM_LT</SPAN></A>,
+  <A NAME="TM_LE"><SPAN CLASS="definition">TM_LE</SPAN></A>,
+  <A NAME="TM_CONCAT"><SPAN CLASS="definition">TM_CONCAT</SPAN></A>,
+  <A NAME="TM_CALL"><SPAN CLASS="definition">TM_CALL</SPAN></A>,
+  <A NAME="TM_N"><SPAN CLASS="definition">TM_N</SPAN></A>          /* number of elements in the enum */
+} <A NAME="TMS"><SPAN CLASS="definition">TMS</SPAN></A>;
+
+
+
+#define <A NAME="gfasttm"><SPAN CLASS="definition">gfasttm</SPAN></A>(g,et,e) ((et) == NULL ? NULL : \
+  ((et)-&gt;flags &amp; (1u&lt;&lt;(e))) ? NULL : <A HREF="ltm.c.html#luaT_gettm">luaT_gettm</A>(et, e, (g)-&gt;tmname[e]))
+
+#define <A NAME="fasttm"><SPAN CLASS="definition">fasttm</SPAN></A>(l,et,e)  <A HREF="ltm.h.html#gfasttm">gfasttm</A>(<A HREF="lstate.h.html#G">G</A>(l), et, e)
+
+#define <A NAME="ttypename"><SPAN CLASS="definition">ttypename</SPAN></A>(x)    <A HREF="ltm.c.html#luaT_typenames_">luaT_typenames_</A>[(x) + 1]
+#define <A NAME="objtypename"><SPAN CLASS="definition">objtypename</SPAN></A>(x)  <A HREF="ltm.h.html#ttypename">ttypename</A>(<A HREF="lobject.h.html#ttypenv">ttypenv</A>(x))
+
+<A HREF="luaconf.h.html#LUAI_DDEC">LUAI_DDEC</A> const char *const <A HREF="ltm.c.html#luaT_typenames_">luaT_typenames_</A>[<A HREF="lobject.h.html#LUA_TOTALTAGS">LUA_TOTALTAGS</A>];
+
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="ltm.c.html#luaT_gettm">luaT_gettm</A> (<A HREF="lobject.h.html#Table">Table</A> *events, <A HREF="ltm.h.html#TMS">TMS</A> event, <A HREF="lobject.h.html#TString">TString</A> *ename);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const <A HREF="lobject.h.html#TValue">TValue</A> *<A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *o,
+                                                       <A HREF="ltm.h.html#TMS">TMS</A> event);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ltm.c.html#luaT_init">luaT_init</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:41 2016
+</P>
+
+</BODY>
+</HTML>

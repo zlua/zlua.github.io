@@ -1,0 +1,1218 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lgc.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lgc.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lgc.c,v 2.210 2015/11/03 18:10:44 roberto Exp $
+** Garbage Collector
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lgc_c"><SPAN CLASS="definition">lgc_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+
+
+/*
+** internal state for collector while inside the <A HREF="lgc.c.html#atomic">atomic</A> phase. The
+** collector should never be in this state while running regular code.
+*/
+#define <A NAME="GCSinsideatomic"><SPAN CLASS="definition">GCSinsideatomic</SPAN></A>         (<A HREF="lgc.h.html#GCSpause">GCSpause</A> + 1)
+
+/*
+** cost of sweeping one element (the size of a small object divided
+** by some adjust for the sweep speed)
+*/
+#define <A NAME="GCSWEEPCOST"><SPAN CLASS="definition">GCSWEEPCOST</SPAN></A>     ((sizeof(<A HREF="lobject.h.html#TString">TString</A>) + 4) / 4)
+
+/* maximum number of elements to sweep in each single step */
+#define <A NAME="GCSWEEPMAX"><SPAN CLASS="definition">GCSWEEPMAX</SPAN></A>      (<A HREF="llimits.h.html#cast_int">cast_int</A>((<A HREF="lgc.h.html#GCSTEPSIZE">GCSTEPSIZE</A> / <A HREF="lgc.c.html#GCSWEEPCOST">GCSWEEPCOST</A>) / 4))
+
+/* cost of calling one finalizer */
+#define <A NAME="GCFINALIZECOST"><SPAN CLASS="definition">GCFINALIZECOST</SPAN></A>  <A HREF="lgc.c.html#GCSWEEPCOST">GCSWEEPCOST</A>
+
+
+/*
+** macro to adjust 'stepmul': 'stepmul' is actually used like
+** 'stepmul / <A HREF="lgc.c.html#STEPMULADJ">STEPMULADJ</A>' (value chosen by tests)
+*/
+#define <A NAME="STEPMULADJ"><SPAN CLASS="definition">STEPMULADJ</SPAN></A>              200
+
+
+/*
+** macro to adjust 'pause': 'pause' is actually used like
+** 'pause / <A HREF="lgc.c.html#PAUSEADJ">PAUSEADJ</A>' (value chosen by tests)
+*/
+#define <A NAME="PAUSEADJ"><SPAN CLASS="definition">PAUSEADJ</SPAN></A>                100
+
+
+/*
+** '<A HREF="lgc.c.html#makewhite">makewhite</A>' erases all color bits then sets only the current white
+** bit
+*/
+#define <A NAME="maskcolors"><SPAN CLASS="definition">maskcolors</SPAN></A>      (~(<A HREF="lgc.h.html#bitmask">bitmask</A>(<A HREF="lgc.h.html#BLACKBIT">BLACKBIT</A>) | <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>))
+#define <A NAME="makewhite"><SPAN CLASS="definition">makewhite</SPAN></A>(g,x)  \
+ (x-&gt;marked = <A HREF="llimits.h.html#cast_byte">cast_byte</A>((x-&gt;marked &amp; <A HREF="lgc.c.html#maskcolors">maskcolors</A>) | <A HREF="lgc.h.html#luaC_white">luaC_white</A>(g)))
+
+#define <A NAME="white2gray"><SPAN CLASS="definition">white2gray</SPAN></A>(x)   <A HREF="lgc.h.html#resetbits">resetbits</A>(x-&gt;marked, <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+#define <A NAME="black2gray"><SPAN CLASS="definition">black2gray</SPAN></A>(x)   <A HREF="lgc.h.html#resetbit">resetbit</A>(x-&gt;marked, <A HREF="lgc.h.html#BLACKBIT">BLACKBIT</A>)
+
+
+#define <A NAME="valiswhite"><SPAN CLASS="definition">valiswhite</SPAN></A>(x)   (<A HREF="lobject.h.html#iscollectable">iscollectable</A>(x) &amp;&amp; <A HREF="lgc.h.html#iswhite">iswhite</A>(<A HREF="lobject.h.html#gcvalue">gcvalue</A>(x)))
+
+#define <A NAME="checkdeadkey"><SPAN CLASS="definition">checkdeadkey</SPAN></A>(n) <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lobject.h.html#ttisdeadkey">ttisdeadkey</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n)) || <A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(n)))
+
+
+#define <A NAME="checkconsistency"><SPAN CLASS="definition">checkconsistency</SPAN></A>(obj)  \
+  <A HREF="llimits.h.html#lua_longassert">lua_longassert</A>(!<A HREF="lobject.h.html#iscollectable">iscollectable</A>(obj) || <A HREF="lobject.h.html#righttt">righttt</A>(obj))
+
+
+#define <A NAME="markvalue"><SPAN CLASS="definition">markvalue</SPAN></A>(g,o) { <A HREF="lgc.c.html#checkconsistency">checkconsistency</A>(o); \
+  if (<A HREF="lgc.c.html#valiswhite">valiswhite</A>(o)) <A HREF="lgc.c.html#reallymarkobject">reallymarkobject</A>(g,<A HREF="lobject.h.html#gcvalue">gcvalue</A>(o)); }
+
+#define <A NAME="markobject"><SPAN CLASS="definition">markobject</SPAN></A>(g,t) { if (<A HREF="lgc.h.html#iswhite">iswhite</A>(t)) <A HREF="lgc.c.html#reallymarkobject">reallymarkobject</A>(g, <A HREF="lstate.h.html#obj2gco">obj2gco</A>(t)); }
+
+/*
+** mark an object that can be NULL (either because it is really optional,
+** or it was stripped as debug info, or inside an uncompleted structure)
+*/
+#define <A NAME="markobjectN"><SPAN CLASS="definition">markobjectN</SPAN></A>(g,t)        { if (t) <A HREF="lgc.c.html#markobject">markobject</A>(g,t); }
+
+static void <A HREF="lgc.c.html#reallymarkobject">reallymarkobject</A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#GCObject">GCObject</A> *o);
+
+
+/*
+** {======================================================
+** Generic functions
+** =======================================================
+*/
+
+
+/*
+** one after last element in a hash array
+*/
+#define <A NAME="gnodelast"><SPAN CLASS="definition">gnodelast</SPAN></A>(h)    <A HREF="ltable.h.html#gnode">gnode</A>(h, <A HREF="llimits.h.html#cast">cast</A>(size_t, <A HREF="lobject.h.html#sizenode">sizenode</A>(h)))
+
+
+/*
+** link collectable object 'o' into list pointed by 'p'
+*/
+#define <A NAME="linkgclist"><SPAN CLASS="definition">linkgclist</SPAN></A>(o,p) ((o)-&gt;gclist = (p), (p) = <A HREF="lstate.h.html#obj2gco">obj2gco</A>(o))
+
+
+/*
+** If key is not marked, mark its entry as dead. This allows key to be
+** collected, but keeps its entry in the table.  A dead node is needed
+** when Lua looks up for a key (it may be part of a chain) and when
+** traversing a weak table (key might be removed from the table during
+** traversal). Other places never manipulate dead keys, because its
+** associated nil value is enough to signal that the entry is logically
+** empty.
+*/
+static void <A NAME="removeentry"><SPAN CLASS="definition">removeentry</SPAN></A> (<A HREF="lobject.h.html#Node">Node</A> *n) {
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(n)));
+  if (<A HREF="lgc.c.html#valiswhite">valiswhite</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n)))
+    <A HREF="lobject.h.html#setdeadvalue">setdeadvalue</A>(<A HREF="ltable.h.html#wgkey">wgkey</A>(n));  /* unused and unmarked key; remove it */
+}
+
+
+/*
+** tells whether a key or value can be cleared from a weak
+** table. Non-collectable objects are never removed from weak
+** tables. Strings behave as 'values', so are never removed too. for
+** other objects: if really collected, cannot keep them; for objects
+** being finalized, keep them in keys, but not in values
+*/
+static int <A NAME="iscleared"><SPAN CLASS="definition">iscleared</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, const <A HREF="lobject.h.html#TValue">TValue</A> *o) {
+  if (!<A HREF="lobject.h.html#iscollectable">iscollectable</A>(o)) return 0;
+  else if (<A HREF="lobject.h.html#ttisstring">ttisstring</A>(o)) {
+    <A HREF="lgc.c.html#markobject">markobject</A>(g, <A HREF="lobject.h.html#tsvalue">tsvalue</A>(o));  /* strings are 'values', so are never weak */
+    return 0;
+  }
+  else return <A HREF="lgc.h.html#iswhite">iswhite</A>(<A HREF="lobject.h.html#gcvalue">gcvalue</A>(o));
+}
+
+
+/*
+** barrier that moves collector forward, that is, mark the white object
+** being pointed by a black object. (If in sweep phase, clear the black
+** object to white [sweep it] to avoid other barrier calls for this
+** same object.)
+*/
+void <A NAME="luaC_barrier_"><SPAN CLASS="definition">luaC_barrier_</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> *o, <A HREF="lobject.h.html#GCObject">GCObject</A> *v) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lgc.h.html#isblack">isblack</A>(o) &amp;&amp; <A HREF="lgc.h.html#iswhite">iswhite</A>(v) &amp;&amp; !<A HREF="lgc.h.html#isdead">isdead</A>(g, v) &amp;&amp; !<A HREF="lgc.h.html#isdead">isdead</A>(g, o));
+  if (<A HREF="lgc.h.html#keepinvariant">keepinvariant</A>(g))  /* must keep invariant? */
+    <A HREF="lgc.c.html#reallymarkobject">reallymarkobject</A>(g, v);  /* restore invariant */
+  else {  /* sweep phase */
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lgc.h.html#issweepphase">issweepphase</A>(g));
+    <A HREF="lgc.c.html#makewhite">makewhite</A>(g, o);  /* mark <A HREF="lua.c.html#main">main</A> obj. as white to avoid other barriers */
+  }
+}
+
+
+/*
+** barrier that moves collector backward, that is, mark the black object
+** pointing to a white object as gray again.
+*/
+void <A NAME="luaC_barrierback_"><SPAN CLASS="definition">luaC_barrierback_</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *t) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lgc.h.html#isblack">isblack</A>(t) &amp;&amp; !<A HREF="lgc.h.html#isdead">isdead</A>(g, t));
+  <A HREF="lgc.c.html#black2gray">black2gray</A>(t);  /* make table gray (again) */
+  <A HREF="lgc.c.html#linkgclist">linkgclist</A>(t, g-&gt;grayagain);
+}
+
+
+/*
+** barrier for assignments to closed upvalues. Because upvalues are
+** shared among closures, it is impossible to know the color of all
+** closures pointing to it. So, we assume that the object being assigned
+** must be marked.
+*/
+void <A NAME="luaC_upvalbarrier_"><SPAN CLASS="definition">luaC_upvalbarrier_</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o = <A HREF="lobject.h.html#gcvalue">gcvalue</A>(uv-&gt;v);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lfunc.h.html#upisopen">upisopen</A>(uv));  /* ensured by macro <A HREF="lgc.h.html#luaC_upvalbarrier">luaC_upvalbarrier</A> */
+  if (<A HREF="lgc.h.html#keepinvariant">keepinvariant</A>(g))
+    <A HREF="lgc.c.html#markobject">markobject</A>(g, o);
+}
+
+
+void <A NAME="luaC_fix"><SPAN CLASS="definition">luaC_fix</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> *o) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;allgc == o);  /* object must be 1st in 'allgc' list! */
+  <A HREF="lgc.c.html#white2gray">white2gray</A>(o);  /* they will be gray forever */
+  g-&gt;allgc = o-&gt;next;  /* remove object from 'allgc' list */
+  o-&gt;next = g-&gt;fixedgc;  /* link it to 'fixedgc' list */
+  g-&gt;fixedgc = o;
+}
+
+
+/*
+** create a new collectable object (with given type and size) and link
+** it to 'allgc' list.
+*/
+<A HREF="lobject.h.html#GCObject">GCObject</A> *<A NAME="luaC_newobj"><SPAN CLASS="definition">luaC_newobj</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int tt, size_t sz) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#GCObject">GCObject</A> *, <A HREF="lmem.h.html#luaM_newobject">luaM_newobject</A>(L, <A HREF="lobject.h.html#novariant">novariant</A>(tt), sz));
+  o-&gt;marked = <A HREF="lgc.h.html#luaC_white">luaC_white</A>(g);
+  o-&gt;tt = tt;
+  o-&gt;next = g-&gt;allgc;
+  g-&gt;allgc = o;
+  return o;
+}
+
+/* }====================================================== */
+
+
+
+/*
+** {======================================================
+** Mark functions
+** =======================================================
+*/
+
+
+/*
+** mark an object. Userdata, strings, and closed upvalues are visited
+** and turned black here. Other objects are marked gray and added
+** to appropriate list to be visited (and turned black) later. (Open
+** upvalues are already linked in 'headuv' list.)
+*/
+static void <A NAME="reallymarkobject"><SPAN CLASS="definition">reallymarkobject</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#GCObject">GCObject</A> *o) {
+ reentry:
+  <A HREF="lgc.c.html#white2gray">white2gray</A>(o);
+  switch (o-&gt;tt) {
+    case <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>: {
+      <A HREF="lgc.h.html#gray2black">gray2black</A>(o);
+      g-&gt;GCmemtrav += <A HREF="lstring.h.html#sizelstring">sizelstring</A>(<A HREF="lstate.h.html#gco2ts">gco2ts</A>(o)-&gt;shrlen);
+      break;
+    }
+    case <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>: {
+      <A HREF="lgc.h.html#gray2black">gray2black</A>(o);
+      g-&gt;GCmemtrav += <A HREF="lstring.h.html#sizelstring">sizelstring</A>(<A HREF="lstate.h.html#gco2ts">gco2ts</A>(o)-&gt;u.lnglen);
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>: {
+      <A HREF="lobject.h.html#TValue">TValue</A> <A HREF="lobject.h.html#uvalue">uvalue</A>;
+      <A HREF="lgc.c.html#markobjectN">markobjectN</A>(g, <A HREF="lstate.h.html#gco2u">gco2u</A>(o)-&gt;metatable);  /* mark its metatable */
+      <A HREF="lgc.h.html#gray2black">gray2black</A>(o);
+      g-&gt;GCmemtrav += <A HREF="lstring.h.html#sizeudata">sizeudata</A>(<A HREF="lstate.h.html#gco2u">gco2u</A>(o));
+      <A HREF="lobject.h.html#getuservalue">getuservalue</A>(g-&gt;mainthread, <A HREF="lstate.h.html#gco2u">gco2u</A>(o), &amp;<A HREF="lobject.h.html#uvalue">uvalue</A>);
+      if (<A HREF="lgc.c.html#valiswhite">valiswhite</A>(&amp;<A HREF="lobject.h.html#uvalue">uvalue</A>)) {  /* <A HREF="lgc.c.html#markvalue">markvalue</A>(g, &amp;<A HREF="lobject.h.html#uvalue">uvalue</A>); */
+        o = <A HREF="lobject.h.html#gcvalue">gcvalue</A>(&amp;<A HREF="lobject.h.html#uvalue">uvalue</A>);
+        goto reentry;
+      }
+      break;
+    }
+    case <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>: {
+      <A HREF="lgc.c.html#linkgclist">linkgclist</A>(<A HREF="lstate.h.html#gco2lcl">gco2lcl</A>(o), g-&gt;gray);
+      break;
+    }
+    case <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>: {
+      <A HREF="lgc.c.html#linkgclist">linkgclist</A>(<A HREF="lstate.h.html#gco2ccl">gco2ccl</A>(o), g-&gt;gray);
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: {
+      <A HREF="lgc.c.html#linkgclist">linkgclist</A>(<A HREF="lstate.h.html#gco2t">gco2t</A>(o), g-&gt;gray);
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_TTHREAD">LUA_TTHREAD</A>: {
+      <A HREF="lgc.c.html#linkgclist">linkgclist</A>(<A HREF="lstate.h.html#gco2th">gco2th</A>(o), g-&gt;gray);
+      break;
+    }
+    case <A HREF="lobject.h.html#LUA_TPROTO">LUA_TPROTO</A>: {
+      <A HREF="lgc.c.html#linkgclist">linkgclist</A>(<A HREF="lstate.h.html#gco2p">gco2p</A>(o), g-&gt;gray);
+      break;
+    }
+    default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0); break;
+  }
+}
+
+
+/*
+** mark metamethods for basic types
+*/
+static void <A NAME="markmt"><SPAN CLASS="definition">markmt</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  int i;
+  for (i=0; i &lt; <A HREF="lua.h.html#LUA_NUMTAGS">LUA_NUMTAGS</A>; i++)
+    <A HREF="lgc.c.html#markobjectN">markobjectN</A>(g, g-&gt;mt[i]);
+}
+
+
+/*
+** mark all objects in list of being-finalized
+*/
+static void <A NAME="markbeingfnz"><SPAN CLASS="definition">markbeingfnz</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o;
+  for (o = g-&gt;tobefnz; o != NULL; o = o-&gt;next)
+    <A HREF="lgc.c.html#markobject">markobject</A>(g, o);
+}
+
+
+/*
+** Mark all values stored in marked open upvalues from non-marked threads.
+** (Values from marked threads were already marked when traversing the
+** thread.) Remove from the list threads that no longer have upvalues and
+** not-marked threads.
+*/
+static void <A NAME="remarkupvals"><SPAN CLASS="definition">remarkupvals</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *thread;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> **p = &amp;g-&gt;twups;
+  while ((thread = *p) != NULL) {
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lgc.h.html#isblack">isblack</A>(thread));  /* threads are never black */
+    if (<A HREF="lgc.h.html#isgray">isgray</A>(thread) &amp;&amp; thread-&gt;openupval != NULL)
+      p = &amp;thread-&gt;twups;  /* keep marked thread with upvalues in the list */
+    else {  /* thread is not marked or without upvalues */
+      <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv;
+      *p = thread-&gt;twups;  /* remove thread from the list */
+      thread-&gt;twups = thread;  /* mark that it is out of list */
+      for (uv = thread-&gt;openupval; uv != NULL; uv = uv-&gt;u.open.next) {
+        if (uv-&gt;u.open.touched) {
+          <A HREF="lgc.c.html#markvalue">markvalue</A>(g, uv-&gt;v);  /* remark upvalue's value */
+          uv-&gt;u.open.touched = 0;
+        }
+      }
+    }
+  }
+}
+
+
+/*
+** mark root set and reset all gray lists, to start a new collection
+*/
+static void <A NAME="restartcollection"><SPAN CLASS="definition">restartcollection</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  g-&gt;gray = g-&gt;grayagain = NULL;
+  g-&gt;weak = g-&gt;allweak = g-&gt;ephemeron = NULL;
+  <A HREF="lgc.c.html#markobject">markobject</A>(g, g-&gt;mainthread);
+  <A HREF="lgc.c.html#markvalue">markvalue</A>(g, &amp;g-&gt;l_registry);
+  <A HREF="lgc.c.html#markmt">markmt</A>(g);
+  <A HREF="lgc.c.html#markbeingfnz">markbeingfnz</A>(g);  /* mark any finalizing object left from previous cycle */
+}
+
+/* }====================================================== */
+
+
+/*
+** {======================================================
+** Traverse functions
+** =======================================================
+*/
+
+/*
+** Traverse a table with weak values and link it to proper list. During
+** propagate phase, keep it in 'grayagain' list, to be revisited in the
+** <A HREF="lgc.c.html#atomic">atomic</A> phase. In the <A HREF="lgc.c.html#atomic">atomic</A> phase, if table has any white value,
+** put it in 'weak' list, to be cleared.
+*/
+static void <A NAME="traverseweakvalue"><SPAN CLASS="definition">traverseweakvalue</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#Table">Table</A> *h) {
+  <A HREF="lobject.h.html#Node">Node</A> *n, *limit = <A HREF="lgc.c.html#gnodelast">gnodelast</A>(h);
+  /* if there is array part, assume it may have white values (it is not
+     worth traversing it now just to check) */
+  int hasclears = (h-&gt;sizearray &gt; 0);
+  for (n = <A HREF="ltable.h.html#gnode">gnode</A>(h, 0); n &lt; limit; n++) {  /* traverse hash part */
+    <A HREF="lgc.c.html#checkdeadkey">checkdeadkey</A>(n);
+    if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(n)))  /* entry is empty? */
+      <A HREF="lgc.c.html#removeentry">removeentry</A>(n);  /* remove it */
+    else {
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n)));
+      <A HREF="lgc.c.html#markvalue">markvalue</A>(g, <A HREF="ltable.h.html#gkey">gkey</A>(n));  /* mark key */
+      if (!hasclears &amp;&amp; <A HREF="lgc.c.html#iscleared">iscleared</A>(g, <A HREF="ltable.h.html#gval">gval</A>(n)))  /* is there a white value? */
+        hasclears = 1;  /* table will have to be cleared */
+    }
+  }
+  if (g-&gt;gcstate == <A HREF="lgc.h.html#GCSpropagate">GCSpropagate</A>)
+    <A HREF="lgc.c.html#linkgclist">linkgclist</A>(h, g-&gt;grayagain);  /* must retraverse it in <A HREF="lgc.c.html#atomic">atomic</A> phase */
+  else if (hasclears)
+    <A HREF="lgc.c.html#linkgclist">linkgclist</A>(h, g-&gt;weak);  /* has to be cleared later */
+}
+
+
+/*
+** Traverse an ephemeron table and link it to proper list. Returns true
+** iff any object was marked during this traversal (which implies that
+** convergence has to continue). During propagation phase, keep table
+** in 'grayagain' list, to be visited again in the <A HREF="lgc.c.html#atomic">atomic</A> phase. In
+** the <A HREF="lgc.c.html#atomic">atomic</A> phase, if table has any white-&gt;white entry, it has to
+** be revisited during ephemeron convergence (as that key may turn
+** black). Otherwise, if it has any white key, table has to be cleared
+** (in the <A HREF="lgc.c.html#atomic">atomic</A> phase).
+*/
+static int <A NAME="traverseephemeron"><SPAN CLASS="definition">traverseephemeron</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#Table">Table</A> *h) {
+  int marked = 0;  /* true if an object is marked in this traversal */
+  int hasclears = 0;  /* true if table has white keys */
+  int hasww = 0;  /* true if table has entry "white-key -&gt; white-value" */
+  <A HREF="lobject.h.html#Node">Node</A> *n, *limit = <A HREF="lgc.c.html#gnodelast">gnodelast</A>(h);
+  unsigned int i;
+  /* traverse array part */
+  for (i = 0; i &lt; h-&gt;sizearray; i++) {
+    if (<A HREF="lgc.c.html#valiswhite">valiswhite</A>(&amp;h-&gt;array[i])) {
+      marked = 1;
+      <A HREF="lgc.c.html#reallymarkobject">reallymarkobject</A>(g, <A HREF="lobject.h.html#gcvalue">gcvalue</A>(&amp;h-&gt;array[i]));
+    }
+  }
+  /* traverse hash part */
+  for (n = <A HREF="ltable.h.html#gnode">gnode</A>(h, 0); n &lt; limit; n++) {
+    <A HREF="lgc.c.html#checkdeadkey">checkdeadkey</A>(n);
+    if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(n)))  /* entry is empty? */
+      <A HREF="lgc.c.html#removeentry">removeentry</A>(n);  /* remove it */
+    else if (<A HREF="lgc.c.html#iscleared">iscleared</A>(g, <A HREF="ltable.h.html#gkey">gkey</A>(n))) {  /* key is not marked (yet)? */
+      hasclears = 1;  /* table must be cleared */
+      if (<A HREF="lgc.c.html#valiswhite">valiswhite</A>(<A HREF="ltable.h.html#gval">gval</A>(n)))  /* value not marked yet? */
+        hasww = 1;  /* white-white entry */
+    }
+    else if (<A HREF="lgc.c.html#valiswhite">valiswhite</A>(<A HREF="ltable.h.html#gval">gval</A>(n))) {  /* value not marked yet? */
+      marked = 1;
+      <A HREF="lgc.c.html#reallymarkobject">reallymarkobject</A>(g, <A HREF="lobject.h.html#gcvalue">gcvalue</A>(<A HREF="ltable.h.html#gval">gval</A>(n)));  /* mark it now */
+    }
+  }
+  /* link table into proper list */
+  if (g-&gt;gcstate == <A HREF="lgc.h.html#GCSpropagate">GCSpropagate</A>)
+    <A HREF="lgc.c.html#linkgclist">linkgclist</A>(h, g-&gt;grayagain);  /* must retraverse it in <A HREF="lgc.c.html#atomic">atomic</A> phase */
+  else if (hasww)  /* table has white-&gt;white entries? */
+    <A HREF="lgc.c.html#linkgclist">linkgclist</A>(h, g-&gt;ephemeron);  /* have to propagate again */
+  else if (hasclears)  /* table has white keys? */
+    <A HREF="lgc.c.html#linkgclist">linkgclist</A>(h, g-&gt;allweak);  /* may have to clean white keys */
+  return marked;
+}
+
+
+static void <A NAME="traversestrongtable"><SPAN CLASS="definition">traversestrongtable</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#Table">Table</A> *h) {
+  <A HREF="lobject.h.html#Node">Node</A> *n, *limit = <A HREF="lgc.c.html#gnodelast">gnodelast</A>(h);
+  unsigned int i;
+  for (i = 0; i &lt; h-&gt;sizearray; i++)  /* traverse array part */
+    <A HREF="lgc.c.html#markvalue">markvalue</A>(g, &amp;h-&gt;array[i]);
+  for (n = <A HREF="ltable.h.html#gnode">gnode</A>(h, 0); n &lt; limit; n++) {  /* traverse hash part */
+    <A HREF="lgc.c.html#checkdeadkey">checkdeadkey</A>(n);
+    if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(n)))  /* entry is empty? */
+      <A HREF="lgc.c.html#removeentry">removeentry</A>(n);  /* remove it */
+    else {
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gkey">gkey</A>(n)));
+      <A HREF="lgc.c.html#markvalue">markvalue</A>(g, <A HREF="ltable.h.html#gkey">gkey</A>(n));  /* mark key */
+      <A HREF="lgc.c.html#markvalue">markvalue</A>(g, <A HREF="ltable.h.html#gval">gval</A>(n));  /* mark value */
+    }
+  }
+}
+
+
+static <A HREF="llimits.h.html#lu_mem">lu_mem</A> <A NAME="traversetable"><SPAN CLASS="definition">traversetable</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#Table">Table</A> *h) {
+  const char *weakkey, *weakvalue;
+  const <A HREF="lobject.h.html#TValue">TValue</A> *mode = <A HREF="ltm.h.html#gfasttm">gfasttm</A>(g, h-&gt;metatable, <A HREF="ltm.h.html#TM_MODE">TM_MODE</A>);
+  <A HREF="lgc.c.html#markobjectN">markobjectN</A>(g, h-&gt;metatable);
+  if (mode &amp;&amp; <A HREF="lobject.h.html#ttisstring">ttisstring</A>(mode) &amp;&amp;  /* is there a weak mode? */
+      ((weakkey = strchr(<A HREF="lobject.h.html#svalue">svalue</A>(mode), 'k')),
+       (weakvalue = strchr(<A HREF="lobject.h.html#svalue">svalue</A>(mode), 'v')),
+       (weakkey || weakvalue))) {  /* is really weak? */
+    <A HREF="lgc.c.html#black2gray">black2gray</A>(h);  /* keep table gray */
+    if (!weakkey)  /* strong keys? */
+      <A HREF="lgc.c.html#traverseweakvalue">traverseweakvalue</A>(g, h);
+    else if (!weakvalue)  /* strong values? */
+      <A HREF="lgc.c.html#traverseephemeron">traverseephemeron</A>(g, h);
+    else  /* all weak */
+      <A HREF="lgc.c.html#linkgclist">linkgclist</A>(h, g-&gt;allweak);  /* nothing to traverse now */
+  }
+  else  /* not weak */
+    <A HREF="lgc.c.html#traversestrongtable">traversestrongtable</A>(g, h);
+  return sizeof(<A HREF="lobject.h.html#Table">Table</A>) + sizeof(<A HREF="lobject.h.html#TValue">TValue</A>) * h-&gt;sizearray +
+                         sizeof(<A HREF="lobject.h.html#Node">Node</A>) * <A HREF="llimits.h.html#cast">cast</A>(size_t, <A HREF="lobject.h.html#sizenode">sizenode</A>(h));
+}
+
+
+/*
+** Traverse a prototype. (While a prototype is being build, its
+** arrays can be larger than needed; the extra slots are filled with
+** NULL, so the use of '<A HREF="lgc.c.html#markobjectN">markobjectN</A>')
+*/
+static int <A NAME="traverseproto"><SPAN CLASS="definition">traverseproto</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#Proto">Proto</A> *f) {
+  int i;
+  if (f-&gt;cache &amp;&amp; <A HREF="lgc.h.html#iswhite">iswhite</A>(f-&gt;cache))
+    f-&gt;cache = NULL;  /* allow cache to be collected */
+  <A HREF="lgc.c.html#markobjectN">markobjectN</A>(g, f-&gt;source);
+  for (i = 0; i &lt; f-&gt;sizek; i++)  /* mark literals */
+    <A HREF="lgc.c.html#markvalue">markvalue</A>(g, &amp;f-&gt;k[i]);
+  for (i = 0; i &lt; f-&gt;sizeupvalues; i++)  /* mark upvalue names */
+    <A HREF="lgc.c.html#markobjectN">markobjectN</A>(g, f-&gt;upvalues[i].name);
+  for (i = 0; i &lt; f-&gt;sizep; i++)  /* mark nested protos */
+    <A HREF="lgc.c.html#markobjectN">markobjectN</A>(g, f-&gt;p[i]);
+  for (i = 0; i &lt; f-&gt;sizelocvars; i++)  /* mark local-variable names */
+    <A HREF="lgc.c.html#markobjectN">markobjectN</A>(g, f-&gt;locvars[i].varname);
+  return sizeof(<A HREF="lobject.h.html#Proto">Proto</A>) + sizeof(<A HREF="llimits.h.html#Instruction">Instruction</A>) * f-&gt;sizecode +
+                         sizeof(<A HREF="lobject.h.html#Proto">Proto</A> *) * f-&gt;sizep +
+                         sizeof(<A HREF="lobject.h.html#TValue">TValue</A>) * f-&gt;sizek +
+                         sizeof(int) * f-&gt;sizelineinfo +
+                         sizeof(<A HREF="lobject.h.html#LocVar">LocVar</A>) * f-&gt;sizelocvars +
+                         sizeof(<A HREF="lobject.h.html#Upvaldesc">Upvaldesc</A>) * f-&gt;sizeupvalues;
+}
+
+
+static <A HREF="llimits.h.html#lu_mem">lu_mem</A> <A NAME="traverseCclosure"><SPAN CLASS="definition">traverseCclosure</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#CClosure">CClosure</A> *cl) {
+  int i;
+  for (i = 0; i &lt; cl-&gt;nupvalues; i++)  /* mark its upvalues */
+    <A HREF="lgc.c.html#markvalue">markvalue</A>(g, &amp;cl-&gt;upvalue[i]);
+  return <A HREF="lfunc.h.html#sizeCclosure">sizeCclosure</A>(cl-&gt;nupvalues);
+}
+
+/*
+** open upvalues point to values in a thread, so those values should
+** be marked when the thread is traversed except in the <A HREF="lgc.c.html#atomic">atomic</A> phase
+** (because then the value cannot be changed by the thread and the
+** thread may not be traversed again)
+*/
+static <A HREF="llimits.h.html#lu_mem">lu_mem</A> <A NAME="traverseLclosure"><SPAN CLASS="definition">traverseLclosure</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#LClosure">LClosure</A> *cl) {
+  int i;
+  <A HREF="lgc.c.html#markobjectN">markobjectN</A>(g, cl-&gt;p);  /* mark its prototype */
+  for (i = 0; i &lt; cl-&gt;nupvalues; i++) {  /* mark its upvalues */
+    <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv = cl-&gt;upvals[i];
+    if (uv != NULL) {
+      if (<A HREF="lfunc.h.html#upisopen">upisopen</A>(uv) &amp;&amp; g-&gt;gcstate != <A HREF="lgc.c.html#GCSinsideatomic">GCSinsideatomic</A>)
+        uv-&gt;u.open.touched = 1;  /* can be marked in '<A HREF="lgc.c.html#remarkupvals">remarkupvals</A>' */
+      else
+        <A HREF="lgc.c.html#markvalue">markvalue</A>(g, uv-&gt;v);
+    }
+  }
+  return <A HREF="lfunc.h.html#sizeLclosure">sizeLclosure</A>(cl-&gt;nupvalues);
+}
+
+
+static <A HREF="llimits.h.html#lu_mem">lu_mem</A> <A NAME="traversethread"><SPAN CLASS="definition">traversethread</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lstate.h.html#lua_State">lua_State</A> *th) {
+  <A HREF="lobject.h.html#StkId">StkId</A> o = th-&gt;stack;
+  if (o == NULL)
+    return 1;  /* stack not completely built yet */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;gcstate == <A HREF="lgc.c.html#GCSinsideatomic">GCSinsideatomic</A> ||
+             th-&gt;openupval == NULL || <A HREF="lfunc.h.html#isintwups">isintwups</A>(th));
+  for (; o &lt; th-&gt;top; o++)  /* mark live elements in the stack */
+    <A HREF="lgc.c.html#markvalue">markvalue</A>(g, o);
+  if (g-&gt;gcstate == <A HREF="lgc.c.html#GCSinsideatomic">GCSinsideatomic</A>) {  /* final traversal? */
+    <A HREF="lobject.h.html#StkId">StkId</A> lim = th-&gt;stack + th-&gt;stacksize;  /* real end of stack */
+    for (; o &lt; lim; o++)  /* clear not-marked stack slice */
+      <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(o);
+    /* '<A HREF="lgc.c.html#remarkupvals">remarkupvals</A>' may have removed thread from 'twups' list */ 
+    if (!<A HREF="lfunc.h.html#isintwups">isintwups</A>(th) &amp;&amp; th-&gt;openupval != NULL) {
+      th-&gt;twups = g-&gt;twups;  /* link it back to the list */
+      g-&gt;twups = th;
+    }
+  }
+  else if (g-&gt;gckind != <A HREF="lstate.h.html#KGC_EMERGENCY">KGC_EMERGENCY</A>)
+    <A HREF="ldo.c.html#luaD_shrinkstack">luaD_shrinkstack</A>(th); /* do not change stack in emergency cycle */
+  return (sizeof(<A HREF="lstate.h.html#lua_State">lua_State</A>) + sizeof(<A HREF="lobject.h.html#TValue">TValue</A>) * th-&gt;stacksize +
+          sizeof(<A HREF="lstate.h.html#CallInfo">CallInfo</A>) * th-&gt;nci);
+}
+
+
+/*
+** traverse one gray object, turning it to black (except for threads,
+** which are always gray).
+*/
+static void <A NAME="propagatemark"><SPAN CLASS="definition">propagatemark</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  <A HREF="llimits.h.html#lu_mem">lu_mem</A> size;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o = g-&gt;gray;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lgc.h.html#isgray">isgray</A>(o));
+  <A HREF="lgc.h.html#gray2black">gray2black</A>(o);
+  switch (o-&gt;tt) {
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: {
+      <A HREF="lobject.h.html#Table">Table</A> *h = <A HREF="lstate.h.html#gco2t">gco2t</A>(o);
+      g-&gt;gray = h-&gt;gclist;  /* remove from 'gray' list */
+      size = <A HREF="lgc.c.html#traversetable">traversetable</A>(g, h);
+      break;
+    }
+    case <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>: {
+      <A HREF="lobject.h.html#LClosure">LClosure</A> *cl = <A HREF="lstate.h.html#gco2lcl">gco2lcl</A>(o);
+      g-&gt;gray = cl-&gt;gclist;  /* remove from 'gray' list */
+      size = <A HREF="lgc.c.html#traverseLclosure">traverseLclosure</A>(g, cl);
+      break;
+    }
+    case <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>: {
+      <A HREF="lobject.h.html#CClosure">CClosure</A> *cl = <A HREF="lstate.h.html#gco2ccl">gco2ccl</A>(o);
+      g-&gt;gray = cl-&gt;gclist;  /* remove from 'gray' list */
+      size = <A HREF="lgc.c.html#traverseCclosure">traverseCclosure</A>(g, cl);
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_TTHREAD">LUA_TTHREAD</A>: {
+      <A HREF="lstate.h.html#lua_State">lua_State</A> *th = <A HREF="lstate.h.html#gco2th">gco2th</A>(o);
+      g-&gt;gray = th-&gt;gclist;  /* remove from 'gray' list */
+      <A HREF="lgc.c.html#linkgclist">linkgclist</A>(th, g-&gt;grayagain);  /* insert into 'grayagain' list */
+      <A HREF="lgc.c.html#black2gray">black2gray</A>(o);
+      size = <A HREF="lgc.c.html#traversethread">traversethread</A>(g, th);
+      break;
+    }
+    case <A HREF="lobject.h.html#LUA_TPROTO">LUA_TPROTO</A>: {
+      <A HREF="lobject.h.html#Proto">Proto</A> *p = <A HREF="lstate.h.html#gco2p">gco2p</A>(o);
+      g-&gt;gray = p-&gt;gclist;  /* remove from 'gray' list */
+      size = <A HREF="lgc.c.html#traverseproto">traverseproto</A>(g, p);
+      break;
+    }
+    default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0); return;
+  }
+  g-&gt;GCmemtrav += size;
+}
+
+
+static void <A NAME="propagateall"><SPAN CLASS="definition">propagateall</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  while (g-&gt;gray) <A HREF="lgc.c.html#propagatemark">propagatemark</A>(g);
+}
+
+
+static void <A NAME="convergeephemerons"><SPAN CLASS="definition">convergeephemerons</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  int changed;
+  do {
+    <A HREF="lobject.h.html#GCObject">GCObject</A> *w;
+    <A HREF="lobject.h.html#GCObject">GCObject</A> *next = g-&gt;ephemeron;  /* get ephemeron list */
+    g-&gt;ephemeron = NULL;  /* tables may return to this list when traversed */
+    changed = 0;
+    while ((w = next) != NULL) {
+      next = <A HREF="lstate.h.html#gco2t">gco2t</A>(w)-&gt;gclist;
+      if (<A HREF="lgc.c.html#traverseephemeron">traverseephemeron</A>(g, <A HREF="lstate.h.html#gco2t">gco2t</A>(w))) {  /* traverse marked some value? */
+        <A HREF="lgc.c.html#propagateall">propagateall</A>(g);  /* propagate changes */
+        changed = 1;  /* will have to revisit all ephemeron tables */
+      }
+    }
+  } while (changed);
+}
+
+/* }====================================================== */
+
+
+/*
+** {======================================================
+** Sweep Functions
+** =======================================================
+*/
+
+
+/*
+** clear entries with unmarked keys from all weaktables in list 'l' up
+** to element 'f'
+*/
+static void <A NAME="clearkeys"><SPAN CLASS="definition">clearkeys</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#GCObject">GCObject</A> *l, <A HREF="lobject.h.html#GCObject">GCObject</A> *f) {
+  for (; l != f; l = <A HREF="lstate.h.html#gco2t">gco2t</A>(l)-&gt;gclist) {
+    <A HREF="lobject.h.html#Table">Table</A> *h = <A HREF="lstate.h.html#gco2t">gco2t</A>(l);
+    <A HREF="lobject.h.html#Node">Node</A> *n, *limit = <A HREF="lgc.c.html#gnodelast">gnodelast</A>(h);
+    for (n = <A HREF="ltable.h.html#gnode">gnode</A>(h, 0); n &lt; limit; n++) {
+      if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(n)) &amp;&amp; (<A HREF="lgc.c.html#iscleared">iscleared</A>(g, <A HREF="ltable.h.html#gkey">gkey</A>(n)))) {
+        <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(<A HREF="ltable.h.html#gval">gval</A>(n));  /* remove value ... */
+        <A HREF="lgc.c.html#removeentry">removeentry</A>(n);  /* and remove entry from table */
+      }
+    }
+  }
+}
+
+
+/*
+** clear entries with unmarked values from all weaktables in list 'l' up
+** to element 'f'
+*/
+static void <A NAME="clearvalues"><SPAN CLASS="definition">clearvalues</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, <A HREF="lobject.h.html#GCObject">GCObject</A> *l, <A HREF="lobject.h.html#GCObject">GCObject</A> *f) {
+  for (; l != f; l = <A HREF="lstate.h.html#gco2t">gco2t</A>(l)-&gt;gclist) {
+    <A HREF="lobject.h.html#Table">Table</A> *h = <A HREF="lstate.h.html#gco2t">gco2t</A>(l);
+    <A HREF="lobject.h.html#Node">Node</A> *n, *limit = <A HREF="lgc.c.html#gnodelast">gnodelast</A>(h);
+    unsigned int i;
+    for (i = 0; i &lt; h-&gt;sizearray; i++) {
+      <A HREF="lobject.h.html#TValue">TValue</A> *o = &amp;h-&gt;array[i];
+      if (<A HREF="lgc.c.html#iscleared">iscleared</A>(g, o))  /* value was collected? */
+        <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(o);  /* remove value */
+    }
+    for (n = <A HREF="ltable.h.html#gnode">gnode</A>(h, 0); n &lt; limit; n++) {
+      if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(<A HREF="ltable.h.html#gval">gval</A>(n)) &amp;&amp; <A HREF="lgc.c.html#iscleared">iscleared</A>(g, <A HREF="ltable.h.html#gval">gval</A>(n))) {
+        <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(<A HREF="ltable.h.html#gval">gval</A>(n));  /* remove value ... */
+        <A HREF="lgc.c.html#removeentry">removeentry</A>(n);  /* and remove entry from table */
+      }
+    }
+  }
+}
+
+
+void <A NAME="luaC_upvdeccount"><SPAN CLASS="definition">luaC_upvdeccount</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv) {
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(uv-&gt;refcount &gt; 0);
+  uv-&gt;refcount--;
+  if (uv-&gt;refcount == 0 &amp;&amp; !<A HREF="lfunc.h.html#upisopen">upisopen</A>(uv))
+    <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, uv);
+}
+
+
+static void <A NAME="freeLclosure"><SPAN CLASS="definition">freeLclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#LClosure">LClosure</A> *cl) {
+  int i;
+  for (i = 0; i &lt; cl-&gt;nupvalues; i++) {
+    <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv = cl-&gt;upvals[i];
+    if (uv)
+      <A HREF="lgc.c.html#luaC_upvdeccount">luaC_upvdeccount</A>(L, uv);
+  }
+  <A HREF="lmem.h.html#luaM_freemem">luaM_freemem</A>(L, cl, <A HREF="lfunc.h.html#sizeLclosure">sizeLclosure</A>(cl-&gt;nupvalues));
+}
+
+
+static void <A NAME="freeobj"><SPAN CLASS="definition">freeobj</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> *o) {
+  switch (o-&gt;tt) {
+    case <A HREF="lobject.h.html#LUA_TPROTO">LUA_TPROTO</A>: <A HREF="lfunc.c.html#luaF_freeproto">luaF_freeproto</A>(L, <A HREF="lstate.h.html#gco2p">gco2p</A>(o)); break;
+    case <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>: {
+      <A HREF="lgc.c.html#freeLclosure">freeLclosure</A>(L, <A HREF="lstate.h.html#gco2lcl">gco2lcl</A>(o));
+      break;
+    }
+    case <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>: {
+      <A HREF="lmem.h.html#luaM_freemem">luaM_freemem</A>(L, o, <A HREF="lfunc.h.html#sizeCclosure">sizeCclosure</A>(<A HREF="lstate.h.html#gco2ccl">gco2ccl</A>(o)-&gt;nupvalues));
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: <A HREF="ltable.c.html#luaH_free">luaH_free</A>(L, <A HREF="lstate.h.html#gco2t">gco2t</A>(o)); break;
+    case <A HREF="lua.h.html#LUA_TTHREAD">LUA_TTHREAD</A>: <A HREF="lstate.c.html#luaE_freethread">luaE_freethread</A>(L, <A HREF="lstate.h.html#gco2th">gco2th</A>(o)); break;
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>: <A HREF="lmem.h.html#luaM_freemem">luaM_freemem</A>(L, o, <A HREF="lstring.h.html#sizeudata">sizeudata</A>(<A HREF="lstate.h.html#gco2u">gco2u</A>(o))); break;
+    case <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>:
+      <A HREF="lstring.c.html#luaS_remove">luaS_remove</A>(L, <A HREF="lstate.h.html#gco2ts">gco2ts</A>(o));  /* remove it from hash table */
+      <A HREF="lmem.h.html#luaM_freemem">luaM_freemem</A>(L, o, <A HREF="lstring.h.html#sizelstring">sizelstring</A>(<A HREF="lstate.h.html#gco2ts">gco2ts</A>(o)-&gt;shrlen));
+      break;
+    case <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>: {
+      <A HREF="lmem.h.html#luaM_freemem">luaM_freemem</A>(L, o, <A HREF="lstring.h.html#sizelstring">sizelstring</A>(<A HREF="lstate.h.html#gco2ts">gco2ts</A>(o)-&gt;u.lnglen));
+      break;
+    }
+    default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0);
+  }
+}
+
+
+#define <A NAME="sweepwholelist"><SPAN CLASS="definition">sweepwholelist</SPAN></A>(L,p)     <A HREF="lgc.c.html#sweeplist">sweeplist</A>(L,p,<A HREF="llimits.h.html#MAX_LUMEM">MAX_LUMEM</A>)
+static <A HREF="lobject.h.html#GCObject">GCObject</A> **<A HREF="lgc.c.html#sweeplist">sweeplist</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> **p, <A HREF="llimits.h.html#lu_mem">lu_mem</A> count);
+
+
+/*
+** sweep at most 'count' elements from a list of GCObjects erasing dead
+** objects, where a dead object is one marked with the old (non current)
+** white; change all non-dead objects back to white, preparing for next
+** collection cycle. Return where to continue the traversal or NULL if
+** list is finished.
+*/
+static <A HREF="lobject.h.html#GCObject">GCObject</A> **<A NAME="sweeplist"><SPAN CLASS="definition">sweeplist</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> **p, <A HREF="llimits.h.html#lu_mem">lu_mem</A> count) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  int ow = <A HREF="lgc.h.html#otherwhite">otherwhite</A>(g);
+  int white = <A HREF="lgc.h.html#luaC_white">luaC_white</A>(g);  /* current white */
+  while (*p != NULL &amp;&amp; count-- &gt; 0) {
+    <A HREF="lobject.h.html#GCObject">GCObject</A> *curr = *p;
+    int marked = curr-&gt;marked;
+    if (<A HREF="lgc.h.html#isdeadm">isdeadm</A>(ow, marked)) {  /* is 'curr' dead? */
+      *p = curr-&gt;next;  /* remove 'curr' from list */
+      <A HREF="lgc.c.html#freeobj">freeobj</A>(L, curr);  /* erase 'curr' */
+    }
+    else {  /* change mark to 'white' */
+      curr-&gt;marked = <A HREF="llimits.h.html#cast_byte">cast_byte</A>((marked &amp; <A HREF="lgc.c.html#maskcolors">maskcolors</A>) | white);
+      p = &amp;curr-&gt;next;  /* go to next element */
+    }
+  }
+  return (*p == NULL) ? NULL : p;
+}
+
+
+/*
+** sweep a list until a live object (or end of list)
+*/
+static <A HREF="lobject.h.html#GCObject">GCObject</A> **<A NAME="sweeptolive"><SPAN CLASS="definition">sweeptolive</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> **p, int *n) {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> **old = p;
+  int i = 0;
+  do {
+    i++;
+    p = <A HREF="lgc.c.html#sweeplist">sweeplist</A>(L, p, 1);
+  } while (p == old);
+  if (n) *n += i;
+  return p;
+}
+
+/* }====================================================== */
+
+
+/*
+** {======================================================
+** Finalization
+** =======================================================
+*/
+
+/*
+** If possible, shrink string table
+*/
+static void <A NAME="checkSizes"><SPAN CLASS="definition">checkSizes</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  if (g-&gt;gckind != <A HREF="lstate.h.html#KGC_EMERGENCY">KGC_EMERGENCY</A>) {
+    <A HREF="llimits.h.html#l_mem">l_mem</A> olddebt = g-&gt;GCdebt;
+    if (g-&gt;strt.nuse &lt; g-&gt;strt.size / 4)  /* string table too big? */
+      <A HREF="lstring.c.html#luaS_resize">luaS_resize</A>(L, g-&gt;strt.size / 2);  /* shrink it a little */
+    g-&gt;GCestimate += g-&gt;GCdebt - olddebt;  /* update estimate */
+  }
+}
+
+
+static <A HREF="lobject.h.html#GCObject">GCObject</A> *<A NAME="udata2finalize"><SPAN CLASS="definition">udata2finalize</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o = g-&gt;tobefnz;  /* get first element */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lgc.h.html#tofinalize">tofinalize</A>(o));
+  g-&gt;tobefnz = o-&gt;next;  /* remove it from 'tobefnz' list */
+  o-&gt;next = g-&gt;allgc;  /* return it to 'allgc' list */
+  g-&gt;allgc = o;
+  <A HREF="lgc.h.html#resetbit">resetbit</A>(o-&gt;marked, <A HREF="lgc.h.html#FINALIZEDBIT">FINALIZEDBIT</A>);  /* object is "normal" again */
+  if (<A HREF="lgc.h.html#issweepphase">issweepphase</A>(g))
+    <A HREF="lgc.c.html#makewhite">makewhite</A>(g, o);  /* "sweep" object */
+  return o;
+}
+
+
+static void <A NAME="dothecall"><SPAN CLASS="definition">dothecall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  <A HREF="llimits.h.html#UNUSED">UNUSED</A>(ud);
+  <A HREF="ldo.c.html#luaD_callnoyield">luaD_callnoyield</A>(L, L-&gt;top - 2, 0);
+}
+
+
+static void <A NAME="GCTM"><SPAN CLASS="definition">GCTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int propagateerrors) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  const <A HREF="lobject.h.html#TValue">TValue</A> *tm;
+  <A HREF="lobject.h.html#TValue">TValue</A> v;
+  <A HREF="lobject.h.html#setgcovalue">setgcovalue</A>(L, &amp;v, <A HREF="lgc.c.html#udata2finalize">udata2finalize</A>(g));
+  tm = <A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A>(L, &amp;v, <A HREF="ltm.h.html#TM_GC">TM_GC</A>);
+  if (tm != NULL &amp;&amp; <A HREF="lobject.h.html#ttisfunction">ttisfunction</A>(tm)) {  /* is there a finalizer? */
+    int status;
+    <A HREF="llimits.h.html#lu_byte">lu_byte</A> oldah = L-&gt;allowhook;
+    int running  = g-&gt;gcrunning;
+    L-&gt;allowhook = 0;  /* stop debug hooks during GC metamethod */
+    g-&gt;gcrunning = 0;  /* avoid GC steps */
+    <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top, tm);  /* push finalizer... */
+    <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, L-&gt;top + 1, &amp;v);  /* ... and its argument */
+    L-&gt;top += 2;  /* and (next line) call the finalizer */
+    status = <A HREF="ldo.c.html#luaD_pcall">luaD_pcall</A>(L, <A HREF="lgc.c.html#dothecall">dothecall</A>, NULL, <A HREF="ldo.h.html#savestack">savestack</A>(L, L-&gt;top - 2), 0);
+    L-&gt;allowhook = oldah;  /* restore hooks */
+    g-&gt;gcrunning = running;  /* restore state */
+    if (status != <A HREF="lua.h.html#LUA_OK">LUA_OK</A> &amp;&amp; propagateerrors) {  /* error while running __gc? */
+      if (status == <A HREF="lua.h.html#LUA_ERRRUN">LUA_ERRRUN</A>) {  /* is there an error object? */
+        const char *msg = (<A HREF="lobject.h.html#ttisstring">ttisstring</A>(L-&gt;top - 1))
+                            ? <A HREF="lobject.h.html#svalue">svalue</A>(L-&gt;top - 1)
+                            : "no message";
+        <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(L, "error in __gc metamethod (%s)", msg);
+        status = <A HREF="lua.h.html#LUA_ERRGCMM">LUA_ERRGCMM</A>;  /* error in __gc metamethod */
+      }
+      <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, status);  /* re-throw error */
+    }
+  }
+}
+
+
+/*
+** call a few (up to 'g-&gt;gcfinnum') finalizers
+*/
+static int <A NAME="runafewfinalizers"><SPAN CLASS="definition">runafewfinalizers</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  unsigned int i;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!g-&gt;tobefnz || g-&gt;gcfinnum &gt; 0);
+  for (i = 0; g-&gt;tobefnz &amp;&amp; i &lt; g-&gt;gcfinnum; i++)
+    <A HREF="lgc.c.html#GCTM">GCTM</A>(L, 1);  /* call one finalizer */
+  g-&gt;gcfinnum = (!g-&gt;tobefnz) ? 0  /* nothing more to finalize? */
+                    : g-&gt;gcfinnum * 2;  /* else call a few more next time */
+  return i;
+}
+
+
+/*
+** call all pending finalizers
+*/
+static void <A NAME="callallpendingfinalizers"><SPAN CLASS="definition">callallpendingfinalizers</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int propagateerrors) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  while (g-&gt;tobefnz)
+    <A HREF="lgc.c.html#GCTM">GCTM</A>(L, propagateerrors);
+}
+
+
+/*
+** find last 'next' field in list 'p' list (to add elements in its end)
+*/
+static <A HREF="lobject.h.html#GCObject">GCObject</A> **<A NAME="findlast"><SPAN CLASS="definition">findlast</SPAN></A> (<A HREF="lobject.h.html#GCObject">GCObject</A> **p) {
+  while (*p != NULL)
+    p = &amp;(*p)-&gt;next;
+  return p;
+}
+
+
+/*
+** move all unreachable objects (or 'all' objects) that need
+** finalization from list 'finobj' to list 'tobefnz' (to be finalized)
+*/
+static void <A NAME="separatetobefnz"><SPAN CLASS="definition">separatetobefnz</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g, int all) {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *curr;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> **p = &amp;g-&gt;finobj;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> **lastnext = <A HREF="lgc.c.html#findlast">findlast</A>(&amp;g-&gt;tobefnz);
+  while ((curr = *p) != NULL) {  /* traverse all finalizable objects */
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lgc.h.html#tofinalize">tofinalize</A>(curr));
+    if (!(<A HREF="lgc.h.html#iswhite">iswhite</A>(curr) || all))  /* not being collected? */
+      p = &amp;curr-&gt;next;  /* don't bother with it */
+    else {
+      *p = curr-&gt;next;  /* remove 'curr' from 'finobj' list */
+      curr-&gt;next = *lastnext;  /* link at the end of 'tobefnz' list */
+      *lastnext = curr;
+      lastnext = &amp;curr-&gt;next;
+    }
+  }
+}
+
+
+/*
+** if object 'o' has a finalizer, remove it from 'allgc' list (must
+** search the list to find it) and link it in 'finobj' list.
+*/
+void <A NAME="luaC_checkfinalizer"><SPAN CLASS="definition">luaC_checkfinalizer</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> *o, <A HREF="lobject.h.html#Table">Table</A> *mt) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  if (<A HREF="lgc.h.html#tofinalize">tofinalize</A>(o) ||                 /* obj. is already marked... */
+      <A HREF="ltm.h.html#gfasttm">gfasttm</A>(g, mt, <A HREF="ltm.h.html#TM_GC">TM_GC</A>) == NULL)   /* or has no finalizer? */
+    return;  /* nothing to be done */
+  else {  /* move 'o' to 'finobj' list */
+    <A HREF="lobject.h.html#GCObject">GCObject</A> **p;
+    if (<A HREF="lgc.h.html#issweepphase">issweepphase</A>(g)) {
+      <A HREF="lgc.c.html#makewhite">makewhite</A>(g, o);  /* "sweep" object 'o' */
+      if (g-&gt;sweepgc == &amp;o-&gt;next)  /* should not remove 'sweepgc' object */
+        g-&gt;sweepgc = <A HREF="lgc.c.html#sweeptolive">sweeptolive</A>(L, g-&gt;sweepgc, NULL);  /* change 'sweepgc' */
+    }
+    /* search for pointer pointing to 'o' */
+    for (p = &amp;g-&gt;allgc; *p != o; p = &amp;(*p)-&gt;next) { /* empty */ }
+    *p = o-&gt;next;  /* remove 'o' from 'allgc' list */
+    o-&gt;next = g-&gt;finobj;  /* link it in 'finobj' list */
+    g-&gt;finobj = o;
+    <A HREF="lgc.h.html#l_setbit">l_setbit</A>(o-&gt;marked, <A HREF="lgc.h.html#FINALIZEDBIT">FINALIZEDBIT</A>);  /* mark it as such */
+  }
+}
+
+/* }====================================================== */
+
+
+
+/*
+** {======================================================
+** GC control
+** =======================================================
+*/
+
+
+/*
+** Set a reasonable "time" to wait before starting a new GC cycle; cycle
+** will start when memory use hits threshold. (Division by 'estimate'
+** should be OK: it cannot be zero (because Lua cannot even start with
+** less than <A HREF="lgc.c.html#PAUSEADJ">PAUSEADJ</A> bytes).
+*/
+static void <A NAME="setpause"><SPAN CLASS="definition">setpause</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  <A HREF="llimits.h.html#l_mem">l_mem</A> threshold, debt;
+  <A HREF="llimits.h.html#l_mem">l_mem</A> estimate = g-&gt;GCestimate / <A HREF="lgc.c.html#PAUSEADJ">PAUSEADJ</A>;  /* adjust 'estimate' */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(estimate &gt; 0);
+  threshold = (g-&gt;gcpause &lt; <A HREF="llimits.h.html#MAX_LMEM">MAX_LMEM</A> / estimate)  /* overflow? */
+            ? estimate * g-&gt;gcpause  /* no overflow */
+            : <A HREF="llimits.h.html#MAX_LMEM">MAX_LMEM</A>;  /* overflow; truncate to maximum */
+  debt = <A HREF="lstate.h.html#gettotalbytes">gettotalbytes</A>(g) - threshold;
+  <A HREF="lstate.c.html#luaE_setdebt">luaE_setdebt</A>(g, debt);
+}
+
+
+/*
+** Enter first sweep phase.
+** The call to '<A HREF="lgc.c.html#sweeptolive">sweeptolive</A>' makes pointer point to an object inside
+** the list (instead of to the header), so that the real sweep do not
+** need to skip objects created between "now" and the start of the real
+** sweep.
+** Returns how many objects it swept.
+*/
+static int <A NAME="entersweep"><SPAN CLASS="definition">entersweep</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  int n = 0;
+  g-&gt;gcstate = <A HREF="lgc.h.html#GCSswpallgc">GCSswpallgc</A>;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;sweepgc == NULL);
+  g-&gt;sweepgc = <A HREF="lgc.c.html#sweeptolive">sweeptolive</A>(L, &amp;g-&gt;allgc, &amp;n);
+  return n;
+}
+
+
+void <A NAME="luaC_freeallobjects"><SPAN CLASS="definition">luaC_freeallobjects</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="lgc.c.html#separatetobefnz">separatetobefnz</A>(g, 1);  /* separate all objects with finalizers */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;finobj == NULL);
+  <A HREF="lgc.c.html#callallpendingfinalizers">callallpendingfinalizers</A>(L, 0);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;tobefnz == NULL);
+  g-&gt;currentwhite = <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>; /* this "white" makes all objects look dead */
+  g-&gt;gckind = <A HREF="lstate.h.html#KGC_NORMAL">KGC_NORMAL</A>;
+  <A HREF="lgc.c.html#sweepwholelist">sweepwholelist</A>(L, &amp;g-&gt;finobj);
+  <A HREF="lgc.c.html#sweepwholelist">sweepwholelist</A>(L, &amp;g-&gt;allgc);
+  <A HREF="lgc.c.html#sweepwholelist">sweepwholelist</A>(L, &amp;g-&gt;fixedgc);  /* collect fixed objects */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;strt.nuse == 0);
+}
+
+
+static <A HREF="llimits.h.html#l_mem">l_mem</A> <A NAME="atomic"><SPAN CLASS="definition">atomic</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="llimits.h.html#l_mem">l_mem</A> work;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *origweak, *origall;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *grayagain = g-&gt;grayagain;  /* save original list */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;ephemeron == NULL &amp;&amp; g-&gt;weak == NULL);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!<A HREF="lgc.h.html#iswhite">iswhite</A>(g-&gt;mainthread));
+  g-&gt;gcstate = <A HREF="lgc.c.html#GCSinsideatomic">GCSinsideatomic</A>;
+  g-&gt;GCmemtrav = 0;  /* start counting work */
+  <A HREF="lgc.c.html#markobject">markobject</A>(g, L);  /* mark running thread */
+  /* registry and global metatables may be changed by API */
+  <A HREF="lgc.c.html#markvalue">markvalue</A>(g, &amp;g-&gt;l_registry);
+  <A HREF="lgc.c.html#markmt">markmt</A>(g);  /* mark global metatables */
+  /* remark occasional upvalues of (maybe) dead threads */
+  <A HREF="lgc.c.html#remarkupvals">remarkupvals</A>(g);
+  <A HREF="lgc.c.html#propagateall">propagateall</A>(g);  /* propagate changes */
+  work = g-&gt;GCmemtrav;  /* stop counting (do not recount 'grayagain') */
+  g-&gt;gray = grayagain;
+  <A HREF="lgc.c.html#propagateall">propagateall</A>(g);  /* traverse 'grayagain' list */
+  g-&gt;GCmemtrav = 0;  /* restart counting */
+  <A HREF="lgc.c.html#convergeephemerons">convergeephemerons</A>(g);
+  /* at this point, all strongly accessible objects are marked. */
+  /* Clear values from weak tables, before checking finalizers */
+  <A HREF="lgc.c.html#clearvalues">clearvalues</A>(g, g-&gt;weak, NULL);
+  <A HREF="lgc.c.html#clearvalues">clearvalues</A>(g, g-&gt;allweak, NULL);
+  origweak = g-&gt;weak; origall = g-&gt;allweak;
+  work += g-&gt;GCmemtrav;  /* stop counting (objects being finalized) */
+  <A HREF="lgc.c.html#separatetobefnz">separatetobefnz</A>(g, 0);  /* separate objects to be finalized */
+  g-&gt;gcfinnum = 1;  /* there may be objects to be finalized */
+  <A HREF="lgc.c.html#markbeingfnz">markbeingfnz</A>(g);  /* mark objects that will be finalized */
+  <A HREF="lgc.c.html#propagateall">propagateall</A>(g);  /* remark, to propagate 'resurrection' */
+  g-&gt;GCmemtrav = 0;  /* restart counting */
+  <A HREF="lgc.c.html#convergeephemerons">convergeephemerons</A>(g);
+  /* at this point, all resurrected objects are marked. */
+  /* remove dead objects from weak tables */
+  <A HREF="lgc.c.html#clearkeys">clearkeys</A>(g, g-&gt;ephemeron, NULL);  /* clear keys from all ephemeron tables */
+  <A HREF="lgc.c.html#clearkeys">clearkeys</A>(g, g-&gt;allweak, NULL);  /* clear keys from all 'allweak' tables */
+  /* clear values from resurrected weak tables */
+  <A HREF="lgc.c.html#clearvalues">clearvalues</A>(g, g-&gt;weak, origweak);
+  <A HREF="lgc.c.html#clearvalues">clearvalues</A>(g, g-&gt;allweak, origall);
+  <A HREF="lstring.c.html#luaS_clearcache">luaS_clearcache</A>(g);
+  g-&gt;currentwhite = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(<A HREF="lgc.h.html#otherwhite">otherwhite</A>(g));  /* flip current white */
+  work += g-&gt;GCmemtrav;  /* complete counting */
+  return work;  /* estimate of memory marked by '<A HREF="lgc.c.html#atomic">atomic</A>' */
+}
+
+
+static <A HREF="llimits.h.html#lu_mem">lu_mem</A> <A NAME="sweepstep"><SPAN CLASS="definition">sweepstep</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#global_State">global_State</A> *g,
+                         int nextstate, <A HREF="lobject.h.html#GCObject">GCObject</A> **nextlist) {
+  if (g-&gt;sweepgc) {
+    <A HREF="llimits.h.html#l_mem">l_mem</A> olddebt = g-&gt;GCdebt;
+    g-&gt;sweepgc = <A HREF="lgc.c.html#sweeplist">sweeplist</A>(L, g-&gt;sweepgc, <A HREF="lgc.c.html#GCSWEEPMAX">GCSWEEPMAX</A>);
+    g-&gt;GCestimate += g-&gt;GCdebt - olddebt;  /* update estimate */
+    if (g-&gt;sweepgc)  /* is there still something to sweep? */
+      return (<A HREF="lgc.c.html#GCSWEEPMAX">GCSWEEPMAX</A> * <A HREF="lgc.c.html#GCSWEEPCOST">GCSWEEPCOST</A>);
+  }
+  /* else enter next state */
+  g-&gt;gcstate = nextstate;
+  g-&gt;sweepgc = nextlist;
+  return 0;
+}
+
+
+static <A HREF="llimits.h.html#lu_mem">lu_mem</A> <A NAME="singlestep"><SPAN CLASS="definition">singlestep</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  switch (g-&gt;gcstate) {
+    case <A HREF="lgc.h.html#GCSpause">GCSpause</A>: {
+      g-&gt;GCmemtrav = g-&gt;strt.size * sizeof(<A HREF="lobject.h.html#GCObject">GCObject</A>*);
+      <A HREF="lgc.c.html#restartcollection">restartcollection</A>(g);
+      g-&gt;gcstate = <A HREF="lgc.h.html#GCSpropagate">GCSpropagate</A>;
+      return g-&gt;GCmemtrav;
+    }
+    case <A HREF="lgc.h.html#GCSpropagate">GCSpropagate</A>: {
+      g-&gt;GCmemtrav = 0;
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;gray);
+      <A HREF="lgc.c.html#propagatemark">propagatemark</A>(g);
+       if (g-&gt;gray == NULL)  /* no more gray objects? */
+        g-&gt;gcstate = <A HREF="lgc.h.html#GCSatomic">GCSatomic</A>;  /* finish propagate phase */
+      return g-&gt;GCmemtrav;  /* memory traversed in this step */
+    }
+    case <A HREF="lgc.h.html#GCSatomic">GCSatomic</A>: {
+      <A HREF="llimits.h.html#lu_mem">lu_mem</A> work;
+      int sw;
+      <A HREF="lgc.c.html#propagateall">propagateall</A>(g);  /* make sure gray list is empty */
+      work = <A HREF="lgc.c.html#atomic">atomic</A>(L);  /* work is what was traversed by '<A HREF="lgc.c.html#atomic">atomic</A>' */
+      sw = <A HREF="lgc.c.html#entersweep">entersweep</A>(L);
+      g-&gt;GCestimate = <A HREF="lstate.h.html#gettotalbytes">gettotalbytes</A>(g);  /* first estimate */;
+      return work + sw * <A HREF="lgc.c.html#GCSWEEPCOST">GCSWEEPCOST</A>;
+    }
+    case <A HREF="lgc.h.html#GCSswpallgc">GCSswpallgc</A>: {  /* sweep "regular" objects */
+      return <A HREF="lgc.c.html#sweepstep">sweepstep</A>(L, g, <A HREF="lgc.h.html#GCSswpfinobj">GCSswpfinobj</A>, &amp;g-&gt;finobj);
+    }
+    case <A HREF="lgc.h.html#GCSswpfinobj">GCSswpfinobj</A>: {  /* sweep objects with finalizers */
+      return <A HREF="lgc.c.html#sweepstep">sweepstep</A>(L, g, <A HREF="lgc.h.html#GCSswptobefnz">GCSswptobefnz</A>, &amp;g-&gt;tobefnz);
+    }
+    case <A HREF="lgc.h.html#GCSswptobefnz">GCSswptobefnz</A>: {  /* sweep objects to be finalized */
+      return <A HREF="lgc.c.html#sweepstep">sweepstep</A>(L, g, <A HREF="lgc.h.html#GCSswpend">GCSswpend</A>, NULL);
+    }
+    case <A HREF="lgc.h.html#GCSswpend">GCSswpend</A>: {  /* finish sweeps */
+      <A HREF="lgc.c.html#makewhite">makewhite</A>(g, g-&gt;mainthread);  /* sweep <A HREF="lua.c.html#main">main</A> thread */
+      <A HREF="lgc.c.html#checkSizes">checkSizes</A>(L, g);
+      g-&gt;gcstate = <A HREF="lgc.h.html#GCScallfin">GCScallfin</A>;
+      return 0;
+    }
+    case <A HREF="lgc.h.html#GCScallfin">GCScallfin</A>: {  /* call remaining finalizers */
+      if (g-&gt;tobefnz &amp;&amp; g-&gt;gckind != <A HREF="lstate.h.html#KGC_EMERGENCY">KGC_EMERGENCY</A>) {
+        int n = <A HREF="lgc.c.html#runafewfinalizers">runafewfinalizers</A>(L);
+        return (n * <A HREF="lgc.c.html#GCFINALIZECOST">GCFINALIZECOST</A>);
+      }
+      else {  /* emergency mode or no more finalizers */
+        g-&gt;gcstate = <A HREF="lgc.h.html#GCSpause">GCSpause</A>;  /* finish collection */
+        return 0;
+      }
+    }
+    default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0); return 0;
+  }
+}
+
+
+/*
+** advances the garbage collector until it reaches a state allowed
+** by 'statemask'
+*/
+void <A NAME="luaC_runtilstate"><SPAN CLASS="definition">luaC_runtilstate</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int statesmask) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  while (!<A HREF="lgc.h.html#testbit">testbit</A>(statesmask, g-&gt;gcstate))
+    <A HREF="lgc.c.html#singlestep">singlestep</A>(L);
+}
+
+
+/*
+** get GC debt and convert it from Kb to 'work units' (avoid zero debt
+** and overflows)
+*/
+static <A HREF="llimits.h.html#l_mem">l_mem</A> <A NAME="getdebt"><SPAN CLASS="definition">getdebt</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  <A HREF="llimits.h.html#l_mem">l_mem</A> debt = g-&gt;GCdebt;
+  int stepmul = g-&gt;gcstepmul;
+  if (debt &lt;= 0) return 0;  /* minimal debt */
+  else {
+    debt = (debt / <A HREF="lgc.c.html#STEPMULADJ">STEPMULADJ</A>) + 1;
+    debt = (debt &lt; <A HREF="llimits.h.html#MAX_LMEM">MAX_LMEM</A> / stepmul) ? debt * stepmul : <A HREF="llimits.h.html#MAX_LMEM">MAX_LMEM</A>;
+    return debt;
+  }
+}
+
+/*
+** performs a basic GC step when collector is running
+*/
+void <A NAME="luaC_step"><SPAN CLASS="definition">luaC_step</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="llimits.h.html#l_mem">l_mem</A> debt = <A HREF="lgc.c.html#getdebt">getdebt</A>(g);  /* GC deficit (be paid now) */
+  if (!g-&gt;gcrunning) {  /* not running? */
+    <A HREF="lstate.c.html#luaE_setdebt">luaE_setdebt</A>(g, -<A HREF="lgc.h.html#GCSTEPSIZE">GCSTEPSIZE</A> * 10);  /* avoid being called too often */
+    return;
+  }
+  do {  /* repeat until pause or enough "credit" (negative debt) */
+    <A HREF="llimits.h.html#lu_mem">lu_mem</A> work = <A HREF="lgc.c.html#singlestep">singlestep</A>(L);  /* perform one single step */
+    debt -= work;
+  } while (debt &gt; -<A HREF="lgc.h.html#GCSTEPSIZE">GCSTEPSIZE</A> &amp;&amp; g-&gt;gcstate != <A HREF="lgc.h.html#GCSpause">GCSpause</A>);
+  if (g-&gt;gcstate == <A HREF="lgc.h.html#GCSpause">GCSpause</A>)
+    <A HREF="lgc.c.html#setpause">setpause</A>(g);  /* pause until next cycle */
+  else {
+    debt = (debt / g-&gt;gcstepmul) * <A HREF="lgc.c.html#STEPMULADJ">STEPMULADJ</A>;  /* convert 'work units' to Kb */
+    <A HREF="lstate.c.html#luaE_setdebt">luaE_setdebt</A>(g, debt);
+    <A HREF="lgc.c.html#runafewfinalizers">runafewfinalizers</A>(L);
+  }
+}
+
+
+/*
+** Performs a full GC cycle; if 'isemergency', set a flag to avoid
+** some operations which could change the interpreter state in some
+** unexpected ways (running finalizers and shrinking some structures).
+** Before running the collection, check '<A HREF="lgc.h.html#keepinvariant">keepinvariant</A>'; if it is true,
+** there may be some objects marked as black, so the collector has
+** to sweep all objects to turn them back to white (as white has not
+** changed, nothing will be collected).
+*/
+void <A NAME="luaC_fullgc"><SPAN CLASS="definition">luaC_fullgc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int isemergency) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;gckind == <A HREF="lstate.h.html#KGC_NORMAL">KGC_NORMAL</A>);
+  if (isemergency) g-&gt;gckind = <A HREF="lstate.h.html#KGC_EMERGENCY">KGC_EMERGENCY</A>;  /* set flag */
+  if (<A HREF="lgc.h.html#keepinvariant">keepinvariant</A>(g)) {  /* black objects? */
+    <A HREF="lgc.c.html#entersweep">entersweep</A>(L); /* sweep everything to turn them back to white */
+  }
+  /* finish any pending sweep phase to start a new cycle */
+  <A HREF="lgc.c.html#luaC_runtilstate">luaC_runtilstate</A>(L, <A HREF="lgc.h.html#bitmask">bitmask</A>(<A HREF="lgc.h.html#GCSpause">GCSpause</A>));
+  <A HREF="lgc.c.html#luaC_runtilstate">luaC_runtilstate</A>(L, ~<A HREF="lgc.h.html#bitmask">bitmask</A>(<A HREF="lgc.h.html#GCSpause">GCSpause</A>));  /* start new collection */
+  <A HREF="lgc.c.html#luaC_runtilstate">luaC_runtilstate</A>(L, <A HREF="lgc.h.html#bitmask">bitmask</A>(<A HREF="lgc.h.html#GCScallfin">GCScallfin</A>));  /* run up to finalizers */
+  /* estimate must be correct after a full GC cycle */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(g-&gt;GCestimate == <A HREF="lstate.h.html#gettotalbytes">gettotalbytes</A>(g));
+  <A HREF="lgc.c.html#luaC_runtilstate">luaC_runtilstate</A>(L, <A HREF="lgc.h.html#bitmask">bitmask</A>(<A HREF="lgc.h.html#GCSpause">GCSpause</A>));  /* finish collection */
+  g-&gt;gckind = <A HREF="lstate.h.html#KGC_NORMAL">KGC_NORMAL</A>;
+  <A HREF="lgc.c.html#setpause">setpause</A>(g);
+}
+
+/* }====================================================== */
+
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

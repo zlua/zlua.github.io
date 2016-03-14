@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lmem.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lmem.c
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lmem.c,v 1.61 2002/12/04 17:38:31 roberto Exp $
+** Interface to Memory Manager
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdlib.h&gt;
+
+#define <A NAME="lmem_c"><SPAN CLASS="definition">lmem_c</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+
+/*
+** definition for realloc function. It must assure that <A HREF="lmem.c.html#l_realloc">l_realloc</A>(NULL,
+** 0, x) allocates a new block (ANSI C assures that). (`os' is the old
+** block size; some allocators may use that.)
+*/
+#ifndef <A HREF="lmem.c.html#l_realloc">l_realloc</A>
+#define <A NAME="l_realloc"><SPAN CLASS="definition">l_realloc</SPAN></A>(b,os,s)       realloc(b,s)
+#endif
+
+/*
+** definition for free function. (`os' is the old block size; some
+** allocators may use that.)
+*/
+#ifndef <A HREF="lmem.c.html#l_free">l_free</A>
+#define <A NAME="l_free"><SPAN CLASS="definition">l_free</SPAN></A>(b,os)    free(b)
+#endif
+
+
+#define <A NAME="MINSIZEARRAY"><SPAN CLASS="definition">MINSIZEARRAY</SPAN></A>    4
+
+
+void *<A NAME="luaM_growaux"><SPAN CLASS="definition">luaM_growaux</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, int *size, int size_elems,
+                    int limit, const char *errormsg) {
+  void *newblock;
+  int newsize = (*size)*2;
+  if (newsize &lt; <A HREF="lmem.c.html#MINSIZEARRAY">MINSIZEARRAY</A>)
+    newsize = <A HREF="lmem.c.html#MINSIZEARRAY">MINSIZEARRAY</A>;  /* minimum size */
+  else if (*size &gt;= limit/2) {  /* cannot double it? */
+    if (*size &lt; limit - <A HREF="lmem.c.html#MINSIZEARRAY">MINSIZEARRAY</A>)  /* try something smaller... */
+      newsize = limit;  /* still have at least <A HREF="lmem.c.html#MINSIZEARRAY">MINSIZEARRAY</A> free places */
+    else <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, errormsg);
+  }
+  newblock = <A HREF="lmem.c.html#luaM_realloc">luaM_realloc</A>(L, block,
+                          <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, *size)*<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, size_elems),
+                          <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, newsize)*<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, size_elems));
+  *size = newsize;  /* update only when everything else is OK */
+  return newblock;
+}
+
+
+/*
+** generic allocation routine.
+*/
+void *<A NAME="luaM_realloc"><SPAN CLASS="definition">luaM_realloc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, <A HREF="llimits.h.html#lu_mem">lu_mem</A> oldsize, <A HREF="llimits.h.html#lu_mem">lu_mem</A> size) {
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>((oldsize == 0) == (block == NULL));
+  if (size == 0) {
+    if (block != NULL) {
+      <A HREF="lmem.c.html#l_free">l_free</A>(block, oldsize);
+      block = NULL;
+    }
+    else return NULL;  /* avoid `nblocks' computations when oldsize==size==0 */
+  }
+  else if (size &gt;= <A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A>)
+    <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "memory allocation error: block too big");
+  else {
+    block = <A HREF="lmem.c.html#l_realloc">l_realloc</A>(block, oldsize, size);
+    if (block == NULL) {
+      if (L)
+        <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, <A HREF="lua.h.html#LUA_ERRMEM">LUA_ERRMEM</A>);
+      else return NULL;  /* error before creating state! */
+    }
+  }
+  if (L) {
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lstate.h.html#G">G</A>(L) != NULL &amp;&amp; <A HREF="lstate.h.html#G">G</A>(L)-&gt;nblocks &gt; 0);
+    <A HREF="lstate.h.html#G">G</A>(L)-&gt;nblocks -= oldsize;
+    <A HREF="lstate.h.html#G">G</A>(L)-&gt;nblocks += size;
+  }
+  return block;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

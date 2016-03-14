@@ -1,0 +1,54 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lgc.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lgc.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lgc.h,v 1.9 2001/02/02 16:23:20 roberto Exp $
+** Garbage Collector
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lgc.h.html#lgc_h">lgc_h</A>
+#define <A NAME="lgc_h"><SPAN CLASS="definition">lgc_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+
+
+void <A HREF="lgc.c.html#luaC_collect">luaC_collect</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int all);
+void <A HREF="lgc.c.html#luaC_collectgarbage">luaC_collectgarbage</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+void <A HREF="lgc.c.html#luaC_checkGC">luaC_checkGC</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

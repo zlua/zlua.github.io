@@ -1,0 +1,26 @@
+<HEAD>
+<TITLE>4.3 Adjustment</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=subsection3_4_4.html>4.4 Statements</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_2.html>4.2 Coercion</A>
+<H2><A NAME=S0430>4.3 Adjustment</A></H2>
+ <A NAME=adjust></A>
+<P>
+Functions in Lua can return many values.
+Because there are no type declarations,
+the system does not know how many values a function will return,
+or how many parameters it needs.
+Therefore, sometimes, a list of values must be <I>adjusted</I>, at run time,
+to a given length.
+If there are more values than are needed, the last values are thrown away.
+If there are more needs than values, the list is extended with as
+many  <B>nil</B>'s as needed.
+Adjustment occurs in multiple assignment and function calls.
+<P>
+<B> Next:</B> <A HREF=subsection3_4_4.html>4.4 Statements</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_2.html>4.2 Coercion</A>
+
+</BODY>

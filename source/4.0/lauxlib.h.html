@@ -1,0 +1,135 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lauxlib.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lauxlib.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lauxlib.h,v 1.30 2000/10/30 12:38:50 roberto Exp $
+** Auxiliary functions for building Lua libraries
+** See Copyright Notice in lua.h
+*/
+
+
+#ifndef <A HREF="lauxlib.h.html#lauxlib_h">lauxlib_h</A>
+#define <A NAME="lauxlib_h"><SPAN CLASS="definition">lauxlib_h</SPAN></A>
+
+
+#include &lt;stddef.h&gt;
+#include &lt;stdio.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+#ifndef <A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A>
+#define <A NAME="LUALIB_API"><SPAN CLASS="definition">LUALIB_API</SPAN></A>      extern
+#endif
+
+
+struct <A NAME="luaL_reg"><SPAN CLASS="definition">luaL_reg</SPAN></A> {
+  const char *name;
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> func;
+};
+
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_openlib">luaL_openlib</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const struct <A HREF="lauxlib.h.html#luaL_reg">luaL_reg</A> *l, int n);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_argerror">luaL_argerror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int numarg, const char *extramsg);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> const char *<A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int numArg, size_t *len);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> const char *<A HREF="lauxlib.c.html#luaL_opt_lstr">luaL_opt_lstr</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int numArg, const char *def, size_t *len);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> double <A HREF="lauxlib.c.html#luaL_check_number">luaL_check_number</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int numArg);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> double <A HREF="lauxlib.c.html#luaL_opt_number">luaL_opt_number</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int numArg, double def);
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_checkstack">luaL_checkstack</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int space, const char *msg);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg, int t);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg);
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_verror">luaL_verror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> int <A HREF="lauxlib.c.html#luaL_findstring">luaL_findstring</A> (const char *name, const char *const list[]);
+
+
+
+/*
+** ===============================================================
+** some useful macros
+** ===============================================================
+*/
+
+#define <A NAME="luaL_arg_check"><SPAN CLASS="definition">luaL_arg_check</SPAN></A>(L, cond,numarg,extramsg) if (!(cond)) \
+                                               <A HREF="lauxlib.c.html#luaL_argerror">luaL_argerror</A>(L, numarg,extramsg)
+#define <A NAME="luaL_check_string"><SPAN CLASS="definition">luaL_check_string</SPAN></A>(L,n)  (<A HREF="lauxlib.c.html#luaL_check_lstr">luaL_check_lstr</A>(L, (n), NULL))
+#define <A NAME="luaL_opt_string"><SPAN CLASS="definition">luaL_opt_string</SPAN></A>(L,n,d)  (<A HREF="lauxlib.c.html#luaL_opt_lstr">luaL_opt_lstr</A>(L, (n), (d), NULL))
+#define <A NAME="luaL_check_int"><SPAN CLASS="definition">luaL_check_int</SPAN></A>(L,n)     ((int)<A HREF="lauxlib.c.html#luaL_check_number">luaL_check_number</A>(L, n))
+#define <A NAME="luaL_check_long"><SPAN CLASS="definition">luaL_check_long</SPAN></A>(L,n)    ((long)<A HREF="lauxlib.c.html#luaL_check_number">luaL_check_number</A>(L, n))
+#define <A NAME="luaL_opt_int"><SPAN CLASS="definition">luaL_opt_int</SPAN></A>(L,n,d)     ((int)<A HREF="lauxlib.c.html#luaL_opt_number">luaL_opt_number</A>(L, n,d))
+#define <A NAME="luaL_opt_long"><SPAN CLASS="definition">luaL_opt_long</SPAN></A>(L,n,d)    ((long)<A HREF="lauxlib.c.html#luaL_opt_number">luaL_opt_number</A>(L, n,d))
+#define <A NAME="luaL_openl"><SPAN CLASS="definition">luaL_openl</SPAN></A>(L,a)         <A HREF="lauxlib.c.html#luaL_openlib">luaL_openlib</A>(L, a, (sizeof(a)/sizeof(a[0])))
+
+
+/*
+** {======================================================
+** Generic Buffer manipulation
+** =======================================================
+*/
+
+
+#ifndef <A HREF="lauxlib.h.html#LUAL_BUFFERSIZE">LUAL_BUFFERSIZE</A>
+#define <A NAME="LUAL_BUFFERSIZE"><SPAN CLASS="definition">LUAL_BUFFERSIZE</SPAN></A>   BUFSIZ
+#endif
+
+
+typedef struct <A NAME="luaL_Buffer"><SPAN CLASS="definition">luaL_Buffer</SPAN></A> {
+  char *p;                      /* current position in buffer */
+  int level;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L;
+  char buffer[<A HREF="lauxlib.h.html#LUAL_BUFFERSIZE">LUAL_BUFFERSIZE</A>];
+} <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A>;
+
+#define <A NAME="luaL_putchar"><SPAN CLASS="definition">luaL_putchar</SPAN></A>(B,c) \
+  ((void)((B)-&gt;p &lt; &amp;(B)-&gt;buffer[<A HREF="lauxlib.h.html#LUAL_BUFFERSIZE">LUAL_BUFFERSIZE</A>] || <A HREF="lauxlib.c.html#luaL_prepbuffer">luaL_prepbuffer</A>(B)), \
+   (*(B)-&gt;p++ = (char)(c)))
+
+#define <A NAME="luaL_addsize"><SPAN CLASS="definition">luaL_addsize</SPAN></A>(B,n)       ((B)-&gt;p += (n))
+
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> char *<A HREF="lauxlib.c.html#luaL_prepbuffer">luaL_prepbuffer</A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B, const char *s, size_t l);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_addstring">luaL_addstring</A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B, const char *s);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_addvalue">luaL_addvalue</A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B);
+<A HREF="lauxlib.h.html#LUALIB_API">LUALIB_API</A> void <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A> (<A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *B);
+
+
+/* }====================================================== */
+
+
+#endif
+
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,88 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lzio.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lzio.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lzio.h,v 1.7 2000/10/20 16:36:32 roberto Exp $
+** Buffered streams
+** See Copyright Notice in lua.h
+*/
+
+
+#ifndef <A HREF="lzio.h.html#lzio_h">lzio_h</A>
+#define <A NAME="lzio_h"><SPAN CLASS="definition">lzio_h</SPAN></A>
+
+#include &lt;stdio.h&gt;
+
+
+
+/* For Lua only */
+#define <A NAME="zFopen"><SPAN CLASS="definition">zFopen</SPAN></A>  luaZ_Fopen
+#define <A NAME="zsopen"><SPAN CLASS="definition">zsopen</SPAN></A>  luaZ_sopen
+#define <A NAME="zmopen"><SPAN CLASS="definition">zmopen</SPAN></A>  luaZ_mopen
+#define <A NAME="zread"><SPAN CLASS="definition">zread</SPAN></A>   luaZ_read
+
+#define <A NAME="EOZ"><SPAN CLASS="definition">EOZ</SPAN></A>     (-1)                    /* end of stream */
+
+typedef struct <A HREF="lzio.h.html#zio">zio</A> <A NAME="ZIO"><SPAN CLASS="definition">ZIO</SPAN></A>;
+
+<A HREF="lzio.h.html#ZIO">ZIO</A>* <A HREF="lzio.h.html#zFopen">zFopen</A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z, FILE* f, const char *name);        /* open FILEs */
+<A HREF="lzio.h.html#ZIO">ZIO</A>* <A HREF="lzio.h.html#zsopen">zsopen</A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z, const char* s, const char *name);  /* string */
+<A HREF="lzio.h.html#ZIO">ZIO</A>* <A HREF="lzio.h.html#zmopen">zmopen</A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z, const char* b, size_t size, const char *name); /* memory */
+
+size_t <A HREF="lzio.h.html#zread">zread</A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* z, void* b, size_t n);       /* read next n bytes */
+
+#define <A NAME="zgetc"><SPAN CLASS="definition">zgetc</SPAN></A>(z)        (((z)-&gt;n--)&gt;0 ? ((int)*(z)-&gt;p++): (z)-&gt;filbuf(z))
+#define <A NAME="zungetc"><SPAN CLASS="definition">zungetc</SPAN></A>(z)      (++(z)-&gt;n,--(z)-&gt;p)
+#define <A NAME="zname"><SPAN CLASS="definition">zname</SPAN></A>(z)        ((z)-&gt;name)
+
+
+
+/* --------- Private Part ------------------ */
+
+#ifndef <A HREF="lzio.h.html#ZBSIZE">ZBSIZE</A>
+#define <A NAME="ZBSIZE"><SPAN CLASS="definition">ZBSIZE</SPAN></A>  256                     /* buffer size */
+#endif
+
+struct <A NAME="zio"><SPAN CLASS="definition">zio</SPAN></A> {
+  size_t n;                             /* bytes still unread */
+  const unsigned char* p;               /* current position in buffer */
+  int (*filbuf)(<A HREF="lzio.h.html#ZIO">ZIO</A>* z);
+  void* u;                              /* additional data */
+  const char *name;
+  unsigned char buffer[<A HREF="lzio.h.html#ZBSIZE">ZBSIZE</A>];         /* buffer */
+};
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

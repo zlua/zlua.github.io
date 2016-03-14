@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lopcodes.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lopcodes.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lopcodes.c,v 1.49.1.1 2013/04/12 18:48:47 roberto Exp $
+** Opcodes for Lua virtual machine
+** See Copyright Notice in lua.h
+*/
+
+
+#define <A NAME="lopcodes_c"><SPAN CLASS="definition">lopcodes_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+
+
+/* ORDER OP */
+
+<A HREF="luaconf.h.html#LUAI_DDEF">LUAI_DDEF</A> const char *const <A NAME="luaP_opnames"><SPAN CLASS="definition">luaP_opnames</SPAN></A>[<A HREF="lopcodes.h.html#NUM_OPCODES">NUM_OPCODES</A>+1] = {
+  "MOVE",
+  "LOADK",
+  "LOADKX",
+  "LOADBOOL",
+  "LOADNIL",
+  "GETUPVAL",
+  "GETTABUP",
+  "GETTABLE",
+  "SETTABUP",
+  "SETUPVAL",
+  "SETTABLE",
+  "NEWTABLE",
+  "SELF",
+  "ADD",
+  "SUB",
+  "MUL",
+  "DIV",
+  "MOD",
+  "POW",
+  "UNM",
+  "NOT",
+  "LEN",
+  "CONCAT",
+  "JMP",
+  "EQ",
+  "LT",
+  "LE",
+  "TEST",
+  "TESTSET",
+  "CALL",
+  "TAILCALL",
+  "RETURN",
+  "FORLOOP",
+  "FORPREP",
+  "TFORCALL",
+  "TFORLOOP",
+  "SETLIST",
+  "CLOSURE",
+  "VARARG",
+  "EXTRAARG",
+  NULL
+};
+
+
+#define <A NAME="opmode"><SPAN CLASS="definition">opmode</SPAN></A>(t,a,b,c,m) (((t)&lt;&lt;7) | ((a)&lt;&lt;6) | ((b)&lt;&lt;4) | ((c)&lt;&lt;2) | (m))
+
+<A HREF="luaconf.h.html#LUAI_DDEF">LUAI_DDEF</A> const <A HREF="llimits.h.html#lu_byte">lu_byte</A> <A NAME="luaP_opmodes"><SPAN CLASS="definition">luaP_opmodes</SPAN></A>[<A HREF="lopcodes.h.html#NUM_OPCODES">NUM_OPCODES</A>] = {
+/*       T  A    B       C     mode                opcode       */
+  <A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_MOVE">OP_MOVE</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABx">iABx</A>)            /* <A HREF="lopcodes.h.html#OP_LOADK">OP_LOADK</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABx">iABx</A>)            /* <A HREF="lopcodes.h.html#OP_LOADKX">OP_LOADKX</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_LOADBOOL">OP_LOADBOOL</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_LOADNIL">OP_LOADNIL</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_GETUPVAL">OP_GETUPVAL</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_GETTABUP">OP_GETTABUP</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_GETTABLE">OP_GETTABLE</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 0, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_SETTABUP">OP_SETTABUP</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 0, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_SETUPVAL">OP_SETUPVAL</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 0, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_SETTABLE">OP_SETTABLE</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_NEWTABLE">OP_NEWTABLE</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_SELF">OP_SELF</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_ADD">OP_ADD</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_SUB">OP_SUB</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_MUL">OP_MUL</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_DIV">OP_DIV</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_MOD">OP_MOD</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_POW">OP_POW</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_UNM">OP_UNM</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_NOT">OP_NOT</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_LEN">OP_LEN</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_CONCAT">OP_CONCAT</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 0, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iAsBx">iAsBx</A>)           /* <A HREF="lopcodes.h.html#OP_JMP">OP_JMP</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(1, 0, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_EQ">OP_EQ</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(1, 0, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_LT">OP_LT</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(1, 0, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#OpArgK">OpArgK</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_LE">OP_LE</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(1, 0, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_TEST">OP_TEST</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(1, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_TESTSET">OP_TESTSET</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_TAILCALL">OP_TAILCALL</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 0, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iAsBx">iAsBx</A>)           /* <A HREF="lopcodes.h.html#OP_FORLOOP">OP_FORLOOP</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iAsBx">iAsBx</A>)           /* <A HREF="lopcodes.h.html#OP_FORPREP">OP_FORPREP</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 0, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_TFORCALL">OP_TFORCALL</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgR">OpArgR</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iAsBx">iAsBx</A>)           /* <A HREF="lopcodes.h.html#OP_TFORLOOP">OP_TFORLOOP</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 0, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABx">iABx</A>)            /* <A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 1, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgN">OpArgN</A>, <A HREF="lopcodes.h.html#iABC">iABC</A>)            /* <A HREF="lopcodes.h.html#OP_VARARG">OP_VARARG</A> */
+ ,<A HREF="lopcodes.c.html#opmode">opmode</A>(0, 0, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#OpArgU">OpArgU</A>, <A HREF="lopcodes.h.html#iAx">iAx</A>)             /* <A HREF="lopcodes.h.html#OP_EXTRAARG">OP_EXTRAARG</A> */
+};
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

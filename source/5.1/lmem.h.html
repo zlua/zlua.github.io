@@ -1,0 +1,84 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lmem.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lmem.h
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lmem.h,v 1.31.1.1 2007/12/27 13:02:25 roberto Exp $
+** Interface to Memory Manager
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lmem.h.html#lmem_h">lmem_h</A>
+#define <A NAME="lmem_h"><SPAN CLASS="definition">lmem_h</SPAN></A>
+
+
+#include &lt;stddef.h&gt;
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#define <A NAME="MEMERRMSG"><SPAN CLASS="definition">MEMERRMSG</SPAN></A>       "not enough memory"
+
+
+#define <A NAME="luaM_reallocv"><SPAN CLASS="definition">luaM_reallocv</SPAN></A>(L,b,on,n,e) \
+        ((<A HREF="llimits.h.html#cast">cast</A>(size_t, (n)+1) &lt;= <A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A>/(e)) ?  /* +1 to avoid warnings */ \
+                <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, (b), (on)*(e), (n)*(e)) : \
+                <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>(L))
+
+#define <A NAME="luaM_freemem"><SPAN CLASS="definition">luaM_freemem</SPAN></A>(L, b, s)   <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, (b), (s), 0)
+#define <A NAME="luaM_free"><SPAN CLASS="definition">luaM_free</SPAN></A>(L, b)         <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, (b), sizeof(*(b)), 0)
+#define <A NAME="luaM_freearray"><SPAN CLASS="definition">luaM_freearray</SPAN></A>(L, b, n, t)   <A HREF="lmem.h.html#luaM_reallocv">luaM_reallocv</A>(L, (b), n, 0, sizeof(t))
+
+#define <A NAME="luaM_malloc"><SPAN CLASS="definition">luaM_malloc</SPAN></A>(L,t)        <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, NULL, 0, (t))
+#define <A NAME="luaM_new"><SPAN CLASS="definition">luaM_new</SPAN></A>(L,t)           <A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L, sizeof(t)))
+#define <A NAME="luaM_newvector"><SPAN CLASS="definition">luaM_newvector</SPAN></A>(L,n,t) \
+                <A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.h.html#luaM_reallocv">luaM_reallocv</A>(L, NULL, 0, n, sizeof(t)))
+
+#define <A NAME="luaM_growvector"><SPAN CLASS="definition">luaM_growvector</SPAN></A>(L,v,nelems,size,t,limit,e) \
+          if ((nelems)+1 &gt; (size)) \
+            ((v)=<A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.c.html#luaM_growaux_">luaM_growaux_</A>(L,v,&amp;(size),sizeof(t),limit,e)))
+
+#define <A NAME="luaM_reallocvector"><SPAN CLASS="definition">luaM_reallocvector</SPAN></A>(L, v,oldn,n,t) \
+   ((v)=<A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.h.html#luaM_reallocv">luaM_reallocv</A>(L, v, oldn, n, sizeof(t))))
+
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void *<A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, size_t oldsize,
+                                                          size_t size);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void *<A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void *<A HREF="lmem.c.html#luaM_growaux_">luaM_growaux_</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, int *size,
+                               size_t size_elem, int limit,
+                               const char *errormsg);
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,49 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE>8.3 Manipulating Strings</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node33.html">8.4 Variable number of </A>
+<B>Up:</B> <A HREF="node29.html">8 Some Examples</A>
+<B> Previous:</B> <A HREF="node31.html">8.2 The Functions  next </A>
+<BR> <HR>
+<H2><A NAME=S830>8.3 Manipulating Strings</A></H2>
+ <A NAME=exstring></A>
+<P>
+The first example is a function to trim extra blanks at the beginning
+and end of a string.
+<B><PRE>function trim(s)
+  local l = 1
+  while strsub(s,l,l) == ' ' do
+    l = l+1
+  end
+  local r = strlen(s)
+  while strsub(s,r,r) == ' ' do
+    r = r-1
+  end
+  return strsub(s,l,r)
+end
+</PRE></B>
+<P>
+The second example shows a function that eliminates all blanks
+of a string.
+<B><PRE>function remove_blanks (s)
+  local b = strfind(s, ' ')
+  while b do
+    s = strsub(s, 1, b-1) .. strsub(s, b+1)
+    b = strfind(s, ' ')
+  end
+  return s
+end
+</PRE></B>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node33.html">8.4 Variable number of </A>
+<B>Up:</B> <A HREF="node29.html">8 Some Examples</A>
+<B> Previous:</B> <A HREF="node31.html">8.2 The Functions  next </A>
+<BR> <HR>

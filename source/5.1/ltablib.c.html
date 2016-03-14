@@ -1,0 +1,322 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - ltablib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ltablib.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ltablib.c,v 1.38.1.3 2008/02/14 16:46:58 roberto Exp $
+** Library for <A HREF="lobject.h.html#Table">Table</A> Manipulation
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stddef.h&gt;
+
+#define <A NAME="ltablib_c"><SPAN CLASS="definition">ltablib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+#define <A NAME="aux_getn"><SPAN CLASS="definition">aux_getn</SPAN></A>(L,n)   (<A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, n, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>), <A HREF="lauxlib.h.html#luaL_getn">luaL_getn</A>(L, n))
+
+
+static int <A NAME="foreachi"><SPAN CLASS="definition">foreachi</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int i;
+  int n = <A HREF="ltablib.c.html#aux_getn">aux_getn</A>(L, 1);
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 2, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);
+  for (i=1; i &lt;= n; i++) {
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 2);  /* function */
+    <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, i);  /* 1st argument */
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, i);  /* 2nd argument */
+    <A HREF="lapi.c.html#lua_call">lua_call</A>(L, 2, 1);
+    if (!<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1))
+      return 1;
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove nil result */
+  }
+  return 0;
+}
+
+
+static int <A NAME="foreach"><SPAN CLASS="definition">foreach</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 2, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);
+  <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);  /* first key */
+  while (<A HREF="lapi.c.html#lua_next">lua_next</A>(L, 1)) {
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 2);  /* function */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -3);  /* key */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -3);  /* value */
+    <A HREF="lapi.c.html#lua_call">lua_call</A>(L, 2, 1);
+    if (!<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1))
+      return 1;
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 2);  /* remove value and result */
+  }
+  return 0;
+}
+
+
+static int <A NAME="maxn"><SPAN CLASS="definition">maxn</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> max = 0;
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+  <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);  /* first key */
+  while (<A HREF="lapi.c.html#lua_next">lua_next</A>(L, 1)) {
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove value */
+    if (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, -1) == <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>) {
+      <A HREF="lua.h.html#lua_Number">lua_Number</A> v = <A HREF="lapi.c.html#lua_tonumber">lua_tonumber</A>(L, -1);
+      if (v &gt; max) max = v;
+    }
+  }
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, max);
+  return 1;
+}
+
+
+static int <A NAME="getn"><SPAN CLASS="definition">getn</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, <A HREF="ltablib.c.html#aux_getn">aux_getn</A>(L, 1));
+  return 1;
+}
+
+
+static int <A NAME="setn"><SPAN CLASS="definition">setn</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+#ifndef <A HREF="lauxlib.h.html#luaL_setn">luaL_setn</A>
+  <A HREF="lauxlib.h.html#luaL_setn">luaL_setn</A>(L, 1, <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2));
+#else
+  <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("<A HREF="ltablib.c.html#setn">setn</A>") " is obsolete");
+#endif
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);
+  return 1;
+}
+
+
+static int <A NAME="tinsert"><SPAN CLASS="definition">tinsert</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int e = <A HREF="ltablib.c.html#aux_getn">aux_getn</A>(L, 1) + 1;  /* first empty element */
+  int pos;  /* where to insert new element */
+  switch (<A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L)) {
+    case 2: {  /* called with only 2 arguments */
+      pos = e;  /* insert new element at the end */
+      break;
+    }
+    case 3: {
+      int i;
+      pos = <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>(L, 2);  /* 2nd argument is the position */
+      if (pos &gt; e) e = pos;  /* `grow' array if necessary */
+      for (i = e; i &gt; pos; i--) {  /* move up elements */
+        <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, i-1);
+        <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, 1, i);  /* t[i] = t[i-1] */
+      }
+      break;
+    }
+    default: {
+      return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "wrong number of arguments to " <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("insert"));
+    }
+  }
+  <A HREF="lauxlib.h.html#luaL_setn">luaL_setn</A>(L, 1, e);  /* new size */
+  <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, 1, pos);  /* t[pos] = v */
+  return 0;
+}
+
+
+static int <A NAME="tremove"><SPAN CLASS="definition">tremove</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int e = <A HREF="ltablib.c.html#aux_getn">aux_getn</A>(L, 1);
+  int pos = <A HREF="lauxlib.h.html#luaL_optint">luaL_optint</A>(L, 2, e);
+  if (!(1 &lt;= pos &amp;&amp; pos &lt;= e))  /* position is outside bounds? */
+   return 0;  /* nothing to remove */
+  <A HREF="lauxlib.h.html#luaL_setn">luaL_setn</A>(L, 1, e - 1);  /* t.n = n-1 */
+  <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, pos);  /* result = t[pos] */
+  for ( ;pos&lt;e; pos++) {
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, pos+1);
+    <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, 1, pos);  /* t[pos] = t[pos+1] */
+  }
+  <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+  <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, 1, e);  /* t[e] = nil */
+  return 1;
+}
+
+
+static void <A NAME="addfield"><SPAN CLASS="definition">addfield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> *b, int i) {
+  <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, i);
+  if (!<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>(L, -1))
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "invalid value (%s) at index %d in table for "
+                  <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("concat"), <A HREF="lauxlib.h.html#luaL_typename">luaL_typename</A>(L, -1), i);
+    <A HREF="lauxlib.c.html#luaL_addvalue">luaL_addvalue</A>(b);
+}
+
+
+static int <A NAME="tconcat"><SPAN CLASS="definition">tconcat</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+  size_t lsep;
+  int i, last;
+  const char *sep = <A HREF="lauxlib.c.html#luaL_optlstring">luaL_optlstring</A>(L, 2, "", &amp;lsep);
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+  i = <A HREF="lauxlib.h.html#luaL_optint">luaL_optint</A>(L, 3, 1);
+  last = <A HREF="lauxlib.h.html#luaL_opt">luaL_opt</A>(L, <A HREF="lauxlib.h.html#luaL_checkint">luaL_checkint</A>, 4, <A HREF="lauxlib.h.html#luaL_getn">luaL_getn</A>(L, 1));
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+  for (; i &lt; last; i++) {
+    <A HREF="ltablib.c.html#addfield">addfield</A>(L, &amp;b, i);
+    <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A>(&amp;b, sep, lsep);
+  }
+  if (i == last)  /* add last value (if interval was not empty) */
+    <A HREF="ltablib.c.html#addfield">addfield</A>(L, &amp;b, i);
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  return 1;
+}
+
+
+
+/*
+** {======================================================
+** Quicksort
+** (based on `Algorithms in MODULA-3', Robert Sedgewick;
+**  Addison-Wesley, 1993.)
+*/
+
+
+static void <A NAME="set2"><SPAN CLASS="definition">set2</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int i, int j) {
+  <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, 1, i);
+  <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, 1, j);
+}
+
+static int <A NAME="sort_comp"><SPAN CLASS="definition">sort_comp</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int a, int b) {
+  if (!<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, 2)) {  /* function? */
+    int res;
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 2);
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, a-1);  /* -1 to compensate function */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, b-2);  /* -2 to compensate function and `a' */
+    <A HREF="lapi.c.html#lua_call">lua_call</A>(L, 2, 1);
+    res = <A HREF="lapi.c.html#lua_toboolean">lua_toboolean</A>(L, -1);
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);
+    return res;
+  }
+  else  /* a &lt; b? */
+    return <A HREF="lapi.c.html#lua_lessthan">lua_lessthan</A>(L, a, b);
+}
+
+static void <A NAME="auxsort"><SPAN CLASS="definition">auxsort</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int l, int u) {
+  while (l &lt; u) {  /* for tail recursion */
+    int i, j;
+    /* <A HREF="ltablib.c.html#sort">sort</A> elements a[l], a[(l+u)/2] and a[u] */
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, l);
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, u);
+    if (<A HREF="ltablib.c.html#sort_comp">sort_comp</A>(L, -1, -2))  /* a[u] &lt; a[l]? */
+      <A HREF="ltablib.c.html#set2">set2</A>(L, l, u);  /* swap a[l] - a[u] */
+    else
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 2);
+    if (u-l == 1) break;  /* only 2 elements */
+    i = (l+u)/2;
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, i);
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, l);
+    if (<A HREF="ltablib.c.html#sort_comp">sort_comp</A>(L, -2, -1))  /* a[i]&lt;a[l]? */
+      <A HREF="ltablib.c.html#set2">set2</A>(L, i, l);
+    else {
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove a[l] */
+      <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, u);
+      if (<A HREF="ltablib.c.html#sort_comp">sort_comp</A>(L, -1, -2))  /* a[u]&lt;a[i]? */
+        <A HREF="ltablib.c.html#set2">set2</A>(L, i, u);
+      else
+        <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 2);
+    }
+    if (u-l == 2) break;  /* only 3 elements */
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, i);  /* Pivot */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, u-1);
+    <A HREF="ltablib.c.html#set2">set2</A>(L, i, u-1);
+    /* a[l] &lt;= P == a[u-1] &lt;= a[u], only need to <A HREF="ltablib.c.html#sort">sort</A> from l+1 to u-2 */
+    i = l; j = u-1;
+    for (;;) {  /* invariant: a[l..i] &lt;= P &lt;= a[j..u] */
+      /* repeat ++i until a[i] &gt;= P */
+      while (<A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, ++i), <A HREF="ltablib.c.html#sort_comp">sort_comp</A>(L, -1, -2)) {
+        if (i&gt;u) <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "invalid order function for sorting");
+        <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove a[i] */
+      }
+      /* repeat --j until a[j] &lt;= P */
+      while (<A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, --j), <A HREF="ltablib.c.html#sort_comp">sort_comp</A>(L, -3, -1)) {
+        if (j&lt;l) <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "invalid order function for sorting");
+        <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove a[j] */
+      }
+      if (j&lt;i) {
+        <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 3);  /* pop pivot, a[i], a[j] */
+        break;
+      }
+      <A HREF="ltablib.c.html#set2">set2</A>(L, i, j);
+    }
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, u-1);
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, i);
+    <A HREF="ltablib.c.html#set2">set2</A>(L, u-1, i);  /* swap pivot (a[u-1]) with a[i] */
+    /* a[l..i-1] &lt;= a[i] == P &lt;= a[i+1..u] */
+    /* adjust so that smaller half is in [j..i] and larger one in [l..u] */
+    if (i-l &lt; u-i) {
+      j=l; i=i-1; l=i+2;
+    }
+    else {
+      j=i+1; i=u; u=j-2;
+    }
+    <A HREF="ltablib.c.html#auxsort">auxsort</A>(L, j, i);  /* call recursively the smaller one */
+  }  /* repeat the routine for the larger one */
+}
+
+static int <A NAME="sort"><SPAN CLASS="definition">sort</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="ltablib.c.html#aux_getn">aux_getn</A>(L, 1);
+  <A HREF="lauxlib.c.html#luaL_checkstack">luaL_checkstack</A>(L, 40, "");  /* assume array is smaller than 2^40 */
+  if (!<A HREF="lua.h.html#lua_isnoneornil">lua_isnoneornil</A>(L, 2))  /* is there a 2nd argument? */
+    <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 2, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 2);  /* make sure there is two arguments */
+  <A HREF="ltablib.c.html#auxsort">auxsort</A>(L, 1, n);
+  return 0;
+}
+
+/* }====================================================== */
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="tab_funcs"><SPAN CLASS="definition">tab_funcs</SPAN></A>[] = {
+  {"concat", <A HREF="ltablib.c.html#tconcat">tconcat</A>},
+  {"<A HREF="ltablib.c.html#foreach">foreach</A>", <A HREF="ltablib.c.html#foreach">foreach</A>},
+  {"<A HREF="ltablib.c.html#foreachi">foreachi</A>", <A HREF="ltablib.c.html#foreachi">foreachi</A>},
+  {"<A HREF="ltablib.c.html#getn">getn</A>", <A HREF="ltablib.c.html#getn">getn</A>},
+  {"<A HREF="ltablib.c.html#maxn">maxn</A>", <A HREF="ltablib.c.html#maxn">maxn</A>},
+  {"insert", <A HREF="ltablib.c.html#tinsert">tinsert</A>},
+  {"remove", <A HREF="ltablib.c.html#tremove">tremove</A>},
+  {"<A HREF="ltablib.c.html#setn">setn</A>", <A HREF="ltablib.c.html#setn">setn</A>},
+  {"<A HREF="ltablib.c.html#sort">sort</A>", <A HREF="ltablib.c.html#sort">sort</A>},
+  {NULL, NULL}
+};
+
+
+<A HREF="luaconf.h.html#LUALIB_API">LUALIB_API</A> int <A NAME="luaopen_table"><SPAN CLASS="definition">luaopen_table</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_register">luaL_register</A>(L, <A HREF="lualib.h.html#LUA_TABLIBNAME">LUA_TABLIBNAME</A>, <A HREF="ltablib.c.html#tab_funcs">tab_funcs</A>);
+  return 1;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:56 2016
+</P>
+
+</BODY>
+</HTML>

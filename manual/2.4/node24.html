@@ -1,0 +1,223 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE>6.4 I/O Facilities</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node25.html">7 The Debuger Interface</A>
+<B>Up:</B> <A HREF="node20.html">6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF="node23.html">6.3 Mathematical Functions</A>
+<BR> <HR>
+<H2><A NAME=S640>6.4 I/O Facilities</A></H2>
+ <A NAME=libio></A>
+<P>
+All I/O operations in Lua are done over two <I> current</I> files,
+one for reading and one for writing.
+Initially, the current input file is <TT><B>stdin</B></TT>
+,
+and the current output file is <TT><B>stdout</B></TT>
+.
+<P>
+Unless otherwise stated,
+all I/O functions return 1 on success and <B> nil</B>  on failure.
+<P>
+<H3><A NAME=S641>  readfrom (filename)</A></H3>
+
+<P>
+This function opens a file named <TT><B>filename</B></TT>
+ and sets it as the
+<I> current</I> input file.
+When called without parameters,
+this function closes the current input file,
+and restores <TT><B>stdin</B></TT>
+ as the current input file.
+<P>
+<I> System dependent:</I> if <TT><B>filename</B></TT>
+ starts with a <TT><B>|</B></TT>
+,
+then a piped input is open, via function <TT><B> popen</B></TT>.
+<P>
+<H3><A NAME=S642>  writeto (filename)</A></H3>
+
+<P>
+This function opens a file named <TT><B>filename</B></TT>
+ and sets it as the
+<I> current</I> output file.
+Notice that, if the file already exists,
+it will be <I> completely erased</I> with this operation.
+When called without parameters,
+this function closes the current output file,
+and restores <TT><B>stdout</B></TT>
+ as the current output file.
+
+<P>
+<I> System dependent:</I> if <TT><B>filename</B></TT>
+ starts with a <TT><B>|</B></TT>
+,
+then a piped output is open, via function <TT><B> popen</B></TT>.
+<P>
+<H3><A NAME=S643>  appendto (filename)</A></H3>
+
+<P>
+This function opens a file named <TT><B>filename</B></TT>
+ and sets it as the
+<I> current</I> output file.
+Unlike the <TT><B>writeto</B></TT>
+ operation,
+this function does not erase any previous content of the file.
+<P>
+<H3><A NAME=S644>  remove (filename)</A></H3>
+
+<P>
+This function deletes the file with the given name.
+<P>
+<H3><A NAME=S645>  rename (name1, name2)</A></H3>
+
+<P>
+This function renames file <TT><B>name1</B></TT>
+ to <TT><B>name2</B></TT>
+.
+<P>
+<H3><A NAME=S646>  tmpname ()</A></H3>
+
+<P>
+This function returns a string with a file name that can safely
+be used for a temporary file.
+<P>
+<H3><A NAME=S647>  read ([format])</A></H3>
+
+<P>
+This function returns a value read from the current input.
+An optional string argument specifies the way the input is interpreted.
+<P>
+Without a format argument, <TT><B> read</B></TT> first skips blanks, tabs and newlines.
+Then it checks whether the current character is <TT><B>"</B></TT>
+ or <TT><B>'</B></TT>
+.
+If so, it reads a string up to the ending quotation mark,
+and returns this string, without the quotation marks.
+Otherwise it reads up to a blank, tab or newline.
+<P>
+The format string can have the following format:
+<B><PRE>   ?[n]
+</PRE></B>
+where <TT><B>?</B></TT>
+ can be:
+<DL ><DT>'s' or 'S'
+<DD> to read a string;
+<DT>'f' or 'F'
+<DD> to read a real number;
+<DT>'i' or 'I'
+<DD> to read an integer.
+<P>
+ </DL>
+The optional <TT><B>n</B></TT>
+ is a number which specifies how many characters
+must be read to compose the input value.
+Particularly, the format <TT><B>"s1"</B></TT>
+ reads a single character.
+<P>
+<H3><A NAME=S648>  readuntil (char)</A></H3>
+
+<P>
+Reads the current input until the first ocurrence of the given character.
+When called with no parameters,
+reads until the end of the current input file.
+Returns the string read.
+The character itself is not read.
+<P>
+<H3><A NAME=S649>  write (value, [format])</A></H3>
+
+<P>
+This function writes the value of its first argument to the current output.
+An optional second argument specifies the format to be used.
+This format is given as a string, composed of four parts.
+The first part is the only one not optional, and must be one of the
+following characters:
+<DL ><DT>'s' or 'S'
+<DD> to write strings;
+<DT>'f' or 'F'
+<DD> to write floats;
+<DT>'i' or 'I'
+<DD> to write integers;
+<DT>'q' or 'Q'
+<DD> to write quoted strings.
+This format writes the string in a form suitable to be safely read
+back by the Lua interpreter.
+The string is written between double quotes,
+and all double quotes, returns and backslashes in the string
+are correctly escaped when written.
+<P>
+ </DL>
+These characters can be followed by
+<B><PRE>   [?][m][.n]
+</PRE></B>
+where:
+<DL ><DT><TT><B>?</B></TT>
+
+<DD> indicates justification inside the field.
+<DL COMPACT><DT>'<TT><B><</B></TT>
+'
+<DD> right justification (default);
+<DT>'<TT><B>></B></TT>
+'
+<DD> left justification;
+<DT>'<TT><B>|</B></TT>
+'
+<DD> center justification.
+<P>
+ </DL>
+<DT><TT><B>m</B></TT>
+
+<DD> Indicates the field size in characters.
+<DT><TT><B>.n</B></TT>
+
+<DD> For reals, indicates the number of digital places.
+For integers, it is the minimum number of digits.
+This option has no meaning for strings.
+<P>
+ </DL>
+<P>
+When called without a format string,
+this function writes numbers using the <TT><B>%g</B></TT>
+ format
+and strings with <TT><B>%s</B></TT>
+.
+For better format facilities,
+the function <TT><B>format</B></TT>
+ should be used (see Section <A HREF="node22.html#format">6.2</A>).
+<P>
+<H3><A NAME=S6410>  date ([format])</A></H3>
+
+<P>
+This function returns a string containing date and time
+formatted according to the given string <TT><B>format</B></TT>
+,
+following the same rules of the ANSI C function <TT><B>strftime</B></TT>
+.
+When called without arguments,
+it returns a reasonable date and time representation.
+<P>
+This function replaces functions <TT><B>date</B></TT>
+ and <TT><B>time</B></TT>
+ from
+previous Lua versions.
+<P>
+<H3><A NAME=S6411>  exit ([code])</A></H3>
+
+<P>
+This function calls the C function <TT><B>exit</B></TT>
+,
+with an optional <TT><B>code</B></TT>
+,
+to terminate the program.
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node25.html">7 The Debuger Interface</A>
+<B>Up:</B> <A HREF="node20.html">6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF="node23.html">6.3 Mathematical Functions</A>
+<BR> <HR>

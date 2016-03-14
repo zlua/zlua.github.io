@@ -1,0 +1,90 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lualib.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lualib.h
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lualib.h,v 1.43.1.1 2013/04/12 18:48:47 roberto Exp $
+** Lua standard libraries
+** See Copyright Notice in lua.h
+*/
+
+
+#ifndef <A HREF="lualib.h.html#lualib_h">lualib_h</A>
+#define <A NAME="lualib_h"><SPAN CLASS="definition">lualib_h</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="lbaselib.c.html#luaopen_base">luaopen_base</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_COLIBNAME"><SPAN CLASS="definition">LUA_COLIBNAME</SPAN></A>   "coroutine"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="lcorolib.c.html#luaopen_coroutine">luaopen_coroutine</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_TABLIBNAME"><SPAN CLASS="definition">LUA_TABLIBNAME</SPAN></A>  "table"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="ltablib.c.html#luaopen_table">luaopen_table</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_IOLIBNAME"><SPAN CLASS="definition">LUA_IOLIBNAME</SPAN></A>   "io"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="liolib.c.html#luaopen_io">luaopen_io</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_OSLIBNAME"><SPAN CLASS="definition">LUA_OSLIBNAME</SPAN></A>   "os"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="loslib.c.html#luaopen_os">luaopen_os</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_STRLIBNAME"><SPAN CLASS="definition">LUA_STRLIBNAME</SPAN></A>  "string"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="lstrlib.c.html#luaopen_string">luaopen_string</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_BITLIBNAME"><SPAN CLASS="definition">LUA_BITLIBNAME</SPAN></A>  "bit32"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="lbitlib.c.html#luaopen_bit32">luaopen_bit32</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_MATHLIBNAME"><SPAN CLASS="definition">LUA_MATHLIBNAME</SPAN></A> "math"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="lmathlib.c.html#luaopen_math">luaopen_math</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_DBLIBNAME"><SPAN CLASS="definition">LUA_DBLIBNAME</SPAN></A>   "debug"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="ldblib.c.html#luaopen_debug">luaopen_debug</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+#define <A NAME="LUA_LOADLIBNAME"><SPAN CLASS="definition">LUA_LOADLIBNAME</SPAN></A> "package"
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int (<A HREF="loadlib.c.html#luaopen_package">luaopen_package</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+
+/* open all previous libraries */
+<A HREF="luaconf.h.html#LUALIB_API">LUALIB_API</A> void (<A HREF="linit.c.html#luaL_openlibs">luaL_openlibs</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+
+
+#if !defined(<A HREF="lualib.h.html#lua_assert">lua_assert</A>)
+#define <A NAME="lua_assert"><SPAN CLASS="definition">lua_assert</SPAN></A>(x)   ((void)0)
+#endif
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:41 2016
+</P>
+
+</BODY>
+</HTML>

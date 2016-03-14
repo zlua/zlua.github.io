@@ -1,0 +1,128 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE>6.2 String Manipulation</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node23.html">6.3 Mathematical Functions</A>
+<B>Up:</B> <A HREF="node20.html">6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF="node21.html">6.1 Predefined Functions</A>
+<BR> <HR>
+<H2><A NAME=S620>6.2 String Manipulation</A></H2>
+<P>
+This library provides generic functions for string manipulation,
+such as finding and extracting substrings.
+When indexing a string, the first character has position 1.
+See Section <A HREF="node32.html#exstring">8.3</A> for some examples on string manipulation
+in Lua.
+<P>
+<H3><A NAME=S621>  strfind (str, substr, [init, [end]])</A></H3>
+<P>
+
+Receives two string arguments,
+and returns a number.
+This number indicates the first position where the second argument appears
+in the first argument.
+If the second argument is not a substring of the first one,
+then <TT><B>strfind</B></TT>
+ returns <B> nil</B> .
+A third optional numerical argument specifies where to start the search.
+Another optional numerical argument specifies where to stop it.
+<P>
+<H3><A NAME=S622>  strlen (s)</A></H3>
+
+Receives a string and returns its length.
+<P>
+<H3><A NAME=S623>  strsub (s, i, [j])</A></H3>
+
+Returns another string, which is a substring of <TT><B>s</B></TT>
+,
+starting at <TT><B>i</B></TT>
+  and runing until <TT><B>j</B></TT>
+.
+If <TT><B>j</B></TT>
+ is absent,
+it is assumed to be equal to the length of <TT><B>s</B></TT>
+.
+Particularly, the call <TT><B>strsub(s,1,j)</B></TT>
+ returns a prefix of <TT><B>s</B></TT>
+
+with length <TT><B>j</B></TT>
+,
+while the call <TT><B>strsub(s,i)</B></TT>
+ returns a suffix of <TT><B>s</B></TT>
+,
+starting at <TT><B>i</B></TT>
+.
+<P>
+<H3><A NAME=S624>  strlower (s)</A></H3>
+
+Receives a string and returns a copy of that string with all
+upper case letters changed to lower case.
+All other characters are left unchanged.
+<P>
+<H3><A NAME=S625>  strupper (s)</A></H3>
+
+Receives a string and returns a copy of that string with all
+lower case letters changed to upper case.
+All other characters are left unchanged.
+<P>
+<H3><A NAME=S626>  ascii (s, [i])</A></H3>
+
+Returns the ascii code of the character <TT><B>s[i]</B></TT>
+.
+If <TT><B>i</B></TT>
+ is absent, it is assumed to be 1.
+<P>
+<H3><A NAME=S627>  format (formatstring, e1, e2, ...)</A></H3>
+
+<A NAME=format></A>
+This function returns a formated version of its variable number of arguments
+following the description given in its first argument (which must be a string). 
+The format string follows the same rules as the <TT><B>printf</B></TT>
+ family of
+standard C functions.
+The only differencies are that the options/modifiers
+<TT><B>*</B></TT>
+, <TT><B>l</B></TT>
+, <TT><B>L</B></TT>
+, <TT><B>n</B></TT>
+, <TT><B>p</B></TT>
+,
+and <TT><B>h</B></TT>
+ are not supported,
+and there is an extra option, <TT><B>q</B></TT>
+.
+This option formats a string in a form suitable to be safely read
+back by the Lua interpreter.
+The string is written between double quotes,
+and all double quotes, returns and backslashes in the string
+are correctly escaped when written.
+<P>
+The options <TT><B>c</B></TT>
+, <TT><B>d</B></TT>
+, <TT><B>E</B></TT>
+, <TT><B>e</B></TT>
+, <TT><B>f</B></TT>
+,
+<TT><B>g</B></TT>
+ <TT><B>i</B></TT>
+, <TT><B>o</B></TT>
+, <TT><B>u</B></TT>
+, <TT><B>X</B></TT>
+, and <TT><B>x</B></TT>
+ all
+expect a number argument,
+while <TT><B>q</B></TT>
+ and <TT><B>s</B></TT>
+ expects a string.
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node23.html">6.3 Mathematical Functions</A>
+<B>Up:</B> <A HREF="node20.html">6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF="node21.html">6.1 Predefined Functions</A>
+<BR> <HR>

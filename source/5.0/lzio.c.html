@@ -1,0 +1,116 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lzio.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lzio.c
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lzio.c,v 1.24 2003/03/20 16:00:56 roberto Exp $
+** a generic input stream interface
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;string.h&gt;
+
+#define <A NAME="lzio_c"><SPAN CLASS="definition">lzio_c</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+int <A NAME="luaZ_fill"><SPAN CLASS="definition">luaZ_fill</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A> *z) {
+  size_t size;
+  const char *buff = z-&gt;reader(NULL, z-&gt;data, &amp;size);
+  if (buff == NULL || size == 0) return <A HREF="lzio.h.html#EOZ">EOZ</A>;
+  z-&gt;n = size - 1;
+  z-&gt;p = buff;
+  return <A HREF="lzio.h.html#char2int">char2int</A>(*(z-&gt;p++));
+}
+
+
+int <A NAME="luaZ_lookahead"><SPAN CLASS="definition">luaZ_lookahead</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A> *z) {
+  if (z-&gt;n == 0) {
+    int c = <A HREF="lzio.c.html#luaZ_fill">luaZ_fill</A>(z);
+    if (c == <A HREF="lzio.h.html#EOZ">EOZ</A>) return c;
+    z-&gt;n++;
+    z-&gt;p--;
+  }
+  return <A HREF="lzio.h.html#char2int">char2int</A>(*z-&gt;p);
+}
+
+
+void <A NAME="luaZ_init"><SPAN CLASS="definition">luaZ_init</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A> *z, <A HREF="lua.h.html#lua_Chunkreader">lua_Chunkreader</A> reader, void *data, const char *name) {
+  z-&gt;reader = reader;
+  z-&gt;data = data;
+  z-&gt;name = name;
+  z-&gt;n = 0;
+  z-&gt;p = NULL;
+}
+
+
+/* --------------------------------------------------------------- read --- */
+size_t <A NAME="luaZ_read"><SPAN CLASS="definition">luaZ_read</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A> *z, void *b, size_t n) {
+  while (n) {
+    size_t m;
+    if (z-&gt;n == 0) {
+      if (<A HREF="lzio.c.html#luaZ_fill">luaZ_fill</A>(z) == <A HREF="lzio.h.html#EOZ">EOZ</A>)
+        return n;  /* return number of missing bytes */
+      else {
+        ++z-&gt;n;  /* filbuf removed first byte; put back it */
+        --z-&gt;p;
+      }
+    }
+    m = (n &lt;= z-&gt;n) ? n : z-&gt;n;  /* min. between n and z-&gt;n */
+    memcpy(b, z-&gt;p, m);
+    z-&gt;n -= m;
+    z-&gt;p += m;
+    b = (char *)b + m;
+    n -= m;
+  }
+  return 0;
+}
+
+/* ------------------------------------------------------------------------ */
+char *<A NAME="luaZ_openspace"><SPAN CLASS="definition">luaZ_openspace</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lzio.h.html#Mbuffer">Mbuffer</A> *buff, size_t n) {
+  if (n &gt; buff-&gt;buffsize) {
+    if (n &lt; <A HREF="llimits.h.html#LUA_MINBUFFER">LUA_MINBUFFER</A>) n = <A HREF="llimits.h.html#LUA_MINBUFFER">LUA_MINBUFFER</A>;
+    <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, buff-&gt;buffer, buff-&gt;buffsize, n, char);
+    buff-&gt;buffsize = n;
+  }
+  return buff-&gt;buffer;
+}
+
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

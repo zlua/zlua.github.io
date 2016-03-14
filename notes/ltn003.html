@@ -1,0 +1,342 @@
+<HTML>
+<HEAD>
+<TITLE>Lua: technical note 3</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+</HEAD>
+
+<BODY>
+
+<HR>
+<H1>
+<A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua" BORDER=0></A>
+Technical Note 3
+</H1>
+
+<H2>Interfacing Lua to an operating system</H2>
+by <A HREF="http://www.wraith.u-net.com/">Gavin Wraith</A>
+<P>
+
+This note explains how to extend Lua to take advantage of system calls.
+Although my own efforts have been confined to an operating system
+that may be unknown to most readers (<a href="http://www.riscos.com/">RISC OS</a>),
+I believe that the principles involved are fairly universal. I write this note in the
+hope of getting useful criticism. It is an abstract of what I have
+done in implementing <a href="http://www.lua.riscos.org.uk/">RiscLua</a>.
+<p>
+RISC OS was designed for a specific family of processors, the ARM. User
+programs interact with RISC OS only via a specific processor instruction,
+SWI (SoftWare Interrupt). Every processor has an analogue of this,
+though doubtless called something different (TRAP?). Using a software
+interrupt involves the following steps:
+<ol>
+<li>Write some processor registers with appropriate data
+(some of which may be pointers to fixed addresses in the
+program's memory area).
+<li>Call the  SWI.
+<li>Read some registers.
+</ol>
+In practice, only a subset of processor registers is ever used for passing data
+between program and operating system, namely R0, R1, ..., R7. All the registers
+are 32 bits wide. It requires seven instructions of code to produce a
+C function <tt><pre>
+
+extern void swi_call(int swi_number, void * regbuffer);
+
+</pre></tt>
+for doing the SWI call. 
+The <tt>regbuffer</tt> argument points to a 32-byte array
+for writing and reading the register values. For those who are familiar with
+the ARM's instruction set, here is the relevant assembler fragment:
+<tt><pre>
+
+  swi_call:
+            STMFD sp!, {R4-R8,R12,link}
+            MOV R12,R0   ; SWI number
+            MOV R8,R1    ; base of register values
+            LDMIA R8,{R0-R7}          
+            SWI &71       ; OS_CallASWIR12
+            STMIA R8,{R0-R7}            
+            LDMFD sp!, {R4-R8,R12,PC}
+            
+</pre></tt>
+The following is code for a builtin C function
+<tt><pre>
+
+static int risc_swi (lua_State *L)
+{
+  int swinum;
+  void *r;
+  if (lua_isstring(L,1))
+    swinum = swi_str2num(luaL_check_string(L,1));  /* convert string to number */
+  else
+    if (lua_isnumber(L,1))
+       swinum = luaL_check_int(L,1);
+    else
+      lua_error(L,"swi: arg1 should be a string or a number.");
+  if (!lua_isuserdata(L,2))
+      lua_error(L,"swi: arg2 should be userdata");
+  r = lua_touserdata(L,2);
+  swi_call(swinum,r);
+  lua_pushnil(L);
+  return 1;
+}
+
+</pre></tt>
+It defines a Lua function <tt>swi</tt> for system calls.<p>
+
+The data written to before and read from the registers after a software
+interrupt are frequently pointers to fixed addresses in the program's
+memory area, where various kinds of data may be held. These data may
+be 32-bit integers, strings or pointers to other fixed buffers. It is
+necessary that these arrays be fixed, for reasons hidden in the murky
+past of RISC OS. Each task is responsible for allocating its own message
+buffer and then it informs the task manager where it is. If the buffer
+were to be moved, there would be trouble. Since Lua's datatypes are garbage
+collected, we have to implement these fixed arrays using the userdata type.
+We assign a particular tag, called "writeable", for userdata pointing to these
+arrays. Here is C code for a function <tt>risc_dim</tt>
+<tt><pre>
+
+      static int writeable_tag;
+      
+      static int risc_dim (lua_State *L)
+      {
+        void *p;
+        if ((p = malloc((size_t) luaL_check_int(L,1))) != (void *)0)
+            lua_pushusertag(L,p, writeable_tag);
+        else
+          lua_pushnil(L);
+        return 1;   
+      }
+
+</pre></tt>
+for a builtin lua function <tt>dim(n)</tt> which produces a
+userdatum  with the writeable tag pointing to a fixed buffer
+holding <tt>n</tt> bytes. In addition we need functions to
+read data from a fixed buffer into a lua variable, and to
+write data to a fixed buffer from a lua variable. The types
+of data we have to consider are
+<ul>
+<li>32-bit integers to/from lua numbers
+<li>strings to/from lua strings
+<li>32-bit pointers to/from lua userdata
+</ul>
+I omit the details of these conversion functions.
+<p>
+Of course, the user of RiscLua should be shielded from these
+details. So I wrap all these functions up as methods for a
+table <tt><pre>
+
+array = function (n)
+  local a = {}
+  a.n = n -- size of array
+  a.b = dim(n) -- bottom of array (address of first byte)
+  a.after = { b = disp(a.b,a.n) } -- next byte
+  a.words = array_words
+  a.chars = array_chars
+  a.int = array_int
+  a.ptr = array_ptr
+  a.strp = array_strp
+  a.char = array_char
+  a.str = array_str
+ return a
+ end
+
+</pre></tt>
+These methods have values which are global functions named
+<tt>array_xxx</tt>. The "words" method is used to read 32-bit
+values, and the "chars" method to read in 8-bit values. They
+take tables as arguments, indexed by integers giving offsets
+into the fixed buffer. The values in the tables can be numbers
+(for byte values) or strings (for multiple bytes) in the case
+of chars, and in the case of "words" they can be numbers (for
+32-bit integers), C-strings held in a buffer (for pointers
+to their address), or tables of the kind defined by <tt>array</tt>
+(for pointers to buffers). Here is the lua code
+<tt><pre>
+
+array_words = function (self,t)
+    if (tag(self.b) ~= writeable) then
+       error("words: arg1 not an array") end
+    if (type(t) ~= "table") then
+       error("words: arg2 must be a table") end
+    local fns = {
+         number = function (i,v) putword(%self.b,i,v) end,
+         table = function (i,v)
+                  if (tag(v.b) ~= writeable) then
+                     error("words: arg not an array") end
+                  putword(%self.b,i,v.b) end,
+         string = function (i,v) putword(%self.b,i,str2ptr(v)) end,
+         default = function () error("words: bad type") end
+                  }
+        for i,v in t do
+                     if (fns[type(v)]) then
+                       fns[type(v)](i,v)
+                     else
+                        fns.default()
+                     end
+                    end
+     end
+     
+array_chars = function (self,t)
+              if (tag(self.b) ~= writeable) then
+                 error("chars: arg1 not an array") end
+              if (type(t) ~= "table") then
+                 error("chars: arg2 must be a table") end
+              local fns = {
+                  number = function (i,v) putbyte(%self.b,i,v) end,
+                  string = function (i,v)
+                              local len,k = strlen(v),1
+                              while (k <= len) do
+                                  putbyte(%self.b,i,strbyte(v,k))
+                                  k = k + 1; i = i + 1;
+                               end
+                            end,
+                   default = function () error("chars: bad type") end
+                         }
+              for i,v in t do
+                    if (fns[type(v)]) then
+                       fns[type(v)](i,v)
+                    else
+                       fns.default()
+                    end
+                           end
+   end
+
+</pre></tt>
+The functions <tt>putword, putbyte</tt> are builtin C-functions that
+do the obvious things.
+The result is that if we define, say <tt><pre>
+
+  x,y = array(n),array(m)
+
+</pre></tt>we can do<tt><pre>
+
+  x:chars { [0] = "hello".."\0" } -- only 6 bytes taken up so far
+  x:words { [2] = a_num, [3] = y }
+
+</pre></tt>storing a number <tt>a_num</tt> at bytes 8,9,10,11 and the
+userdatum <tt>y.b</tt> at bytes 12,13,14,15 of the fixed buffer
+pointed to by <tt>x.b</tt>.<p>
+The other methods are for reading integers, strings and pointers
+stored in fixed buffers. So <tt>x:int(2)</tt> should yield the
+value of <tt>a_num</tt> again, and <tt>x:str(0)</tt> should
+yield <tt>"hello"</tt>. This, I hope, describes the syntax of
+reading and writing fixed buffers. <p>
+The actual interface to the operating system is given by
+<tt><pre>
+
+swi = {
+        regs = array(32),
+        call = function (self,x)
+                 %swi(x,self.regs.b)
+                end
+      }
+    
+</pre></tt>
+Note how the "call" method hides the raw <tt>swi</tt> function
+described above. With <tt>array</tt> and <tt>swi</tt> defined
+in a prelude file, we are in a position to use Lua to exploit
+everything that the operating system offers. Of course, this
+prelude is still very low level, but it offers enough to build
+libraries for writing "wimp" (Windows Icons Menus Pointers) programs
+that use RISC OS's graphical user interface. Here, as an example
+of how the system calls can be used, is Lua code
+to define a function <tt>w_task</tt> that creates a wimp task:
+<tt><pre>
+
+ w_task = function (taskname,version,mesgs)
+  assert(type(taskname) == "string", " taskname not a string")
+  assert(type(version) == "number", " version not a number")
+  assert(type(mesgs) == "table", " mesgs not a table")
+  local title = _(taskname)
+  local wt = { err = _ERRORMESSAGE,
+   title = title,
+   action = {}, -- table of action methods indexed by events
+   block = array(256), 
+   msgs = array(4+4*getn(mesgs)),
+   pollword = array(4),  
+   poll = function (self,uservar)
+     local f,quit
+     self.mask = self.mask or 0
+     repeat
+      swi.regs:words {
+       [0] = self.mask,
+       [1] = self.block,
+       [3] = self.pollword }
+      swi:call("Wimp_Poll")
+      f = self.action[swi.regs:int(0)]
+      if f then quit = f(self,uservar) end
+     until quit
+     swi.regs:words {
+      [0] = self.handle,
+      [1] = TASK }
+     swi:call("Wimp_CloseDown")
+     _ERRORMESSAGE = self.err
+    end -- function       
+   }             
+  wt.msgs:words(mesgs) -- load messages buffer
+  swi.regs:words {
+   [0] = version,
+   [1] = TASK,
+   [2] = wt.title,
+   [3] = wt.msgs }
+  swi:call("Wimp_Initialise")
+  wt.handle = swi.regs:int(1)
+  _ERRORMESSAGE = function (errm)  -- set error handler
+    local b = %wt.block
+    b:words { [0] = LUA_ERROR }
+    b:chars { [4] = errm .."\0" }
+    swi.regs:words { [0] = b, [1] = 16, [2] = %title }
+    swi:call("Wimp_ReportError")   
+  end -- function
+  return wt
+ end -- function  
+
+</pre></tt>
+Once a wimp task has been initialised and has set up its data it goes
+to sleep by calling the "poll" method, handing over execution to the
+task manager in the RISC OS kernel. When the task manager wakes it up
+again it puts an event code in register R0. The lines <tt><pre>
+
+ f = self.action[swi.regs:int(0)]
+      if f then quit = f(self,uservar) end
+
+</pre></tt>show that the task responds by executing an action method
+indexed by the returned event code. This is how the non-preemptive
+multitasking of RISC OS works. When the task is initialised it
+sets up its own error handler to output error messages in a
+window, and before closing down it restores the previous error
+handler. Using the <tt>w_task</tt> function, and similar library
+functions for loading templates for windows and menus, all the
+programmer has to do is define handler methods for events, e.g.
+<tt><pre>
+
+  mytask = w_task("MyTask",310, { [0] = M_DataLoad, [1] = M_Quit })
+  .....................
+    
+  mytask.action[Mouse_Click] = function (self) ........ end
+  .....................
+                                 
+  mytask:poll()
+
+</pre></tt>
+Although the examples contain detail that will not mean much to
+those unfamiliar with RISC OS, the basic principles should be
+much the same for other platforms:
+<ul>
+<li> a C function for system calls,
+<li> a C function for allocating buffers,
+<li> C functions for reading and writing Lua variables to buffers,
+<li> wrapper objects in Lua concealing these functions as methods,
+<li> constructor functions using system calls to create task objects.
+</ul>
+<HR>
+<SMALL>
+Last update:
+Mon Aug 12 15:48:51 EST 2002
+by <A HREF="http://www.tecgraf.puc-rio.br/~lhf/">lhf</A>.
+</SMALL>
+
+</BODY>
+</HTML>

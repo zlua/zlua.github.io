@@ -1,0 +1,79 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lmem.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lmem.h
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lmem.h,v 1.26 2002/05/01 20:40:42 roberto Exp $
+** Interface to Memory Manager
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lmem.h.html#lmem_h">lmem_h</A>
+#define <A NAME="lmem_h"><SPAN CLASS="definition">lmem_h</SPAN></A>
+
+
+#include &lt;stddef.h&gt;
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#define <A NAME="MEMERRMSG"><SPAN CLASS="definition">MEMERRMSG</SPAN></A>       "not enough memory"
+
+
+void *<A HREF="lmem.c.html#luaM_realloc">luaM_realloc</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *oldblock, <A HREF="llimits.h.html#lu_mem">lu_mem</A> oldsize, <A HREF="llimits.h.html#lu_mem">lu_mem</A> size);
+
+void *<A HREF="lmem.c.html#luaM_growaux">luaM_growaux</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, int *size, int size_elem,
+                    int limit, const char *errormsg);
+
+#define <A NAME="luaM_free"><SPAN CLASS="definition">luaM_free</SPAN></A>(L, b, s)      <A HREF="lmem.c.html#luaM_realloc">luaM_realloc</A>(L, (b), (s), 0)
+#define <A NAME="luaM_freelem"><SPAN CLASS="definition">luaM_freelem</SPAN></A>(L, b)      <A HREF="lmem.c.html#luaM_realloc">luaM_realloc</A>(L, (b), sizeof(*(b)), 0)
+#define <A NAME="luaM_freearray"><SPAN CLASS="definition">luaM_freearray</SPAN></A>(L, b, n, t)      <A HREF="lmem.c.html#luaM_realloc">luaM_realloc</A>(L, (b), \
+                                      <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, n)*<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, sizeof(t)), 0)
+
+#define <A NAME="luaM_malloc"><SPAN CLASS="definition">luaM_malloc</SPAN></A>(L, t)       <A HREF="lmem.c.html#luaM_realloc">luaM_realloc</A>(L, NULL, 0, (t))
+#define <A NAME="luaM_new"><SPAN CLASS="definition">luaM_new</SPAN></A>(L, t)          <A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L, sizeof(t)))
+#define <A NAME="luaM_newvector"><SPAN CLASS="definition">luaM_newvector</SPAN></A>(L, n,t)  <A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L, \
+                                         <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, n)*<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, sizeof(t))))
+
+#define <A NAME="luaM_growvector"><SPAN CLASS="definition">luaM_growvector</SPAN></A>(L,v,nelems,size,t,limit,e) \
+          if (((nelems)+1) &gt; (size)) \
+            ((v)=<A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.c.html#luaM_growaux">luaM_growaux</A>(L,v,&amp;(size),sizeof(t),limit,e)))
+
+#define <A NAME="luaM_reallocvector"><SPAN CLASS="definition">luaM_reallocvector</SPAN></A>(L, v,oldn,n,t) \
+   ((v)=<A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.c.html#luaM_realloc">luaM_realloc</A>(L, v,<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, oldn)*<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, sizeof(t)), \
+                                    <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, n)*<A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_mem">lu_mem</A>, sizeof(t)))))
+
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

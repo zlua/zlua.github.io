@@ -1,0 +1,93 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - ldo.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldo.h
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldo.h,v 2.28 2015/11/23 11:29:43 roberto Exp $
+** Stack and Call structure of Lua
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="ldo.h.html#ldo_h">ldo_h</A>
+#define <A NAME="ldo_h"><SPAN CLASS="definition">ldo_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+/*
+** Macro to check stack size and grow stack if needed.  Parameters
+** 'pre'/'pos' allow the macro to preserve a pointer into the
+** stack across reallocations, doing the work only when needed.
+** '<A HREF="llimits.h.html#condmovestack">condmovestack</A>' is used in heavy tests to force a stack reallocation
+** at every check.
+*/
+#define <A NAME="luaD_checkstackaux"><SPAN CLASS="definition">luaD_checkstackaux</SPAN></A>(L,n,pre,pos)  \
+        if (L-&gt;stack_last - L-&gt;top &lt;= (n)) \
+          { pre; <A HREF="ldo.c.html#luaD_growstack">luaD_growstack</A>(L, n); pos; } else { <A HREF="llimits.h.html#condmovestack">condmovestack</A>(L,pre,pos); }
+
+/* In general, 'pre'/'pos' are empty (nothing to save) */
+#define <A NAME="luaD_checkstack"><SPAN CLASS="definition">luaD_checkstack</SPAN></A>(L,n)    <A HREF="ldo.h.html#luaD_checkstackaux">luaD_checkstackaux</A>(L,n,,)
+
+
+
+#define <A NAME="savestack"><SPAN CLASS="definition">savestack</SPAN></A>(L,p)          ((char *)(p) - (char *)L-&gt;stack)
+#define <A NAME="restorestack"><SPAN CLASS="definition">restorestack</SPAN></A>(L,n)       ((<A HREF="lobject.h.html#TValue">TValue</A> *)((char *)L-&gt;stack + (n)))
+
+
+/* type of protected functions, to be ran by 'runprotected' */
+typedef void (*<A NAME="Pfunc"><SPAN CLASS="definition">Pfunc</SPAN></A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud);
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ldo.c.html#luaD_protectedparser">luaD_protectedparser</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lzio.h.html#ZIO">ZIO</A> *z, const char *name,
+                                                  const char *mode);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ldo.c.html#luaD_hook">luaD_hook</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int event, int line);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ldo.c.html#luaD_precall">luaD_precall</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> func, int nresults);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ldo.c.html#luaD_call">luaD_call</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> func, int nResults);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ldo.c.html#luaD_callnoyield">luaD_callnoyield</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> func, int nResults);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ldo.c.html#luaD_pcall">luaD_pcall</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="ldo.h.html#Pfunc">Pfunc</A> func, void *u,
+                                        ptrdiff_t oldtop, ptrdiff_t ef);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ldo.c.html#luaD_poscall">luaD_poscall</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci, <A HREF="lobject.h.html#StkId">StkId</A> firstResult,
+                                          int nres);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ldo.c.html#luaD_reallocstack">luaD_reallocstack</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int newsize);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ldo.c.html#luaD_growstack">luaD_growstack</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ldo.c.html#luaD_shrinkstack">luaD_shrinkstack</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="ldo.c.html#luaD_inctop">luaD_inctop</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="llimits.h.html#l_noret">l_noret</A> <A HREF="ldo.c.html#luaD_throw">luaD_throw</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int errcode);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="ldo.c.html#luaD_rawrunprotected">luaD_rawrunprotected</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="ldo.h.html#Pfunc">Pfunc</A> f, void *ud);
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

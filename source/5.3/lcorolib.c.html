@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lcorolib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lcorolib.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lcorolib.c,v 1.9 2014/11/02 19:19:04 roberto Exp $
+** Coroutine Library
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lcorolib_c"><SPAN CLASS="definition">lcorolib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;stdlib.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+static <A HREF="lstate.h.html#lua_State">lua_State</A> *<A NAME="getco"><SPAN CLASS="definition">getco</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *co = <A HREF="lapi.c.html#lua_tothread">lua_tothread</A>(L, 1);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, co, 1, "thread expected");
+  return co;
+}
+
+
+static int <A NAME="auxresume"><SPAN CLASS="definition">auxresume</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#lua_State">lua_State</A> *co, int narg) {
+  int status;
+  if (!<A HREF="lapi.c.html#lua_checkstack">lua_checkstack</A>(co, narg)) {
+    <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "too many arguments to resume");
+    return -1;  /* error flag */
+  }
+  if (<A HREF="lapi.c.html#lua_status">lua_status</A>(co) == <A HREF="lua.h.html#LUA_OK">LUA_OK</A> &amp;&amp; <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(co) == 0) {
+    <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "cannot resume dead coroutine");
+    return -1;  /* error flag */
+  }
+  <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(L, co, narg);
+  status = <A HREF="ldo.c.html#lua_resume">lua_resume</A>(co, L, narg);
+  if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A> || status == <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>) {
+    int nres = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(co);
+    if (!<A HREF="lapi.c.html#lua_checkstack">lua_checkstack</A>(L, nres + 1)) {
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(co, nres);  /* remove results anyway */
+      <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "too many results to resume");
+      return -1;  /* error flag */
+    }
+    <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(co, L, nres);  /* move yielded values */
+    return nres;
+  }
+  else {
+    <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(co, L, 1);  /* move error message */
+    return -1;  /* error flag */
+  }
+}
+
+
+static int <A NAME="luaB_coresume"><SPAN CLASS="definition">luaB_coresume</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *co = <A HREF="lcorolib.c.html#getco">getco</A>(L);
+  int r;
+  r = <A HREF="lcorolib.c.html#auxresume">auxresume</A>(L, co, <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) - 1);
+  if (r &lt; 0) {
+    <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 0);
+    <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, -2);
+    return 2;  /* return false + error message */
+  }
+  else {
+    <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 1);
+    <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, -(r + 1));
+    return r + 1;  /* return true + 'resume' returns */
+  }
+}
+
+
+static int <A NAME="luaB_auxwrap"><SPAN CLASS="definition">luaB_auxwrap</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *co = <A HREF="lapi.c.html#lua_tothread">lua_tothread</A>(L, <A HREF="lua.h.html#lua_upvalueindex">lua_upvalueindex</A>(1));
+  int r = <A HREF="lcorolib.c.html#auxresume">auxresume</A>(L, co, <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L));
+  if (r &lt; 0) {
+    if (<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>(L, -1)) {  /* error object is a string? */
+      <A HREF="lauxlib.c.html#luaL_where">luaL_where</A>(L, 1);  /* add extra info */
+      <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, -2);
+      <A HREF="lapi.c.html#lua_concat">lua_concat</A>(L, 2);
+    }
+    return <A HREF="lapi.c.html#lua_error">lua_error</A>(L);  /* propagate error */
+  }
+  return r;
+}
+
+
+static int <A NAME="luaB_cocreate"><SPAN CLASS="definition">luaB_cocreate</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *NL;
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);
+  NL = <A HREF="lstate.c.html#lua_newthread">lua_newthread</A>(L);
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);  /* move function to top */
+  <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(L, NL, 1);  /* move function from L to NL */
+  return 1;
+}
+
+
+static int <A NAME="luaB_cowrap"><SPAN CLASS="definition">luaB_cowrap</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lcorolib.c.html#luaB_cocreate">luaB_cocreate</A>(L);
+  <A HREF="lapi.c.html#lua_pushcclosure">lua_pushcclosure</A>(L, <A HREF="lcorolib.c.html#luaB_auxwrap">luaB_auxwrap</A>, 1);
+  return 1;
+}
+
+
+static int <A NAME="luaB_yield"><SPAN CLASS="definition">luaB_yield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="lua.h.html#lua_yield">lua_yield</A>(L, <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L));
+}
+
+
+static int <A NAME="luaB_costatus"><SPAN CLASS="definition">luaB_costatus</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *co = <A HREF="lcorolib.c.html#getco">getco</A>(L);
+  if (L == co) <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "running");
+  else {
+    switch (<A HREF="lapi.c.html#lua_status">lua_status</A>(co)) {
+      case <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>:
+        <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "suspended");
+        break;
+      case <A HREF="lua.h.html#LUA_OK">LUA_OK</A>: {
+        <A HREF="lua.h.html#lua_Debug">lua_Debug</A> ar;
+        if (<A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(co, 0, &amp;ar) &gt; 0)  /* does it have frames? */
+          <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "normal");  /* it is running */
+        else if (<A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(co) == 0)
+            <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "dead");
+        else
+          <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "suspended");  /* initial state */
+        break;
+      }
+      default:  /* some error occurred */
+        <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "dead");
+        break;
+    }
+  }
+  return 1;
+}
+
+
+static int <A NAME="luaB_yieldable"><SPAN CLASS="definition">luaB_yieldable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, <A HREF="ldo.c.html#lua_isyieldable">lua_isyieldable</A>(L));
+  return 1;
+}
+
+
+static int <A NAME="luaB_corunning"><SPAN CLASS="definition">luaB_corunning</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int ismain = <A HREF="lapi.c.html#lua_pushthread">lua_pushthread</A>(L);
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, ismain);
+  return 2;
+}
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="co_funcs"><SPAN CLASS="definition">co_funcs</SPAN></A>[] = {
+  {"create", <A HREF="lcorolib.c.html#luaB_cocreate">luaB_cocreate</A>},
+  {"resume", <A HREF="lcorolib.c.html#luaB_coresume">luaB_coresume</A>},
+  {"running", <A HREF="lcorolib.c.html#luaB_corunning">luaB_corunning</A>},
+  {"status", <A HREF="lcorolib.c.html#luaB_costatus">luaB_costatus</A>},
+  {"wrap", <A HREF="lcorolib.c.html#luaB_cowrap">luaB_cowrap</A>},
+  {"yield", <A HREF="lcorolib.c.html#luaB_yield">luaB_yield</A>},
+  {"isyieldable", <A HREF="lcorolib.c.html#luaB_yieldable">luaB_yieldable</A>},
+  {NULL, NULL}
+};
+
+
+
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int <A NAME="luaopen_coroutine"><SPAN CLASS="definition">luaopen_coroutine</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.h.html#luaL_newlib">luaL_newlib</A>(L, <A HREF="lcorolib.c.html#co_funcs">co_funcs</A>);
+  return 1;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

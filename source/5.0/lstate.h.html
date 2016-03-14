@@ -1,0 +1,230 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lstate.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstate.h
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstate.h,v 1.109 2003/02/27 11:52:30 roberto Exp $
+** Global State
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lstate.h.html#lstate_h">lstate_h</A>
+#define <A NAME="lstate_h"><SPAN CLASS="definition">lstate_h</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+/*
+** macros for thread synchronization inside Lua core machine:
+** all accesses to the global state and to global objects are synchronized.
+** Because threads can read the stack of other threads
+** (when running garbage collection),
+** a thread must also synchronize any write-access to its own stack.
+** Unsynchronized accesses are allowed only when reading its own stack,
+** or when reading immutable fields from global objects
+** (such as string values and udata values). 
+*/
+#ifndef <A HREF="lstate.h.html#lua_lock">lua_lock</A>
+#define <A NAME="lua_lock"><SPAN CLASS="definition">lua_lock</SPAN></A>(L)     ((void) 0)
+#endif
+
+#ifndef <A HREF="lstate.h.html#lua_unlock">lua_unlock</A>
+#define <A NAME="lua_unlock"><SPAN CLASS="definition">lua_unlock</SPAN></A>(L)   ((void) 0)
+#endif
+
+
+#ifndef <A HREF="lstate.h.html#lua_userstateopen">lua_userstateopen</A>
+#define <A NAME="lua_userstateopen"><SPAN CLASS="definition">lua_userstateopen</SPAN></A>(l)
+#endif
+
+
+
+struct lua_longjmp;  /* defined in ldo.c */
+
+
+/* default meta table (both for tables and udata) */
+#define <A NAME="defaultmeta"><SPAN CLASS="definition">defaultmeta</SPAN></A>(L)  (&amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;_defaultmeta)
+
+/* table of globals */
+#define <A NAME="gt"><SPAN CLASS="definition">gt</SPAN></A>(L)   (&amp;L-&gt;_gt)
+
+/* <A HREF="lstate.h.html#registry">registry</A> */
+#define <A NAME="registry"><SPAN CLASS="definition">registry</SPAN></A>(L)     (&amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;_registry)
+
+
+/* extra stack space to handle TM calls and some other extras */
+#define <A NAME="EXTRA_STACK"><SPAN CLASS="definition">EXTRA_STACK</SPAN></A>   5
+
+
+#define <A NAME="BASIC_CI_SIZE"><SPAN CLASS="definition">BASIC_CI_SIZE</SPAN></A>           8
+
+#define <A NAME="BASIC_STACK_SIZE"><SPAN CLASS="definition">BASIC_STACK_SIZE</SPAN></A>        (2*<A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>)
+
+
+
+typedef struct <A NAME="stringtable"><SPAN CLASS="definition">stringtable</SPAN></A> {
+  <A HREF="lstate.h.html#GCObject">GCObject</A> **hash;
+  <A HREF="llimits.h.html#ls_nstr">ls_nstr</A> nuse;  /* number of elements */
+  int size;
+} <A HREF="lstate.h.html#stringtable">stringtable</A>;
+
+
+/*
+** informations about a call
+*/
+typedef struct <A NAME="CallInfo"><SPAN CLASS="definition">CallInfo</SPAN></A> {
+  <A HREF="lobject.h.html#StkId">StkId</A> base;  /* base for called function */
+  <A HREF="lobject.h.html#StkId">StkId</A> top;  /* top for this function */
+  int state;  /* bit fields; see below */
+  union {
+    struct {  /* for Lua functions */
+      const <A HREF="llimits.h.html#Instruction">Instruction</A> *savedpc;
+      const <A HREF="llimits.h.html#Instruction">Instruction</A> **pc;  /* points to `pc' variable in `<A HREF="lvm.c.html#luaV_execute">luaV_execute</A>' */
+      int tailcalls;  /* number of tail calls lost under this entry */
+    } l;
+    struct {  /* for C functions */
+      int dummy;  /* just to avoid an empty struct */
+    } c;
+  } u;
+} <A HREF="lstate.h.html#CallInfo">CallInfo</A>;
+
+
+/*
+** bit fields for `<A HREF="lstate.h.html#CallInfo">CallInfo</A>.state'
+*/
+#define <A NAME="CI_C"><SPAN CLASS="definition">CI_C</SPAN></A>            (1&lt;&lt;0)  /* 1 if function is a C function */
+/* 1 if (Lua) function has an active `<A HREF="lvm.c.html#luaV_execute">luaV_execute</A>' running it */
+#define <A NAME="CI_HASFRAME"><SPAN CLASS="definition">CI_HASFRAME</SPAN></A>     (1&lt;&lt;1)
+/* 1 if Lua function is calling another Lua function (and therefore its
+   `pc' is being used by the other, and therefore <A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A> is 1 too) */
+#define <A NAME="CI_CALLING"><SPAN CLASS="definition">CI_CALLING</SPAN></A>      (1&lt;&lt;2)
+#define <A NAME="CI_SAVEDPC"><SPAN CLASS="definition">CI_SAVEDPC</SPAN></A>      (1&lt;&lt;3)  /* 1 if `savedpc' is updated */
+#define <A NAME="CI_YIELD"><SPAN CLASS="definition">CI_YIELD</SPAN></A>        (1&lt;&lt;4)  /* 1 if thread is suspended */
+
+
+#define <A NAME="ci_func"><SPAN CLASS="definition">ci_func</SPAN></A>(ci)     (<A HREF="lobject.h.html#clvalue">clvalue</A>((ci)-&gt;base - 1))
+
+
+/*
+** `global state', shared by all threads of this state
+*/
+typedef struct <A NAME="global_State"><SPAN CLASS="definition">global_State</SPAN></A> {
+  <A HREF="lstate.h.html#stringtable">stringtable</A> strt;  /* hash table for strings */
+  <A HREF="lstate.h.html#GCObject">GCObject</A> *rootgc;  /* list of (almost) all collectable objects */
+  <A HREF="lstate.h.html#GCObject">GCObject</A> *rootudata;   /* (separated) list of all userdata */
+  <A HREF="lstate.h.html#GCObject">GCObject</A> *tmudata;  /* list of userdata to be GC */
+  <A HREF="lzio.h.html#Mbuffer">Mbuffer</A> buff;  /* temporary buffer for string concatentation */
+  <A HREF="llimits.h.html#lu_mem">lu_mem</A> GCthreshold;
+  <A HREF="llimits.h.html#lu_mem">lu_mem</A> nblocks;  /* number of `bytes' currently allocated */
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> panic;  /* to be called in unprotected errors */
+  <A HREF="lobject.h.html#TObject">TObject</A> _registry;
+  <A HREF="lobject.h.html#TObject">TObject</A> _defaultmeta;
+  struct <A HREF="lstate.h.html#lua_State">lua_State</A> *mainthread;
+  <A HREF="lobject.h.html#Node">Node</A> dummynode[1];  /* common node array for all empty tables */
+  <A HREF="lobject.h.html#TString">TString</A> *tmname[<A HREF="ltm.h.html#TM_N">TM_N</A>];  /* array with tag-method names */
+} <A HREF="lstate.h.html#global_State">global_State</A>;
+
+
+/*
+** `per thread' state
+*/
+struct <A NAME="lua_State"><SPAN CLASS="definition">lua_State</SPAN></A> {
+  <A HREF="lobject.h.html#CommonHeader">CommonHeader</A>;
+  <A HREF="lobject.h.html#StkId">StkId</A> top;  /* first free slot in the stack */
+  <A HREF="lobject.h.html#StkId">StkId</A> base;  /* base of current function */
+  <A HREF="lstate.h.html#global_State">global_State</A> *l_G;
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci;  /* call info for current function */
+  <A HREF="lobject.h.html#StkId">StkId</A> stack_last;  /* last free slot in the stack */
+  <A HREF="lobject.h.html#StkId">StkId</A> stack;  /* stack base */
+  int stacksize;
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *end_ci;  /* points after end of ci array*/
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *base_ci;  /* array of <A HREF="lstate.h.html#CallInfo">CallInfo</A>'s */
+  unsigned short size_ci;  /* size of array `base_ci' */
+  unsigned short nCcalls;  /* number of nested C calls */
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> hookmask;
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> allowhook;
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> hookinit;
+  int basehookcount;
+  int hookcount;
+  <A HREF="lua.h.html#lua_Hook">lua_Hook</A> hook;
+  <A HREF="lobject.h.html#TObject">TObject</A> _gt;  /* table of globals */
+  <A HREF="lstate.h.html#GCObject">GCObject</A> *openupval;  /* list of open upvalues in this stack */
+  <A HREF="lstate.h.html#GCObject">GCObject</A> *gclist;
+  struct lua_longjmp *errorJmp;  /* current error recover point */
+  ptrdiff_t errfunc;  /* current error handling function (stack index) */
+};
+
+
+#define <A NAME="G"><SPAN CLASS="definition">G</SPAN></A>(L)    (L-&gt;l_G)
+
+
+/*
+** Union of all collectable objects
+*/
+union <A NAME="GCObject"><SPAN CLASS="definition">GCObject</SPAN></A> {
+  <A HREF="lobject.h.html#GCheader">GCheader</A> gch;
+  union <A HREF="lobject.h.html#TString">TString</A> ts;
+  union <A HREF="lobject.h.html#Udata">Udata</A> u;
+  union <A HREF="lobject.h.html#Closure">Closure</A> cl;
+  struct <A HREF="lobject.h.html#Table">Table</A> h;
+  struct <A HREF="lobject.h.html#Proto">Proto</A> p;
+  struct <A HREF="lobject.h.html#UpVal">UpVal</A> uv;
+  struct <A HREF="lstate.h.html#lua_State">lua_State</A> th;  /* thread */
+};
+
+
+/* macros to convert a <A HREF="lstate.h.html#GCObject">GCObject</A> into a specific value */
+#define <A NAME="gcotots"><SPAN CLASS="definition">gcotots</SPAN></A>(o)      <A HREF="llimits.h.html#check_exp">check_exp</A>((o)-&gt;gch.tt == <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>, &amp;((o)-&gt;ts))
+#define <A NAME="gcotou"><SPAN CLASS="definition">gcotou</SPAN></A>(o)       <A HREF="llimits.h.html#check_exp">check_exp</A>((o)-&gt;gch.tt == <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>, &amp;((o)-&gt;u))
+#define <A NAME="gcotocl"><SPAN CLASS="definition">gcotocl</SPAN></A>(o)      <A HREF="llimits.h.html#check_exp">check_exp</A>((o)-&gt;gch.tt == <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>, &amp;((o)-&gt;cl))
+#define <A NAME="gcotoh"><SPAN CLASS="definition">gcotoh</SPAN></A>(o)       <A HREF="llimits.h.html#check_exp">check_exp</A>((o)-&gt;gch.tt == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>, &amp;((o)-&gt;h))
+#define <A NAME="gcotop"><SPAN CLASS="definition">gcotop</SPAN></A>(o)       <A HREF="llimits.h.html#check_exp">check_exp</A>((o)-&gt;gch.tt == <A HREF="lobject.h.html#LUA_TPROTO">LUA_TPROTO</A>, &amp;((o)-&gt;p))
+#define <A NAME="gcotouv"><SPAN CLASS="definition">gcotouv</SPAN></A>(o)      <A HREF="llimits.h.html#check_exp">check_exp</A>((o)-&gt;gch.tt == <A HREF="lobject.h.html#LUA_TUPVAL">LUA_TUPVAL</A>, &amp;((o)-&gt;uv))
+#define <A NAME="ngcotouv"><SPAN CLASS="definition">ngcotouv</SPAN></A>(o) \
+        <A HREF="llimits.h.html#check_exp">check_exp</A>((o) == NULL || (o)-&gt;gch.tt == <A HREF="lobject.h.html#LUA_TUPVAL">LUA_TUPVAL</A>, &amp;((o)-&gt;uv))
+#define <A NAME="gcototh"><SPAN CLASS="definition">gcototh</SPAN></A>(o)      <A HREF="llimits.h.html#check_exp">check_exp</A>((o)-&gt;gch.tt == <A HREF="lua.h.html#LUA_TTHREAD">LUA_TTHREAD</A>, &amp;((o)-&gt;th))
+
+/* macro to convert any value into a <A HREF="lstate.h.html#GCObject">GCObject</A> */
+#define <A NAME="valtogco"><SPAN CLASS="definition">valtogco</SPAN></A>(v)     (<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lstate.h.html#GCObject">GCObject</A> *, (v)))
+
+
+<A HREF="lstate.h.html#lua_State">lua_State</A> *<A HREF="lstate.c.html#luaE_newthread">luaE_newthread</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+void <A HREF="lstate.c.html#luaE_freethread">luaE_freethread</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#lua_State">lua_State</A> *L1);
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

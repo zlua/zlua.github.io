@@ -1,0 +1,96 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lfunc.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lfunc.h
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lfunc.h,v 2.15 2015/01/13 15:49:11 roberto Exp $
+** Auxiliary functions to manipulate prototypes and closures
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lfunc.h.html#lfunc_h">lfunc_h</A>
+#define <A NAME="lfunc_h"><SPAN CLASS="definition">lfunc_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+
+
+#define <A NAME="sizeCclosure"><SPAN CLASS="definition">sizeCclosure</SPAN></A>(n) (<A HREF="llimits.h.html#cast">cast</A>(int, sizeof(<A HREF="lobject.h.html#CClosure">CClosure</A>)) + \
+                         <A HREF="llimits.h.html#cast">cast</A>(int, sizeof(<A HREF="lobject.h.html#TValue">TValue</A>)*((n)-1)))
+
+#define <A NAME="sizeLclosure"><SPAN CLASS="definition">sizeLclosure</SPAN></A>(n) (<A HREF="llimits.h.html#cast">cast</A>(int, sizeof(<A HREF="lobject.h.html#LClosure">LClosure</A>)) + \
+                         <A HREF="llimits.h.html#cast">cast</A>(int, sizeof(<A HREF="lobject.h.html#TValue">TValue</A> *)*((n)-1)))
+
+
+/* test whether thread is in 'twups' list */
+#define <A NAME="isintwups"><SPAN CLASS="definition">isintwups</SPAN></A>(L)    (L-&gt;twups != L)
+
+
+/*
+** maximum number of upvalues in a closure (both C and Lua). (<A HREF="lobject.h.html#Value">Value</A>
+** must fit in a VM register.)
+*/
+#define <A NAME="MAXUPVAL"><SPAN CLASS="definition">MAXUPVAL</SPAN></A>        255
+
+
+/*
+** Upvalues for Lua closures
+*/
+struct <A NAME="UpVal"><SPAN CLASS="definition">UpVal</SPAN></A> {
+  <A HREF="lobject.h.html#TValue">TValue</A> *v;  /* points to stack or to its own value */
+  <A HREF="llimits.h.html#lu_mem">lu_mem</A> refcount;  /* reference counter */
+  union {
+    struct {  /* (when open) */
+      <A HREF="lfunc.h.html#UpVal">UpVal</A> *next;  /* linked list */
+      int touched;  /* mark to avoid cycles with dead threads */
+    } open;
+    <A HREF="lobject.h.html#TValue">TValue</A> value;  /* the value (when closed) */
+  } u;
+};
+
+#define <A NAME="upisopen"><SPAN CLASS="definition">upisopen</SPAN></A>(up)    ((up)-&gt;v != &amp;(up)-&gt;u.value)
+
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#Proto">Proto</A> *<A HREF="lfunc.c.html#luaF_newproto">luaF_newproto</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#CClosure">CClosure</A> *<A HREF="lfunc.c.html#luaF_newCclosure">luaF_newCclosure</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nelems);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#LClosure">LClosure</A> *<A HREF="lfunc.c.html#luaF_newLclosure">luaF_newLclosure</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nelems);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lfunc.c.html#luaF_initupvals">luaF_initupvals</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#LClosure">LClosure</A> *cl);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lfunc.h.html#UpVal">UpVal</A> *<A HREF="lfunc.c.html#luaF_findupval">luaF_findupval</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> level);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lfunc.c.html#luaF_close">luaF_close</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> level);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lfunc.c.html#luaF_freeproto">luaF_freeproto</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *f);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const char *<A HREF="lfunc.c.html#luaF_getlocalname">luaF_getlocalname</A> (const <A HREF="lobject.h.html#Proto">Proto</A> *func, int local_number,
+                                         int pc);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

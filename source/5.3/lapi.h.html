@@ -1,0 +1,59 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lapi.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lapi.h
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lapi.h,v 2.9 2015/03/06 19:49:50 roberto Exp $
+** Auxiliary functions from Lua API
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lapi.h.html#lapi_h">lapi_h</A>
+#define <A NAME="lapi_h"><SPAN CLASS="definition">lapi_h</SPAN></A>
+
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+#define <A NAME="api_incr_top"><SPAN CLASS="definition">api_incr_top</SPAN></A>(L)   {L-&gt;top++; <A HREF="llimits.h.html#api_check">api_check</A>(L, L-&gt;top &lt;= L-&gt;ci-&gt;top, \
+                                "stack overflow");}
+
+#define <A NAME="adjustresults"><SPAN CLASS="definition">adjustresults</SPAN></A>(L,nres) \
+    { if ((nres) == <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A> &amp;&amp; L-&gt;ci-&gt;top &lt; L-&gt;top) L-&gt;ci-&gt;top = L-&gt;top; }
+
+#define <A NAME="api_checknelems"><SPAN CLASS="definition">api_checknelems</SPAN></A>(L,n)    <A HREF="llimits.h.html#api_check">api_check</A>(L, (n) &lt; (L-&gt;top - L-&gt;ci-&gt;func), \
+                                  "not enough elements in the stack")
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:13 2015
+</P>
+
+</BODY>
+</HTML>

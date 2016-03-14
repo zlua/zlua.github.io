@@ -1,0 +1,23 @@
+.definition {
+	color: #00A500 ;
+}
+
+.comment {
+	color: gray ;
+}
+
+.note {
+	margin-left: 1em ;
+	font-size: medium ;
+	color: gray ;
+}
+
+pre {
+	font-size: 11pt ;
+	line-height: normal ;
+}
+
+:target {
+	line-height: 2.5em ;
+	background-color: rgba(240,240,240,0.7) ;
+}

@@ -1,0 +1,283 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lstring.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstring.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstring.c,v 2.56 2015/11/23 11:32:51 roberto Exp $
+** String table (keeps all strings handled by Lua)
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lstring_c"><SPAN CLASS="definition">lstring_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+
+
+#define <A NAME="MEMERRMSG"><SPAN CLASS="definition">MEMERRMSG</SPAN></A>       "not enough memory"
+
+
+/*
+** Lua will use at most ~(2^<A HREF="lstring.c.html#LUAI_HASHLIMIT">LUAI_HASHLIMIT</A>) bytes from a string to
+** compute its hash
+*/
+#if !defined(<A HREF="lstring.c.html#LUAI_HASHLIMIT">LUAI_HASHLIMIT</A>)
+#define <A NAME="LUAI_HASHLIMIT"><SPAN CLASS="definition">LUAI_HASHLIMIT</SPAN></A>          5
+#endif
+
+
+/*
+** equality for long strings
+*/
+int <A NAME="luaS_eqlngstr"><SPAN CLASS="definition">luaS_eqlngstr</SPAN></A> (<A HREF="lobject.h.html#TString">TString</A> *a, <A HREF="lobject.h.html#TString">TString</A> *b) {
+  size_t len = a-&gt;u.lnglen;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(a-&gt;tt == <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A> &amp;&amp; b-&gt;tt == <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>);
+  return (a == b) ||  /* same instance or... */
+    ((len == b-&gt;u.lnglen) &amp;&amp;  /* equal length and ... */
+     (memcmp(<A HREF="lobject.h.html#getstr">getstr</A>(a), <A HREF="lobject.h.html#getstr">getstr</A>(b), len) == 0));  /* equal contents */
+}
+
+
+unsigned int <A NAME="luaS_hash"><SPAN CLASS="definition">luaS_hash</SPAN></A> (const char *str, size_t l, unsigned int seed) {
+  unsigned int h = seed ^ <A HREF="llimits.h.html#cast">cast</A>(unsigned int, l);
+  size_t step = (l &gt;&gt; <A HREF="lstring.c.html#LUAI_HASHLIMIT">LUAI_HASHLIMIT</A>) + 1;
+  for (; l &gt;= step; l -= step)
+    h ^= ((h&lt;&lt;5) + (h&gt;&gt;2) + <A HREF="llimits.h.html#cast_byte">cast_byte</A>(str[l - 1]));
+  return h;
+}
+
+
+unsigned int <A NAME="luaS_hashlongstr"><SPAN CLASS="definition">luaS_hashlongstr</SPAN></A> (<A HREF="lobject.h.html#TString">TString</A> *ts) {
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ts-&gt;tt == <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>);
+  if (ts-&gt;extra == 0) {  /* no hash? */
+    ts-&gt;hash = <A HREF="lstring.c.html#luaS_hash">luaS_hash</A>(<A HREF="lobject.h.html#getstr">getstr</A>(ts), ts-&gt;u.lnglen, ts-&gt;hash);
+    ts-&gt;extra = 1;  /* now it has its hash */
+  }
+  return ts-&gt;hash;
+}
+
+
+/*
+** resizes the string table
+*/
+void <A NAME="luaS_resize"><SPAN CLASS="definition">luaS_resize</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int newsize) {
+  int i;
+  <A HREF="lstate.h.html#stringtable">stringtable</A> *tb = &amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;strt;
+  if (newsize &gt; tb-&gt;size) {  /* grow table if needed */
+    <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, tb-&gt;hash, tb-&gt;size, newsize, <A HREF="lobject.h.html#TString">TString</A> *);
+    for (i = tb-&gt;size; i &lt; newsize; i++)
+      tb-&gt;hash[i] = NULL;
+  }
+  for (i = 0; i &lt; tb-&gt;size; i++) {  /* rehash */
+    <A HREF="lobject.h.html#TString">TString</A> *p = tb-&gt;hash[i];
+    tb-&gt;hash[i] = NULL;
+    while (p) {  /* for each node in the list */
+      <A HREF="lobject.h.html#TString">TString</A> *hnext = p-&gt;u.hnext;  /* save next */
+      unsigned int h = <A HREF="lobject.h.html#lmod">lmod</A>(p-&gt;hash, newsize);  /* new position */
+      p-&gt;u.hnext = tb-&gt;hash[h];  /* chain it */
+      tb-&gt;hash[h] = p;
+      p = hnext;
+    }
+  }
+  if (newsize &lt; tb-&gt;size) {  /* shrink table if needed */
+    /* vanishing slice should be empty */
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(tb-&gt;hash[newsize] == NULL &amp;&amp; tb-&gt;hash[tb-&gt;size - 1] == NULL);
+    <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, tb-&gt;hash, tb-&gt;size, newsize, <A HREF="lobject.h.html#TString">TString</A> *);
+  }
+  tb-&gt;size = newsize;
+}
+
+
+/*
+** Clear API string cache. (Entries cannot be empty, so fill them with
+** a non-collectable string.)
+*/
+void <A NAME="luaS_clearcache"><SPAN CLASS="definition">luaS_clearcache</SPAN></A> (<A HREF="lstate.h.html#global_State">global_State</A> *g) {
+  int i, j;
+  for (i = 0; i &lt; <A HREF="llimits.h.html#STRCACHE_N">STRCACHE_N</A>; i++)
+    for (j = 0; j &lt; <A HREF="llimits.h.html#STRCACHE_M">STRCACHE_M</A>; j++) {
+    if (<A HREF="lgc.h.html#iswhite">iswhite</A>(g-&gt;strcache[i][j]))  /* will entry be collected? */
+      g-&gt;strcache[i][j] = g-&gt;memerrmsg;  /* replace it with something fixed */
+    }
+}
+
+
+/*
+** Initialize the string table and the string cache
+*/
+void <A NAME="luaS_init"><SPAN CLASS="definition">luaS_init</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  int i, j;
+  <A HREF="lstring.c.html#luaS_resize">luaS_resize</A>(L, <A HREF="llimits.h.html#MINSTRTABSIZE">MINSTRTABSIZE</A>);  /* initial size of string table */
+  /* pre-create memory-error message */
+  g-&gt;memerrmsg = <A HREF="lstring.h.html#luaS_newliteral">luaS_newliteral</A>(L, <A HREF="lstring.c.html#MEMERRMSG">MEMERRMSG</A>);
+  <A HREF="lgc.c.html#luaC_fix">luaC_fix</A>(L, <A HREF="lstate.h.html#obj2gco">obj2gco</A>(g-&gt;memerrmsg));  /* it should never be collected */
+  for (i = 0; i &lt; <A HREF="llimits.h.html#STRCACHE_N">STRCACHE_N</A>; i++)  /* fill cache with valid strings */
+    for (j = 0; j &lt; <A HREF="llimits.h.html#STRCACHE_M">STRCACHE_M</A>; j++)
+      g-&gt;strcache[i][j] = g-&gt;memerrmsg;
+}
+
+
+
+/*
+** creates a new string object
+*/
+static <A HREF="lobject.h.html#TString">TString</A> *<A NAME="createstrobj"><SPAN CLASS="definition">createstrobj</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t l, int tag, unsigned int h) {
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o;
+  size_t totalsize;  /* total size of <A HREF="lobject.h.html#TString">TString</A> object */
+  totalsize = <A HREF="lstring.h.html#sizelstring">sizelstring</A>(l);
+  o = <A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, tag, totalsize);
+  ts = <A HREF="lstate.h.html#gco2ts">gco2ts</A>(o);
+  ts-&gt;hash = h;
+  ts-&gt;extra = 0;
+  <A HREF="lobject.h.html#getstr">getstr</A>(ts)[l] = '\0';  /* ending 0 */
+  return ts;
+}
+
+
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_createlngstrobj"><SPAN CLASS="definition">luaS_createlngstrobj</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t l) {
+  <A HREF="lobject.h.html#TString">TString</A> *ts = <A HREF="lstring.c.html#createstrobj">createstrobj</A>(L, l, <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>, <A HREF="lstate.h.html#G">G</A>(L)-&gt;seed);
+  ts-&gt;u.lnglen = l;
+  return ts;
+}
+
+
+void <A NAME="luaS_remove"><SPAN CLASS="definition">luaS_remove</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#TString">TString</A> *ts) {
+  <A HREF="lstate.h.html#stringtable">stringtable</A> *tb = &amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;strt;
+  <A HREF="lobject.h.html#TString">TString</A> **p = &amp;tb-&gt;hash[<A HREF="lobject.h.html#lmod">lmod</A>(ts-&gt;hash, tb-&gt;size)];
+  while (*p != ts)  /* find previous element */
+    p = &amp;(*p)-&gt;u.hnext;
+  *p = (*p)-&gt;u.hnext;  /* remove element from its list */
+  tb-&gt;nuse--;
+}
+
+
+/*
+** checks whether short string exists and reuses it or creates a new one
+*/
+static <A HREF="lobject.h.html#TString">TString</A> *<A NAME="internshrstr"><SPAN CLASS="definition">internshrstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l) {
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  unsigned int h = <A HREF="lstring.c.html#luaS_hash">luaS_hash</A>(str, l, g-&gt;seed);
+  <A HREF="lobject.h.html#TString">TString</A> **list = &amp;g-&gt;strt.hash[<A HREF="lobject.h.html#lmod">lmod</A>(h, g-&gt;strt.size)];
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(str != NULL);  /* otherwise 'memcmp'/'memcpy' are undefined */
+  for (ts = *list; ts != NULL; ts = ts-&gt;u.hnext) {
+    if (l == ts-&gt;shrlen &amp;&amp;
+        (memcmp(str, <A HREF="lobject.h.html#getstr">getstr</A>(ts), l * sizeof(char)) == 0)) {
+      /* found! */
+      if (<A HREF="lgc.h.html#isdead">isdead</A>(g, ts))  /* dead (but not collected yet)? */
+        <A HREF="lgc.h.html#changewhite">changewhite</A>(ts);  /* resurrect it */
+      return ts;
+    }
+  }
+  if (g-&gt;strt.nuse &gt;= g-&gt;strt.size &amp;&amp; g-&gt;strt.size &lt;= <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>/2) {
+    <A HREF="lstring.c.html#luaS_resize">luaS_resize</A>(L, g-&gt;strt.size * 2);
+    list = &amp;g-&gt;strt.hash[<A HREF="lobject.h.html#lmod">lmod</A>(h, g-&gt;strt.size)];  /* recompute with new size */
+  }
+  ts = <A HREF="lstring.c.html#createstrobj">createstrobj</A>(L, l, <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>, h);
+  memcpy(<A HREF="lobject.h.html#getstr">getstr</A>(ts), str, l * sizeof(char));
+  ts-&gt;shrlen = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(l);
+  ts-&gt;u.hnext = *list;
+  *list = ts;
+  g-&gt;strt.nuse++;
+  return ts;
+}
+
+
+/*
+** new string (with explicit length)
+*/
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_newlstr"><SPAN CLASS="definition">luaS_newlstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l) {
+  if (l &lt;= <A HREF="llimits.h.html#LUAI_MAXSHORTLEN">LUAI_MAXSHORTLEN</A>)  /* short string? */
+    return <A HREF="lstring.c.html#internshrstr">internshrstr</A>(L, str, l);
+  else {
+    <A HREF="lobject.h.html#TString">TString</A> *ts;
+    if (l &gt;= (<A HREF="llimits.h.html#MAX_SIZE">MAX_SIZE</A> - sizeof(<A HREF="lobject.h.html#TString">TString</A>))/sizeof(char))
+      <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>(L);
+    ts = <A HREF="lstring.c.html#luaS_createlngstrobj">luaS_createlngstrobj</A>(L, l);
+    memcpy(<A HREF="lobject.h.html#getstr">getstr</A>(ts), str, l * sizeof(char));
+    return ts;
+  }
+}
+
+
+/*
+** Create or reuse a zero-terminated string, first checking in the
+** cache (using the string address as a key). The cache can contain
+** only zero-terminated strings, so it is safe to use 'strcmp' to
+** check hits.
+*/
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_new"><SPAN CLASS="definition">luaS_new</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str) {
+  unsigned int i = <A HREF="llimits.h.html#point2uint">point2uint</A>(str) % <A HREF="llimits.h.html#STRCACHE_N">STRCACHE_N</A>;  /* hash */
+  int j;
+  <A HREF="lobject.h.html#TString">TString</A> **p = <A HREF="lstate.h.html#G">G</A>(L)-&gt;strcache[i];
+  for (j = 0; j &lt; <A HREF="llimits.h.html#STRCACHE_M">STRCACHE_M</A>; j++) {
+    if (strcmp(str, <A HREF="lobject.h.html#getstr">getstr</A>(p[j])) == 0)  /* hit? */
+      return p[j];  /* that is it */
+  }
+  /* normal route */
+  for (j = <A HREF="llimits.h.html#STRCACHE_M">STRCACHE_M</A> - 1; j &gt; 0; j--)
+    p[j] = p[j - 1];  /* move out last element */
+  /* new element is first in the list */
+  p[0] = <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, str, strlen(str));
+  return p[0];
+}
+
+
+<A HREF="lobject.h.html#Udata">Udata</A> *<A NAME="luaS_newudata"><SPAN CLASS="definition">luaS_newudata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t s) {
+  <A HREF="lobject.h.html#Udata">Udata</A> *u;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o;
+  if (s &gt; <A HREF="llimits.h.html#MAX_SIZE">MAX_SIZE</A> - sizeof(<A HREF="lobject.h.html#Udata">Udata</A>))
+    <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>(L);
+  o = <A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>, <A HREF="lstring.h.html#sizeludata">sizeludata</A>(s));
+  u = <A HREF="lstate.h.html#gco2u">gco2u</A>(o);
+  u-&gt;len = s;
+  u-&gt;metatable = NULL;
+  <A HREF="lobject.h.html#setuservalue">setuservalue</A>(L, u, <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>);
+  return u;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:15 2015
+</P>
+
+</BODY>
+</HTML>

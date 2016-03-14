@@ -1,0 +1,112 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lstate.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstate.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstate.h,v 1.41 2000/10/05 13:00:17 roberto Exp $
+** Global State
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lstate.h.html#lstate_h">lstate_h</A>
+#define <A NAME="lstate_h"><SPAN CLASS="definition">lstate_h</SPAN></A>
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lua.h.html">lua.h</A>"
+#include "<A HREF="luadebug.h.html">luadebug.h</A>"
+
+
+
+typedef <A HREF="lobject.h.html#TObject">TObject</A> *<A NAME="StkId"><SPAN CLASS="definition">StkId</SPAN></A>;  /* index to stack elements */
+
+
+/*
+** marks for Reference array
+*/
+#define <A NAME="NONEXT"><SPAN CLASS="definition">NONEXT</SPAN></A>          -1      /* to end the free list */
+#define <A NAME="HOLD"><SPAN CLASS="definition">HOLD</SPAN></A>            -2
+#define <A NAME="COLLECTED"><SPAN CLASS="definition">COLLECTED</SPAN></A>       -3
+#define <A NAME="LOCK"><SPAN CLASS="definition">LOCK</SPAN></A>            -4
+
+
+struct <A NAME="Ref"><SPAN CLASS="definition">Ref</SPAN></A> {
+  <A HREF="lobject.h.html#TObject">TObject</A> o;
+  int st;  /* can be <A HREF="lstate.h.html#LOCK">LOCK</A>, <A HREF="lstate.h.html#HOLD">HOLD</A>, <A HREF="lstate.h.html#COLLECTED">COLLECTED</A>, or next (for free list) */
+};
+
+
+struct lua_longjmp;  /* defined in ldo.c */
+struct <A HREF="ltm.h.html#TM">TM</A>;  /* defined in ltm.h */
+
+
+typedef struct <A NAME="stringtable"><SPAN CLASS="definition">stringtable</SPAN></A> {
+  int size;
+  <A HREF="llimits.h.html#lint32">lint32</A> nuse;  /* number of elements */
+  <A HREF="lobject.h.html#TString">TString</A> **hash;
+} <A HREF="lstate.h.html#stringtable">stringtable</A>;
+
+
+
+struct <A NAME="lua_State"><SPAN CLASS="definition">lua_State</SPAN></A> {
+  /* thread-specific state */
+  <A HREF="lstate.h.html#StkId">StkId</A> top;  /* first free slot in the stack */
+  <A HREF="lstate.h.html#StkId">StkId</A> stack;  /* stack base */
+  <A HREF="lstate.h.html#StkId">StkId</A> stack_last;  /* last free slot in the stack */
+  int stacksize;
+  <A HREF="lstate.h.html#StkId">StkId</A> Cbase;  /* base for current C function */
+  struct lua_longjmp *errorJmp;  /* current error recover point */
+  char *Mbuffer;  /* global buffer */
+  size_t Mbuffsize;  /* size of Mbuffer */
+  /* global state */
+  <A HREF="lobject.h.html#Proto">Proto</A> *rootproto;  /* list of all prototypes */
+  <A HREF="lobject.h.html#Closure">Closure</A> *rootcl;  /* list of all closures */
+  <A HREF="lobject.h.html#Hash">Hash</A> *roottable;  /* list of all tables */
+  <A HREF="lstate.h.html#stringtable">stringtable</A> strt;  /* hash table for strings */
+  <A HREF="lstate.h.html#stringtable">stringtable</A> udt;   /* hash table for udata */
+  <A HREF="lobject.h.html#Hash">Hash</A> *gt;  /* table for globals */
+  struct <A HREF="ltm.h.html#TM">TM</A> *TMtable;  /* table for tag methods */
+  int last_tag;  /* last used tag in TMtable */
+  struct <A HREF="lstate.h.html#Ref">Ref</A> *refArray;  /* locked objects */
+  int refSize;  /* size of refArray */
+  int refFree;  /* list of free positions in refArray */
+  unsigned long GCthreshold;
+  unsigned long nblocks;  /* number of `bytes' currently allocated */
+  <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> callhook;
+  <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> linehook;
+  int allowhooks;
+};
+
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

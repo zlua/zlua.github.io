@@ -1,0 +1,55 @@
+<HEAD>
+<TITLE>5.5 C Functions</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_5_6.html>5.6 Locking Lua Objects</A>
+<B>Up:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B> Previous:</B> <A HREF=subsection3_5_4.html>5.4 Calling Lua Functions</A>
+<HR>
+<H2><A NAME=S0550>5.5 C Functions</A></H2>
+ <A NAME=LuacallC></A>
+To register a C function to Lua,
+there is the following macro:
+
+<TT><B><PRE>
+#define lua_register(n,f)       (lua_pushcfunction(f), lua_storeglobal(n))
+/* char *n;         */
+/* lua_CFunction f; */</PRE></B></TT>
+which receives the name the function will have in Lua,
+and a pointer to the function.
+This pointer must have type <TT><B>lua_CFunction</B></TT>,
+which is defined as
+
+<TT><B><PRE>
+typedef void (*lua_CFunction) (void);</PRE></B></TT>
+that is, a pointer to a function with no parameters and no results.
+<P>
+In order to communicate properly with Lua,
+a C function must follow a protocol,
+which defines the way parameters and results are passed.
+<P>
+To access its arguments, a C function calls:
+
+<TT><B><PRE>
+lua_Object     lua_getparam             (int number);</PRE></B></TT>
+where <TT><B>number</B></TT> starts with 1 to get the first argument.
+When called with a number larger than the actual number of arguments,
+this function returns <TT><B>LUA_NOOBJECT</B></TT>.
+In this way, it is possible to write functions that work with
+a variable number of parameters.
+<P>
+To return values, a C function just pushes them onto the stack,
+in direct order; see Section <A HREF=subsection3_5_2.html#valuesCLua>5.2</A>.
+Like a Lua function, a C function called by Lua can also return
+many results.
+<P>
+Section <A HREF=subsection3_7_5.html#exCFunction>7.5</A> presents an example of a CFunction.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_5_6.html>5.6 Locking Lua Objects</A>
+<B>Up:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B> Previous:</B> <A HREF=subsection3_5_4.html>5.4 Calling Lua Functions</A>
+<HR>
+
+</BODY>

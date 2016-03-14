@@ -1,0 +1,279 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lundump.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lundump.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lundump.c,v 1.33 2000/10/31 16:57:23 lhf Exp $
+** load bytecodes from files
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+
+#define <A NAME="LoadByte"><SPAN CLASS="definition">LoadByte</SPAN></A>                <A HREF="lundump.c.html#ezgetc">ezgetc</A>
+
+static const char* <A NAME="ZNAME"><SPAN CLASS="definition">ZNAME</SPAN></A> (<A HREF="lzio.h.html#ZIO">ZIO</A>* Z)
+{
+ const char* s=<A HREF="lzio.h.html#zname">zname</A>(Z);
+ return (*s=='@') ? s+1 : s;
+}
+
+static void <A NAME="unexpectedEOZ"><SPAN CLASS="definition">unexpectedEOZ</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z)
+{
+ <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L,"unexpected end of file in `%.99s'",<A HREF="lundump.c.html#ZNAME">ZNAME</A>(Z));
+}
+
+static int <A NAME="ezgetc"><SPAN CLASS="definition">ezgetc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z)
+{
+ int c=<A HREF="lzio.h.html#zgetc">zgetc</A>(Z);
+ if (c==<A HREF="lzio.h.html#EOZ">EOZ</A>) <A HREF="lundump.c.html#unexpectedEOZ">unexpectedEOZ</A>(L,Z);
+ return c;
+}
+
+static void <A NAME="ezread"><SPAN CLASS="definition">ezread</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, void* b, int n)
+{
+ int r=<A HREF="lzio.h.html#zread">zread</A>(Z,b,n);
+ if (r!=0) <A HREF="lundump.c.html#unexpectedEOZ">unexpectedEOZ</A>(L,Z);
+}
+
+static void <A NAME="LoadBlock"><SPAN CLASS="definition">LoadBlock</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, void* b, size_t size, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ if (swap)
+ {
+  char *p=(char *) b+size-1;
+  int n=size;
+  while (n--) *p--=(char)<A HREF="lundump.c.html#ezgetc">ezgetc</A>(L,Z);
+ }
+ else
+  <A HREF="lundump.c.html#ezread">ezread</A>(L,Z,b,size);
+}
+
+static void <A NAME="LoadVector"><SPAN CLASS="definition">LoadVector</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, void* b, int m, size_t size, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ if (swap)
+ {
+  char *q=(char *) b;
+  while (m--)
+  {
+   char *p=q+size-1;
+   int n=size;
+   while (n--) *p--=(char)<A HREF="lundump.c.html#ezgetc">ezgetc</A>(L,Z);
+   q+=size;
+  }
+ }
+ else
+  <A HREF="lundump.c.html#ezread">ezread</A>(L,Z,b,m*size);
+}
+
+static int <A NAME="LoadInt"><SPAN CLASS="definition">LoadInt</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ int x;
+ <A HREF="lundump.c.html#LoadBlock">LoadBlock</A>(L,&amp;x,sizeof(x),Z,swap);
+ return x;
+}
+
+static size_t <A NAME="LoadSize"><SPAN CLASS="definition">LoadSize</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ size_t x;
+ <A HREF="lundump.c.html#LoadBlock">LoadBlock</A>(L,&amp;x,sizeof(x),Z,swap);
+ return x;
+}
+
+static <A HREF="llimits.h.html#Number">Number</A> <A NAME="LoadNumber"><SPAN CLASS="definition">LoadNumber</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ <A HREF="llimits.h.html#Number">Number</A> x;
+ <A HREF="lundump.c.html#LoadBlock">LoadBlock</A>(L,&amp;x,sizeof(x),Z,swap);
+ return x;
+}
+
+static <A HREF="lobject.h.html#TString">TString</A>* <A NAME="LoadString"><SPAN CLASS="definition">LoadString</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ size_t size=<A HREF="lundump.c.html#LoadSize">LoadSize</A>(L,Z,swap);
+ if (size==0)
+  return NULL;
+ else
+ {
+  char* s=<A HREF="lobject.c.html#luaO_openspace">luaO_openspace</A>(L,size);
+  <A HREF="lundump.c.html#LoadBlock">LoadBlock</A>(L,s,size,Z,0);
+  return <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L,s,size-1);      /* remove trailing '\0' */
+ }
+}
+
+static void <A NAME="LoadCode"><SPAN CLASS="definition">LoadCode</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lobject.h.html#Proto">Proto</A>* tf, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ int size=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ tf-&gt;code=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L,size,<A HREF="llimits.h.html#Instruction">Instruction</A>);
+ <A HREF="lundump.c.html#LoadVector">LoadVector</A>(L,tf-&gt;code,size,sizeof(*tf-&gt;code),Z,swap);
+ if (tf-&gt;code[size-1]!=<A HREF="lopcodes.h.html#OP_END">OP_END</A>) <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L,"bad code in `%.99s'",<A HREF="lundump.c.html#ZNAME">ZNAME</A>(Z));
+ <A HREF="lfunc.c.html#luaF_protook">luaF_protook</A>(L,tf,size);
+}
+
+static void <A NAME="LoadLocals"><SPAN CLASS="definition">LoadLocals</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lobject.h.html#Proto">Proto</A>* tf, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ int i,n;
+ tf-&gt;nlocvars=n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ tf-&gt;locvars=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L,n,<A HREF="lobject.h.html#LocVar">LocVar</A>);
+ for (i=0; i&lt;n; i++)
+ {
+  tf-&gt;locvars[i].varname=<A HREF="lundump.c.html#LoadString">LoadString</A>(L,Z,swap);
+  tf-&gt;locvars[i].startpc=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+  tf-&gt;locvars[i].endpc=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ }
+}
+
+static void <A NAME="LoadLines"><SPAN CLASS="definition">LoadLines</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lobject.h.html#Proto">Proto</A>* tf, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ int n;
+ tf-&gt;nlineinfo=n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ tf-&gt;lineinfo=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L,n,int);
+ <A HREF="lundump.c.html#LoadVector">LoadVector</A>(L,tf-&gt;lineinfo,n,sizeof(*tf-&gt;lineinfo),Z,swap);
+}
+
+static <A HREF="lobject.h.html#Proto">Proto</A>* <A HREF="lundump.c.html#LoadFunction">LoadFunction</A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap);
+
+static void <A NAME="LoadConstants"><SPAN CLASS="definition">LoadConstants</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lobject.h.html#Proto">Proto</A>* tf, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ int i,n;
+ tf-&gt;nkstr=n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ tf-&gt;kstr=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L,n,<A HREF="lobject.h.html#TString">TString</A>*);
+ for (i=0; i&lt;n; i++)
+  tf-&gt;kstr[i]=<A HREF="lundump.c.html#LoadString">LoadString</A>(L,Z,swap);
+ tf-&gt;nknum=n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ tf-&gt;knum=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L,n,<A HREF="llimits.h.html#Number">Number</A>);
+ <A HREF="lundump.c.html#LoadVector">LoadVector</A>(L,tf-&gt;knum,n,sizeof(*tf-&gt;knum),Z,swap);
+ tf-&gt;nkproto=n=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ tf-&gt;kproto=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L,n,<A HREF="lobject.h.html#Proto">Proto</A>*);
+ for (i=0; i&lt;n; i++)
+  tf-&gt;kproto[i]=<A HREF="lundump.c.html#LoadFunction">LoadFunction</A>(L,Z,swap);
+}
+
+static <A HREF="lobject.h.html#Proto">Proto</A>* <A NAME="LoadFunction"><SPAN CLASS="definition">LoadFunction</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z, int swap)
+{
+ <A HREF="lobject.h.html#Proto">Proto</A>* tf=<A HREF="lfunc.c.html#luaF_newproto">luaF_newproto</A>(L);
+ tf-&gt;source=<A HREF="lundump.c.html#LoadString">LoadString</A>(L,Z,swap);
+ tf-&gt;lineDefined=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ tf-&gt;numparams=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ tf-&gt;is_vararg=<A HREF="lundump.c.html#LoadByte">LoadByte</A>(L,Z);
+ tf-&gt;maxstacksize=<A HREF="lundump.c.html#LoadInt">LoadInt</A>(L,Z,swap);
+ <A HREF="lundump.c.html#LoadLocals">LoadLocals</A>(L,tf,Z,swap);
+ <A HREF="lundump.c.html#LoadLines">LoadLines</A>(L,tf,Z,swap);
+ <A HREF="lundump.c.html#LoadConstants">LoadConstants</A>(L,tf,Z,swap);
+ <A HREF="lundump.c.html#LoadCode">LoadCode</A>(L,tf,Z,swap);
+ return tf;
+}
+
+static void <A NAME="LoadSignature"><SPAN CLASS="definition">LoadSignature</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z)
+{
+ const char* s=<A HREF="lundump.h.html#SIGNATURE">SIGNATURE</A>;
+ while (*s!=0 &amp;&amp; <A HREF="lundump.c.html#ezgetc">ezgetc</A>(L,Z)==*s)
+  ++s;
+ if (*s!=0) <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L,"bad signature in `%.99s'",<A HREF="lundump.c.html#ZNAME">ZNAME</A>(Z));
+}
+
+static void <A NAME="TestSize"><SPAN CLASS="definition">TestSize</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, int s, const char* what, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z)
+{
+ int r=<A HREF="lundump.c.html#ezgetc">ezgetc</A>(L,Z);
+ if (r!=s)
+  <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L,"virtual machine mismatch in `%.99s':\n"
+        "  %.20s is %d but read %d",<A HREF="lundump.c.html#ZNAME">ZNAME</A>(Z),what,s,r);
+}
+
+#define <A NAME="TESTSIZE"><SPAN CLASS="definition">TESTSIZE</SPAN></A>(s)     <A HREF="lundump.c.html#TestSize">TestSize</A>(L,s,#s,Z)
+#define <A NAME="V"><SPAN CLASS="definition">V</SPAN></A>(v)    v/16,v%16
+
+static int <A NAME="LoadHeader"><SPAN CLASS="definition">LoadHeader</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z)
+{
+ int version,swap;
+ <A HREF="llimits.h.html#Number">Number</A> f=0,tf=<A HREF="lundump.h.html#TEST_NUMBER">TEST_NUMBER</A>;
+ <A HREF="lundump.c.html#LoadSignature">LoadSignature</A>(L,Z);
+ version=<A HREF="lundump.c.html#ezgetc">ezgetc</A>(L,Z);
+ if (version&gt;<A HREF="lundump.h.html#VERSION">VERSION</A>)
+  <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L,"`%.99s' too new:\n"
+        "  read version %d.%d; expected at most %d.%d",
+        <A HREF="lundump.c.html#ZNAME">ZNAME</A>(Z),<A HREF="lundump.c.html#V">V</A>(version),<A HREF="lundump.c.html#V">V</A>(<A HREF="lundump.h.html#VERSION">VERSION</A>));
+ if (version&lt;<A HREF="lundump.h.html#VERSION0">VERSION0</A>)                  /* check last major change */
+  <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L,"`%.99s' too old:\n"
+        "  read version %d.%d; expected at least %d.%d",
+        <A HREF="lundump.c.html#ZNAME">ZNAME</A>(Z),<A HREF="lundump.c.html#V">V</A>(version),<A HREF="lundump.c.html#V">V</A>(<A HREF="lundump.h.html#VERSION">VERSION</A>));
+ swap=(<A HREF="lundump.c.html#luaU_endianess">luaU_endianess</A>()!=<A HREF="lundump.c.html#ezgetc">ezgetc</A>(L,Z));  /* need to swap bytes? */
+ <A HREF="lundump.c.html#TESTSIZE">TESTSIZE</A>(sizeof(int));
+ <A HREF="lundump.c.html#TESTSIZE">TESTSIZE</A>(sizeof(size_t));
+ <A HREF="lundump.c.html#TESTSIZE">TESTSIZE</A>(sizeof(<A HREF="llimits.h.html#Instruction">Instruction</A>));
+ <A HREF="lundump.c.html#TESTSIZE">TESTSIZE</A>(<A HREF="llimits.h.html#SIZE_INSTRUCTION">SIZE_INSTRUCTION</A>);
+ <A HREF="lundump.c.html#TESTSIZE">TESTSIZE</A>(<A HREF="llimits.h.html#SIZE_OP">SIZE_OP</A>);
+ <A HREF="lundump.c.html#TESTSIZE">TESTSIZE</A>(<A HREF="llimits.h.html#SIZE_B">SIZE_B</A>);
+ <A HREF="lundump.c.html#TESTSIZE">TESTSIZE</A>(sizeof(<A HREF="llimits.h.html#Number">Number</A>));
+ f=<A HREF="lundump.c.html#LoadNumber">LoadNumber</A>(L,Z,swap);
+ if ((long)f!=(long)tf)         /* disregard errors in last bit of fraction */
+  <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L,"unknown number format in `%.99s':\n"
+      "  read " <A HREF="llimits.h.html#NUMBER_FMT">NUMBER_FMT</A> "; expected " <A HREF="llimits.h.html#NUMBER_FMT">NUMBER_FMT</A>, <A HREF="lundump.c.html#ZNAME">ZNAME</A>(Z),f,tf);
+ return swap;
+}
+
+static <A HREF="lobject.h.html#Proto">Proto</A>* <A NAME="LoadChunk"><SPAN CLASS="definition">LoadChunk</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z)
+{
+ return <A HREF="lundump.c.html#LoadFunction">LoadFunction</A>(L,Z,<A HREF="lundump.c.html#LoadHeader">LoadHeader</A>(L,Z));
+}
+
+/*
+** load one chunk from a file or buffer
+** return <A HREF="lua.c.html#main">main</A> if ok and NULL at EOF
+*/
+<A HREF="lobject.h.html#Proto">Proto</A>* <A NAME="luaU_undump"><SPAN CLASS="definition">luaU_undump</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, <A HREF="lzio.h.html#ZIO">ZIO</A>* Z)
+{
+ <A HREF="lobject.h.html#Proto">Proto</A>* tf=NULL;
+ int c=<A HREF="lzio.h.html#zgetc">zgetc</A>(Z);
+ if (c==<A HREF="lundump.h.html#ID_CHUNK">ID_CHUNK</A>)
+  tf=<A HREF="lundump.c.html#LoadChunk">LoadChunk</A>(L,Z);
+ c=<A HREF="lzio.h.html#zgetc">zgetc</A>(Z);
+ if (c!=<A HREF="lzio.h.html#EOZ">EOZ</A>)
+  <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L,"`%.99s' apparently contains more than one chunk",<A HREF="lundump.c.html#ZNAME">ZNAME</A>(Z));
+ return tf;
+}
+
+/*
+** find byte order
+*/
+int <A NAME="luaU_endianess"><SPAN CLASS="definition">luaU_endianess</SPAN></A> (void)
+{
+ int x=1;
+ return *(char*)&amp;x;
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

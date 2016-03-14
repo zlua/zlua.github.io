@@ -1,0 +1,56 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - ldebug.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldebug.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldebug.h,v 1.7 2000/10/05 12:14:08 roberto Exp $
+** Auxiliary functions from Debug Interface module
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="ldebug.h.html#ldebug_h">ldebug_h</A>
+#define <A NAME="ldebug_h"><SPAN CLASS="definition">ldebug_h</SPAN></A>
+
+
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="luadebug.h.html">luadebug.h</A>"
+
+
+void <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> o, const char *op);
+void <A HREF="ldebug.c.html#luaG_binerror">luaG_binerror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> p1, int t, const char *op);
+int <A HREF="ldebug.c.html#luaG_getline">luaG_getline</A> (int *lineinfo, int pc, int refline, int *refi);
+void <A HREF="ldebug.c.html#luaG_ordererror">luaG_ordererror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> top);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,37 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE>5.1 Executing Lua Code</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node15.html">5.2 Converting Values between </A>
+<B>Up:</B> <A HREF="node13.html">5 The Application Program </A>
+<B> Previous:</B> <A HREF="node13.html">5 The Application Program </A>
+<BR> <HR>
+<H2><A NAME=S510>5.1 Executing Lua Code</A></H2>
+<P>
+A host program can execute Lua chunks written in a file or in a string,
+using the following functions:
+
+<B><PRE>int            lua_dofile               (char *filename);
+int            lua_dostring             (char *string);
+</PRE></B>
+Both functions return an error code:
+0, in case of success; non zero, in case of errors.
+The function <TT><B>lua_dofile</B></TT>
+, if called with argument NULL (0),
+executes the ``file'' <TT><B> stdin</B></TT>.
+Function <TT><B>lua_dofile</B></TT>
+ is also able to execute pre-compiled chunks.
+It detects whether the file is text or not,
+and loads it accordingly (see program <TT><B> luac</B></TT>).
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node15.html">5.2 Converting Values between </A>
+<B>Up:</B> <A HREF="node13.html">5 The Application Program </A>
+<B> Previous:</B> <A HREF="node13.html">5 The Application Program </A>
+<BR> <HR>

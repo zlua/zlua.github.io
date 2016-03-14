@@ -1,0 +1,753 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lcode.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lcode.c
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lcode.c,v 1.117a 2003/04/03 13:35:34 roberto Exp $
+** Code generator for Lua
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdlib.h&gt;
+
+#define <A NAME="lcode_c"><SPAN CLASS="definition">lcode_c</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lcode.h.html">lcode.h</A>"
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="llex.h.html">llex.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lparser.h.html">lparser.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+
+
+#define <A NAME="hasjumps"><SPAN CLASS="definition">hasjumps</SPAN></A>(e)     ((e)-&gt;t != (e)-&gt;f)
+
+
+void <A NAME="luaK_nil"><SPAN CLASS="definition">luaK_nil</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int from, int n) {
+  <A HREF="llimits.h.html#Instruction">Instruction</A> *previous;
+  if (fs-&gt;pc &gt; fs-&gt;lasttarget &amp;&amp;  /* no jumps to current position? */
+      <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*(previous = &amp;fs-&gt;f-&gt;code[fs-&gt;pc-1])) == <A HREF="lopcodes.h.html#OP_LOADNIL">OP_LOADNIL</A>) {
+    int pfrom = <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(*previous);
+    int pto = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(*previous);
+    if (pfrom &lt;= from &amp;&amp; from &lt;= pto+1) {  /* can connect both? */
+      if (from+n-1 &gt; pto)
+        <A HREF="lopcodes.h.html#SETARG_B">SETARG_B</A>(*previous, from+n-1);
+      return;
+    }
+  }
+  <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_LOADNIL">OP_LOADNIL</A>, from, from+n-1, 0);  /* else no optimization */
+}
+
+
+int <A NAME="luaK_jump"><SPAN CLASS="definition">luaK_jump</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs) {
+  int jpc = fs-&gt;jpc;  /* save list of jumps to here */
+  int j;
+  fs-&gt;jpc = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+  j = <A HREF="lcode.h.html#luaK_codeAsBx">luaK_codeAsBx</A>(fs, <A HREF="lopcodes.h.html#OP_JMP">OP_JMP</A>, 0, <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>);
+  <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;j, jpc);  /* keep them on hold */
+  return j;
+}
+
+
+static int <A NAME="luaK_condjump"><SPAN CLASS="definition">luaK_condjump</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lopcodes.h.html#OpCode">OpCode</A> op, int A, int B, int C) {
+  <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, op, A, B, C);
+  return <A HREF="lcode.c.html#luaK_jump">luaK_jump</A>(fs);
+}
+
+
+static void <A NAME="luaK_fixjump"><SPAN CLASS="definition">luaK_fixjump</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int pc, int dest) {
+  <A HREF="llimits.h.html#Instruction">Instruction</A> *jmp = &amp;fs-&gt;f-&gt;code[pc];
+  int offset = dest-(pc+1);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(dest != <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>);
+  if (abs(offset) &gt; <A HREF="lopcodes.h.html#MAXARG_sBx">MAXARG_sBx</A>)
+    <A HREF="llex.c.html#luaX_syntaxerror">luaX_syntaxerror</A>(fs-&gt;ls, "control structure too long");
+  <A HREF="lopcodes.h.html#SETARG_sBx">SETARG_sBx</A>(*jmp, offset);
+}
+
+
+/*
+** returns current `pc' and marks it as a jump target (to avoid wrong
+** optimizations with consecutive instructions not in the same basic block).
+*/
+int <A NAME="luaK_getlabel"><SPAN CLASS="definition">luaK_getlabel</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs) {
+  fs-&gt;lasttarget = fs-&gt;pc;
+  return fs-&gt;pc;
+}
+
+
+static int <A NAME="luaK_getjump"><SPAN CLASS="definition">luaK_getjump</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int pc) {
+  int offset = <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(fs-&gt;f-&gt;code[pc]);
+  if (offset == <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>)  /* point to itself represents end of list */
+    return <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;  /* end of list */
+  else
+    return (pc+1)+offset;  /* turn offset into absolute position */
+}
+
+
+static <A HREF="llimits.h.html#Instruction">Instruction</A> *<A NAME="getjumpcontrol"><SPAN CLASS="definition">getjumpcontrol</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int pc) {
+  <A HREF="llimits.h.html#Instruction">Instruction</A> *pi = &amp;fs-&gt;f-&gt;code[pc];
+  if (pc &gt;= 1 &amp;&amp; <A HREF="lopcodes.h.html#testOpMode">testOpMode</A>(<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*(pi-1)), <A HREF="lopcodes.h.html#OpModeT">OpModeT</A>))
+    return pi-1;
+  else
+    return pi;
+}
+
+
+/*
+** check whether list has any jump that do not produce a value
+** (or produce an inverted value)
+*/
+static int <A NAME="need_value"><SPAN CLASS="definition">need_value</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int list, int cond) {
+  for (; list != <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>; list = <A HREF="lcode.c.html#luaK_getjump">luaK_getjump</A>(fs, list)) {
+    <A HREF="llimits.h.html#Instruction">Instruction</A> i = *<A HREF="lcode.c.html#getjumpcontrol">getjumpcontrol</A>(fs, list);
+    if (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i) != <A HREF="lopcodes.h.html#OP_TEST">OP_TEST</A> ||
+        <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i) != <A HREF="lopcodes.h.html#NO_REG">NO_REG</A> ||
+        <A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i) != cond)
+      return 1;
+  }
+  return 0;  /* not found */
+}
+
+
+static void <A NAME="patchtestreg"><SPAN CLASS="definition">patchtestreg</SPAN></A> (<A HREF="llimits.h.html#Instruction">Instruction</A> *i, int reg) {
+  if (reg == <A HREF="lopcodes.h.html#NO_REG">NO_REG</A>) reg = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(*i);
+  <A HREF="lopcodes.h.html#SETARG_A">SETARG_A</A>(*i, reg);
+}
+
+
+static void <A NAME="removevalues"><SPAN CLASS="definition">removevalues</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int list) {
+  for (; list != <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>; list = <A HREF="lcode.c.html#luaK_getjump">luaK_getjump</A>(fs, list)) {
+    <A HREF="llimits.h.html#Instruction">Instruction</A> *i = <A HREF="lcode.c.html#getjumpcontrol">getjumpcontrol</A>(fs, list);
+    if (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*i) == <A HREF="lopcodes.h.html#OP_TEST">OP_TEST</A>)
+      <A HREF="lcode.c.html#patchtestreg">patchtestreg</A>(i, <A HREF="lopcodes.h.html#NO_REG">NO_REG</A>);
+  }
+}
+
+
+static void <A NAME="luaK_patchlistaux"><SPAN CLASS="definition">luaK_patchlistaux</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int list, int vtarget, int reg,
+                               int dtarget) {
+  while (list != <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>) {
+    int next = <A HREF="lcode.c.html#luaK_getjump">luaK_getjump</A>(fs, list);
+    <A HREF="llimits.h.html#Instruction">Instruction</A> *i = <A HREF="lcode.c.html#getjumpcontrol">getjumpcontrol</A>(fs, list);
+    if (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*i) == <A HREF="lopcodes.h.html#OP_TEST">OP_TEST</A> &amp;&amp; <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(*i) == <A HREF="lopcodes.h.html#NO_REG">NO_REG</A>) {
+        <A HREF="lcode.c.html#patchtestreg">patchtestreg</A>(i, reg);
+        <A HREF="lcode.c.html#luaK_fixjump">luaK_fixjump</A>(fs, list, vtarget);
+    }
+    else
+      <A HREF="lcode.c.html#luaK_fixjump">luaK_fixjump</A>(fs, list, dtarget);  /* jump to default target */
+    list = next;
+  }
+}
+
+
+static void <A NAME="luaK_dischargejpc"><SPAN CLASS="definition">luaK_dischargejpc</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs) {
+  <A HREF="lcode.c.html#luaK_patchlistaux">luaK_patchlistaux</A>(fs, fs-&gt;jpc, fs-&gt;pc, <A HREF="lopcodes.h.html#NO_REG">NO_REG</A>, fs-&gt;pc);
+  fs-&gt;jpc = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+}
+
+
+void <A NAME="luaK_patchlist"><SPAN CLASS="definition">luaK_patchlist</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int list, int target) {
+  if (target == fs-&gt;pc)
+    <A HREF="lcode.c.html#luaK_patchtohere">luaK_patchtohere</A>(fs, list);
+  else {
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(target &lt; fs-&gt;pc);
+    <A HREF="lcode.c.html#luaK_patchlistaux">luaK_patchlistaux</A>(fs, list, target, <A HREF="lopcodes.h.html#NO_REG">NO_REG</A>, target);
+  }
+}
+
+
+void <A NAME="luaK_patchtohere"><SPAN CLASS="definition">luaK_patchtohere</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int list) {
+  <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs);
+  <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;fs-&gt;jpc, list);
+}
+
+
+void <A NAME="luaK_concat"><SPAN CLASS="definition">luaK_concat</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int *l1, int l2) {
+  if (l2 == <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>) return;
+  else if (*l1 == <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>)
+    *l1 = l2;
+  else {
+    int list = *l1;
+    int next;
+    while ((next = <A HREF="lcode.c.html#luaK_getjump">luaK_getjump</A>(fs, list)) != <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>)  /* find last element */
+      list = next;
+    <A HREF="lcode.c.html#luaK_fixjump">luaK_fixjump</A>(fs, list, l2);
+  }
+}
+
+
+void <A NAME="luaK_checkstack"><SPAN CLASS="definition">luaK_checkstack</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int n) {
+  int newstack = fs-&gt;<A HREF="lcode.c.html#freereg">freereg</A> + n;
+  if (newstack &gt; fs-&gt;f-&gt;maxstacksize) {
+    if (newstack &gt;= <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>)
+      <A HREF="llex.c.html#luaX_syntaxerror">luaX_syntaxerror</A>(fs-&gt;ls, "function or expression too complex");
+    fs-&gt;f-&gt;maxstacksize = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_byte">lu_byte</A>, newstack);
+  }
+}
+
+
+void <A NAME="luaK_reserveregs"><SPAN CLASS="definition">luaK_reserveregs</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int n) {
+  <A HREF="lcode.c.html#luaK_checkstack">luaK_checkstack</A>(fs, n);
+  fs-&gt;<A HREF="lcode.c.html#freereg">freereg</A> += n;
+}
+
+
+static void <A NAME="freereg"><SPAN CLASS="definition">freereg</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int reg) {
+  if (reg &gt;= fs-&gt;nactvar &amp;&amp; reg &lt; <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>) {
+    fs-&gt;<A HREF="lcode.c.html#freereg">freereg</A>--;
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(reg == fs-&gt;<A HREF="lcode.c.html#freereg">freereg</A>);
+  }
+}
+
+
+static void <A NAME="freeexp"><SPAN CLASS="definition">freeexp</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  if (e-&gt;k == <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>)
+    <A HREF="lcode.c.html#freereg">freereg</A>(fs, e-&gt;info);
+}
+
+
+static int <A NAME="addk"><SPAN CLASS="definition">addk</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lobject.h.html#TObject">TObject</A> *k, <A HREF="lobject.h.html#TObject">TObject</A> *v) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *idx = <A HREF="ltable.c.html#luaH_get">luaH_get</A>(fs-&gt;h, k);
+  if (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(idx)) {
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.c.html#luaO_rawequalObj">luaO_rawequalObj</A>(&amp;fs-&gt;f-&gt;k[<A HREF="llimits.h.html#cast">cast</A>(int, <A HREF="lobject.h.html#nvalue">nvalue</A>(idx))], v));
+    return <A HREF="llimits.h.html#cast">cast</A>(int, <A HREF="lobject.h.html#nvalue">nvalue</A>(idx));
+  }
+  else {  /* constant not found; create a new entry */
+    <A HREF="lobject.h.html#Proto">Proto</A> *f = fs-&gt;f;
+    <A HREF="lmem.h.html#luaM_growvector">luaM_growvector</A>(fs-&gt;L, f-&gt;k, fs-&gt;nk, f-&gt;sizek, <A HREF="lobject.h.html#TObject">TObject</A>,
+                    <A HREF="lopcodes.h.html#MAXARG_Bx">MAXARG_Bx</A>, "constant table overflow");
+    <A HREF="lobject.h.html#setobj2n">setobj2n</A>(&amp;f-&gt;k[fs-&gt;nk], v);
+    <A HREF="lobject.h.html#setnvalue">setnvalue</A>(<A HREF="ltable.c.html#luaH_set">luaH_set</A>(fs-&gt;L, fs-&gt;h, k), <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lua.h.html#lua_Number">lua_Number</A>, fs-&gt;nk));
+    return fs-&gt;nk++;
+  }
+}
+
+
+int <A NAME="luaK_stringK"><SPAN CLASS="definition">luaK_stringK</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lobject.h.html#TString">TString</A> *s) {
+  <A HREF="lobject.h.html#TObject">TObject</A> o;
+  <A HREF="lobject.h.html#setsvalue">setsvalue</A>(&amp;o, s);
+  return <A HREF="lcode.c.html#addk">addk</A>(fs, &amp;o, &amp;o);
+}
+
+
+int <A NAME="luaK_numberK"><SPAN CLASS="definition">luaK_numberK</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lua.h.html#lua_Number">lua_Number</A> r) {
+  <A HREF="lobject.h.html#TObject">TObject</A> o;
+  <A HREF="lobject.h.html#setnvalue">setnvalue</A>(&amp;o, r);
+  return <A HREF="lcode.c.html#addk">addk</A>(fs, &amp;o, &amp;o);
+}
+
+
+static int <A NAME="nil_constant"><SPAN CLASS="definition">nil_constant</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs) {
+  <A HREF="lobject.h.html#TObject">TObject</A> k, v;
+  <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(&amp;v);
+  <A HREF="lobject.h.html#sethvalue">sethvalue</A>(&amp;k, fs-&gt;h);  /* cannot use nil as key; instead use table itself */
+  return <A HREF="lcode.c.html#addk">addk</A>(fs, &amp;k, &amp;v);
+}
+
+
+void <A NAME="luaK_setcallreturns"><SPAN CLASS="definition">luaK_setcallreturns</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e, int nresults) {
+  if (e-&gt;k == <A HREF="lparser.h.html#VCALL">VCALL</A>) {  /* expression is an open function call? */
+    <A HREF="lopcodes.h.html#SETARG_C">SETARG_C</A>(<A HREF="lcode.h.html#getcode">getcode</A>(fs, e), nresults+1);
+    if (nresults == 1) {  /* `regular' expression? */
+      e-&gt;k = <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>;
+      e-&gt;info = <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(<A HREF="lcode.h.html#getcode">getcode</A>(fs, e));
+    }
+  }
+}
+
+
+void <A NAME="luaK_dischargevars"><SPAN CLASS="definition">luaK_dischargevars</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  switch (e-&gt;k) {
+    case <A HREF="lparser.h.html#VLOCAL">VLOCAL</A>: {
+      e-&gt;k = <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>;
+      break;
+    }
+    case <A HREF="lparser.h.html#VUPVAL">VUPVAL</A>: {
+      e-&gt;info = <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_GETUPVAL">OP_GETUPVAL</A>, 0, e-&gt;info, 0);
+      e-&gt;k = <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>;
+      break;
+    }
+    case <A HREF="lparser.h.html#VGLOBAL">VGLOBAL</A>: {
+      e-&gt;info = <A HREF="lcode.c.html#luaK_codeABx">luaK_codeABx</A>(fs, <A HREF="lopcodes.h.html#OP_GETGLOBAL">OP_GETGLOBAL</A>, 0, e-&gt;info);
+      e-&gt;k = <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>;
+      break;
+    }
+    case <A HREF="lparser.h.html#VINDEXED">VINDEXED</A>: {
+      <A HREF="lcode.c.html#freereg">freereg</A>(fs, e-&gt;aux);
+      <A HREF="lcode.c.html#freereg">freereg</A>(fs, e-&gt;info);
+      e-&gt;info = <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_GETTABLE">OP_GETTABLE</A>, 0, e-&gt;info, e-&gt;aux);
+      e-&gt;k = <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>;
+      break;
+    }
+    case <A HREF="lparser.h.html#VCALL">VCALL</A>: {
+      <A HREF="lcode.c.html#luaK_setcallreturns">luaK_setcallreturns</A>(fs, e, 1);
+      break;
+    }
+    default: break;  /* there is one value available (somewhere) */
+  }
+}
+
+
+static int <A NAME="code_label"><SPAN CLASS="definition">code_label</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int A, int b, int jump) {
+  <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs);  /* those instructions may be jump targets */
+  return <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_LOADBOOL">OP_LOADBOOL</A>, A, b, jump);
+}
+
+
+static void <A NAME="discharge2reg"><SPAN CLASS="definition">discharge2reg</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e, int reg) {
+  <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e);
+  switch (e-&gt;k) {
+    case <A HREF="lparser.h.html#VNIL">VNIL</A>: {
+      <A HREF="lcode.c.html#luaK_nil">luaK_nil</A>(fs, reg, 1);
+      break;
+    }
+    case <A HREF="lparser.h.html#VFALSE">VFALSE</A>:  case <A HREF="lparser.h.html#VTRUE">VTRUE</A>: {
+      <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_LOADBOOL">OP_LOADBOOL</A>, reg, e-&gt;k == <A HREF="lparser.h.html#VTRUE">VTRUE</A>, 0);
+      break;
+    }
+    case <A HREF="lparser.h.html#VK">VK</A>: {
+      <A HREF="lcode.c.html#luaK_codeABx">luaK_codeABx</A>(fs, <A HREF="lopcodes.h.html#OP_LOADK">OP_LOADK</A>, reg, e-&gt;info);
+      break;
+    }
+    case <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>: {
+      <A HREF="llimits.h.html#Instruction">Instruction</A> *pc = &amp;<A HREF="lcode.h.html#getcode">getcode</A>(fs, e);
+      <A HREF="lopcodes.h.html#SETARG_A">SETARG_A</A>(*pc, reg);
+      break;
+    }
+    case <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>: {
+      if (reg != e-&gt;info)
+        <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_MOVE">OP_MOVE</A>, reg, e-&gt;info, 0);
+      break;
+    }
+    default: {
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(e-&gt;k == <A HREF="lparser.h.html#VVOID">VVOID</A> || e-&gt;k == <A HREF="lparser.h.html#VJMP">VJMP</A>);
+      return;  /* nothing to do... */
+    }
+  }
+  e-&gt;info = reg;
+  e-&gt;k = <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>;
+}
+
+
+static void <A NAME="discharge2anyreg"><SPAN CLASS="definition">discharge2anyreg</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  if (e-&gt;k != <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>) {
+    <A HREF="lcode.c.html#luaK_reserveregs">luaK_reserveregs</A>(fs, 1);
+    <A HREF="lcode.c.html#discharge2reg">discharge2reg</A>(fs, e, fs-&gt;<A HREF="lcode.c.html#freereg">freereg</A>-1);
+  }
+}
+
+
+static void <A NAME="luaK_exp2reg"><SPAN CLASS="definition">luaK_exp2reg</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e, int reg) {
+  <A HREF="lcode.c.html#discharge2reg">discharge2reg</A>(fs, e, reg);
+  if (e-&gt;k == <A HREF="lparser.h.html#VJMP">VJMP</A>)
+    <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;e-&gt;t, e-&gt;info);  /* put this jump in `t' list */
+  if (<A HREF="lcode.c.html#hasjumps">hasjumps</A>(e)) {
+    int final;  /* position after whole expression */
+    int p_f = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;  /* position of an eventual LOAD false */
+    int p_t = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;  /* position of an eventual LOAD true */
+    if (<A HREF="lcode.c.html#need_value">need_value</A>(fs, e-&gt;t, 1) || <A HREF="lcode.c.html#need_value">need_value</A>(fs, e-&gt;f, 0)) {
+      int fj = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;  /* first jump (over LOAD ops.) */
+      if (e-&gt;k != <A HREF="lparser.h.html#VJMP">VJMP</A>)
+        fj = <A HREF="lcode.c.html#luaK_jump">luaK_jump</A>(fs);
+      p_f = <A HREF="lcode.c.html#code_label">code_label</A>(fs, reg, 0, 1);
+      p_t = <A HREF="lcode.c.html#code_label">code_label</A>(fs, reg, 1, 0);
+      <A HREF="lcode.c.html#luaK_patchtohere">luaK_patchtohere</A>(fs, fj);
+    }
+    final = <A HREF="lcode.c.html#luaK_getlabel">luaK_getlabel</A>(fs);
+    <A HREF="lcode.c.html#luaK_patchlistaux">luaK_patchlistaux</A>(fs, e-&gt;f, final, reg, p_f);
+    <A HREF="lcode.c.html#luaK_patchlistaux">luaK_patchlistaux</A>(fs, e-&gt;t, final, reg, p_t);
+  }
+  e-&gt;f = e-&gt;t = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+  e-&gt;info = reg;
+  e-&gt;k = <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>;
+}
+
+
+void <A NAME="luaK_exp2nextreg"><SPAN CLASS="definition">luaK_exp2nextreg</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e);
+  <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e);
+  <A HREF="lcode.c.html#luaK_reserveregs">luaK_reserveregs</A>(fs, 1);
+  <A HREF="lcode.c.html#luaK_exp2reg">luaK_exp2reg</A>(fs, e, fs-&gt;<A HREF="lcode.c.html#freereg">freereg</A> - 1);
+}
+
+
+int <A NAME="luaK_exp2anyreg"><SPAN CLASS="definition">luaK_exp2anyreg</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e);
+  if (e-&gt;k == <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>) {
+    if (!<A HREF="lcode.c.html#hasjumps">hasjumps</A>(e)) return e-&gt;info;  /* exp is already in a register */ 
+    if (e-&gt;info &gt;= fs-&gt;nactvar) {  /* reg. is not a local? */
+      <A HREF="lcode.c.html#luaK_exp2reg">luaK_exp2reg</A>(fs, e, e-&gt;info);  /* put value on it */
+      return e-&gt;info;
+    }
+  }
+  <A HREF="lcode.c.html#luaK_exp2nextreg">luaK_exp2nextreg</A>(fs, e);  /* default */
+  return e-&gt;info;
+}
+
+
+void <A NAME="luaK_exp2val"><SPAN CLASS="definition">luaK_exp2val</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  if (<A HREF="lcode.c.html#hasjumps">hasjumps</A>(e))
+    <A HREF="lcode.c.html#luaK_exp2anyreg">luaK_exp2anyreg</A>(fs, e);
+  else
+    <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e);
+}
+
+
+int <A NAME="luaK_exp2RK"><SPAN CLASS="definition">luaK_exp2RK</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  <A HREF="lcode.c.html#luaK_exp2val">luaK_exp2val</A>(fs, e);
+  switch (e-&gt;k) {
+    case <A HREF="lparser.h.html#VNIL">VNIL</A>: {
+      if (fs-&gt;nk + <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A> &lt;= <A HREF="lopcodes.h.html#MAXARG_C">MAXARG_C</A>) {  /* constant fit in argC? */
+        e-&gt;info = <A HREF="lcode.c.html#nil_constant">nil_constant</A>(fs);
+        e-&gt;k = <A HREF="lparser.h.html#VK">VK</A>;
+        return e-&gt;info + <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>;
+      }
+      else break;
+    }
+    case <A HREF="lparser.h.html#VK">VK</A>: {
+      if (e-&gt;info + <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A> &lt;= <A HREF="lopcodes.h.html#MAXARG_C">MAXARG_C</A>)  /* constant fit in argC? */
+        return e-&gt;info + <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>;
+      else break;
+    }
+    default: break;
+  }
+  /* not a constant in the right range: put it in a register */
+  return <A HREF="lcode.c.html#luaK_exp2anyreg">luaK_exp2anyreg</A>(fs, e);
+}
+
+
+void <A NAME="luaK_storevar"><SPAN CLASS="definition">luaK_storevar</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *var, <A HREF="lparser.h.html#expdesc">expdesc</A> *exp) {
+  switch (var-&gt;k) {
+    case <A HREF="lparser.h.html#VLOCAL">VLOCAL</A>: {
+      <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, exp);
+      <A HREF="lcode.c.html#luaK_exp2reg">luaK_exp2reg</A>(fs, exp, var-&gt;info);
+      return;
+    }
+    case <A HREF="lparser.h.html#VUPVAL">VUPVAL</A>: {
+      int e = <A HREF="lcode.c.html#luaK_exp2anyreg">luaK_exp2anyreg</A>(fs, exp);
+      <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_SETUPVAL">OP_SETUPVAL</A>, e, var-&gt;info, 0);
+      break;
+    }
+    case <A HREF="lparser.h.html#VGLOBAL">VGLOBAL</A>: {
+      int e = <A HREF="lcode.c.html#luaK_exp2anyreg">luaK_exp2anyreg</A>(fs, exp);
+      <A HREF="lcode.c.html#luaK_codeABx">luaK_codeABx</A>(fs, <A HREF="lopcodes.h.html#OP_SETGLOBAL">OP_SETGLOBAL</A>, e, var-&gt;info);
+      break;
+    }
+    case <A HREF="lparser.h.html#VINDEXED">VINDEXED</A>: {
+      int e = <A HREF="lcode.c.html#luaK_exp2RK">luaK_exp2RK</A>(fs, exp);
+      <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_SETTABLE">OP_SETTABLE</A>, var-&gt;info, var-&gt;aux, e);
+      break;
+    }
+    default: {
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0);  /* invalid var kind to store */
+      break;
+    }
+  }
+  <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, exp);
+}
+
+
+void <A NAME="luaK_self"><SPAN CLASS="definition">luaK_self</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e, <A HREF="lparser.h.html#expdesc">expdesc</A> *key) {
+  int func;
+  <A HREF="lcode.c.html#luaK_exp2anyreg">luaK_exp2anyreg</A>(fs, e);
+  <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e);
+  func = fs-&gt;<A HREF="lcode.c.html#freereg">freereg</A>;
+  <A HREF="lcode.c.html#luaK_reserveregs">luaK_reserveregs</A>(fs, 2);
+  <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_SELF">OP_SELF</A>, func, e-&gt;info, <A HREF="lcode.c.html#luaK_exp2RK">luaK_exp2RK</A>(fs, key));
+  <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, key);
+  e-&gt;info = func;
+  e-&gt;k = <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>;
+}
+
+
+static void <A NAME="invertjump"><SPAN CLASS="definition">invertjump</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  <A HREF="llimits.h.html#Instruction">Instruction</A> *pc = <A HREF="lcode.c.html#getjumpcontrol">getjumpcontrol</A>(fs, e-&gt;info);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lopcodes.h.html#testOpMode">testOpMode</A>(<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*pc), <A HREF="lopcodes.h.html#OpModeT">OpModeT</A>) &amp;&amp;
+             <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*pc) != <A HREF="lopcodes.h.html#OP_TEST">OP_TEST</A>);
+  <A HREF="lopcodes.h.html#SETARG_A">SETARG_A</A>(*pc, !(<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(*pc)));
+}
+
+
+static int <A NAME="jumponcond"><SPAN CLASS="definition">jumponcond</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e, int cond) {
+  if (e-&gt;k == <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>) {
+    <A HREF="llimits.h.html#Instruction">Instruction</A> ie = <A HREF="lcode.h.html#getcode">getcode</A>(fs, e);
+    if (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(ie) == <A HREF="lopcodes.h.html#OP_NOT">OP_NOT</A>) {
+      fs-&gt;pc--;  /* remove previous <A HREF="lopcodes.h.html#OP_NOT">OP_NOT</A> */
+      return <A HREF="lcode.c.html#luaK_condjump">luaK_condjump</A>(fs, <A HREF="lopcodes.h.html#OP_TEST">OP_TEST</A>, <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(ie), <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(ie), !cond);
+    }
+    /* else go through */
+  }
+  <A HREF="lcode.c.html#discharge2anyreg">discharge2anyreg</A>(fs, e);
+  <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e);
+  return <A HREF="lcode.c.html#luaK_condjump">luaK_condjump</A>(fs, <A HREF="lopcodes.h.html#OP_TEST">OP_TEST</A>, <A HREF="lopcodes.h.html#NO_REG">NO_REG</A>, e-&gt;info, cond);
+}
+
+
+void <A NAME="luaK_goiftrue"><SPAN CLASS="definition">luaK_goiftrue</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  int pc;  /* pc of last jump */
+  <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e);
+  switch (e-&gt;k) {
+    case <A HREF="lparser.h.html#VK">VK</A>: case <A HREF="lparser.h.html#VTRUE">VTRUE</A>: {
+      pc = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;  /* always true; do nothing */
+      break;
+    }
+    case <A HREF="lparser.h.html#VFALSE">VFALSE</A>: {
+      pc = <A HREF="lcode.c.html#luaK_jump">luaK_jump</A>(fs);  /* always jump */
+      break;
+    }
+    case <A HREF="lparser.h.html#VJMP">VJMP</A>: {
+      <A HREF="lcode.c.html#invertjump">invertjump</A>(fs, e);
+      pc = e-&gt;info;
+      break;
+    }
+    default: {
+      pc = <A HREF="lcode.c.html#jumponcond">jumponcond</A>(fs, e, 0);
+      break;
+    }
+  }
+  <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;e-&gt;f, pc);  /* insert last jump in `f' list */
+}
+
+
+void <A NAME="luaK_goiffalse"><SPAN CLASS="definition">luaK_goiffalse</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  int pc;  /* pc of last jump */
+  <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e);
+  switch (e-&gt;k) {
+    case <A HREF="lparser.h.html#VNIL">VNIL</A>: case <A HREF="lparser.h.html#VFALSE">VFALSE</A>: {
+      pc = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;  /* always false; do nothing */
+      break;
+    }
+    case <A HREF="lparser.h.html#VTRUE">VTRUE</A>: {
+      pc = <A HREF="lcode.c.html#luaK_jump">luaK_jump</A>(fs);  /* always jump */
+      break;
+    }
+    case <A HREF="lparser.h.html#VJMP">VJMP</A>: {
+      pc = e-&gt;info;
+      break;
+    }
+    default: {
+      pc = <A HREF="lcode.c.html#jumponcond">jumponcond</A>(fs, e, 1);
+      break;
+    }
+  }
+  <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;e-&gt;t, pc);  /* insert last jump in `t' list */
+}
+
+
+static void <A NAME="codenot"><SPAN CLASS="definition">codenot</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e);
+  switch (e-&gt;k) {
+    case <A HREF="lparser.h.html#VNIL">VNIL</A>: case <A HREF="lparser.h.html#VFALSE">VFALSE</A>: {
+      e-&gt;k = <A HREF="lparser.h.html#VTRUE">VTRUE</A>;
+      break;
+    }
+    case <A HREF="lparser.h.html#VK">VK</A>: case <A HREF="lparser.h.html#VTRUE">VTRUE</A>: {
+      e-&gt;k = <A HREF="lparser.h.html#VFALSE">VFALSE</A>;
+      break;
+    }
+    case <A HREF="lparser.h.html#VJMP">VJMP</A>: {
+      <A HREF="lcode.c.html#invertjump">invertjump</A>(fs, e);
+      break;
+    }
+    case <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>:
+    case <A HREF="lparser.h.html#VNONRELOC">VNONRELOC</A>: {
+      <A HREF="lcode.c.html#discharge2anyreg">discharge2anyreg</A>(fs, e);
+      <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e);
+      e-&gt;info = <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_NOT">OP_NOT</A>, 0, e-&gt;info, 0);
+      e-&gt;k = <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>;
+      break;
+    }
+    default: {
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0);  /* cannot happen */
+      break;
+    }
+  }
+  /* interchange true and false lists */
+  { int temp = e-&gt;f; e-&gt;f = e-&gt;t; e-&gt;t = temp; }
+  <A HREF="lcode.c.html#removevalues">removevalues</A>(fs, e-&gt;f);
+  <A HREF="lcode.c.html#removevalues">removevalues</A>(fs, e-&gt;t);
+}
+
+
+void <A NAME="luaK_indexed"><SPAN CLASS="definition">luaK_indexed</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *t, <A HREF="lparser.h.html#expdesc">expdesc</A> *k) {
+  t-&gt;aux = <A HREF="lcode.c.html#luaK_exp2RK">luaK_exp2RK</A>(fs, k);
+  t-&gt;k = <A HREF="lparser.h.html#VINDEXED">VINDEXED</A>;
+}
+
+
+void <A NAME="luaK_prefix"><SPAN CLASS="definition">luaK_prefix</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lcode.h.html#UnOpr">UnOpr</A> op, <A HREF="lparser.h.html#expdesc">expdesc</A> *e) {
+  if (op == <A HREF="lcode.h.html#OPR_MINUS">OPR_MINUS</A>) {
+    <A HREF="lcode.c.html#luaK_exp2val">luaK_exp2val</A>(fs, e);
+    if (e-&gt;k == <A HREF="lparser.h.html#VK">VK</A> &amp;&amp; <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(&amp;fs-&gt;f-&gt;k[e-&gt;info]))
+      e-&gt;info = <A HREF="lcode.c.html#luaK_numberK">luaK_numberK</A>(fs, -<A HREF="lobject.h.html#nvalue">nvalue</A>(&amp;fs-&gt;f-&gt;k[e-&gt;info]));
+    else {
+      <A HREF="lcode.c.html#luaK_exp2anyreg">luaK_exp2anyreg</A>(fs, e);
+      <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e);
+      e-&gt;info = <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_UNM">OP_UNM</A>, 0, e-&gt;info, 0);
+      e-&gt;k = <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>;
+    }
+  }
+  else  /* op == NOT */
+    <A HREF="lcode.c.html#codenot">codenot</A>(fs, e);
+}
+
+
+void <A NAME="luaK_infix"><SPAN CLASS="definition">luaK_infix</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lcode.h.html#BinOpr">BinOpr</A> op, <A HREF="lparser.h.html#expdesc">expdesc</A> *v) {
+  switch (op) {
+    case <A HREF="lcode.h.html#OPR_AND">OPR_AND</A>: {
+      <A HREF="lcode.c.html#luaK_goiftrue">luaK_goiftrue</A>(fs, v);
+      <A HREF="lcode.c.html#luaK_patchtohere">luaK_patchtohere</A>(fs, v-&gt;t);
+      v-&gt;t = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+      break;
+    }
+    case <A HREF="lcode.h.html#OPR_OR">OPR_OR</A>: {
+      <A HREF="lcode.c.html#luaK_goiffalse">luaK_goiffalse</A>(fs, v);
+      <A HREF="lcode.c.html#luaK_patchtohere">luaK_patchtohere</A>(fs, v-&gt;f);
+      v-&gt;f = <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>;
+      break;
+    }
+    case <A HREF="lcode.h.html#OPR_CONCAT">OPR_CONCAT</A>: {
+      <A HREF="lcode.c.html#luaK_exp2nextreg">luaK_exp2nextreg</A>(fs, v);  /* operand must be on the `stack' */
+      break;
+    }
+    default: {
+      <A HREF="lcode.c.html#luaK_exp2RK">luaK_exp2RK</A>(fs, v);
+      break;
+    }
+  }
+}
+
+
+static void <A NAME="codebinop"><SPAN CLASS="definition">codebinop</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lparser.h.html#expdesc">expdesc</A> *res, <A HREF="lcode.h.html#BinOpr">BinOpr</A> op,
+                       int o1, int o2) {
+  if (op &lt;= <A HREF="lcode.h.html#OPR_POW">OPR_POW</A>) {  /* arithmetic operator? */
+    <A HREF="lopcodes.h.html#OpCode">OpCode</A> opc = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lopcodes.h.html#OpCode">OpCode</A>, (op - <A HREF="lcode.h.html#OPR_ADD">OPR_ADD</A>) + <A HREF="lopcodes.h.html#OP_ADD">OP_ADD</A>);  /* ORDER OP */
+    res-&gt;info = <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, opc, 0, o1, o2);
+    res-&gt;k = <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>;
+  }
+  else {  /* test operator */
+    static const <A HREF="lopcodes.h.html#OpCode">OpCode</A> ops[] = {<A HREF="lopcodes.h.html#OP_EQ">OP_EQ</A>, <A HREF="lopcodes.h.html#OP_EQ">OP_EQ</A>, <A HREF="lopcodes.h.html#OP_LT">OP_LT</A>, <A HREF="lopcodes.h.html#OP_LE">OP_LE</A>, <A HREF="lopcodes.h.html#OP_LT">OP_LT</A>, <A HREF="lopcodes.h.html#OP_LE">OP_LE</A>};
+    int cond = 1;
+    if (op &gt;= <A HREF="lcode.h.html#OPR_GT">OPR_GT</A>) {  /* `&gt;' or `&gt;='? */
+      int temp;  /* exchange args and replace by `&lt;' or `&lt;=' */
+      temp = o1; o1 = o2; o2 = temp;  /* o1 &lt;==&gt; o2 */
+    }
+    else if (op == <A HREF="lcode.h.html#OPR_NE">OPR_NE</A>) cond = 0;
+    res-&gt;info = <A HREF="lcode.c.html#luaK_condjump">luaK_condjump</A>(fs, ops[op - <A HREF="lcode.h.html#OPR_NE">OPR_NE</A>], cond, o1, o2);
+    res-&gt;k = <A HREF="lparser.h.html#VJMP">VJMP</A>;
+  }
+}
+
+
+void <A NAME="luaK_posfix"><SPAN CLASS="definition">luaK_posfix</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lcode.h.html#BinOpr">BinOpr</A> op, <A HREF="lparser.h.html#expdesc">expdesc</A> *e1, <A HREF="lparser.h.html#expdesc">expdesc</A> *e2) {
+  switch (op) {
+    case <A HREF="lcode.h.html#OPR_AND">OPR_AND</A>: {
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(e1-&gt;t == <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>);  /* list must be closed */
+      <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e2);
+      <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;e1-&gt;f, e2-&gt;f);
+      e1-&gt;k = e2-&gt;k; e1-&gt;info = e2-&gt;info; e1-&gt;aux = e2-&gt;aux; e1-&gt;t = e2-&gt;t;
+      break;
+    }
+    case <A HREF="lcode.h.html#OPR_OR">OPR_OR</A>: {
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(e1-&gt;f == <A HREF="lcode.h.html#NO_JUMP">NO_JUMP</A>);  /* list must be closed */
+      <A HREF="lcode.c.html#luaK_dischargevars">luaK_dischargevars</A>(fs, e2);
+      <A HREF="lcode.c.html#luaK_concat">luaK_concat</A>(fs, &amp;e1-&gt;t, e2-&gt;t);
+      e1-&gt;k = e2-&gt;k; e1-&gt;info = e2-&gt;info; e1-&gt;aux = e2-&gt;aux; e1-&gt;f = e2-&gt;f;
+      break;
+    }
+    case <A HREF="lcode.h.html#OPR_CONCAT">OPR_CONCAT</A>: {
+      <A HREF="lcode.c.html#luaK_exp2val">luaK_exp2val</A>(fs, e2);
+      if (e2-&gt;k == <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A> &amp;&amp; <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(<A HREF="lcode.h.html#getcode">getcode</A>(fs, e2)) == <A HREF="lopcodes.h.html#OP_CONCAT">OP_CONCAT</A>) {
+        <A HREF="llimits.h.html#lua_assert">lua_assert</A>(e1-&gt;info == <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(<A HREF="lcode.h.html#getcode">getcode</A>(fs, e2))-1);
+        <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e1);
+        <A HREF="lopcodes.h.html#SETARG_B">SETARG_B</A>(<A HREF="lcode.h.html#getcode">getcode</A>(fs, e2), e1-&gt;info);
+        e1-&gt;k = e2-&gt;k; e1-&gt;info = e2-&gt;info;
+      }
+      else {
+        <A HREF="lcode.c.html#luaK_exp2nextreg">luaK_exp2nextreg</A>(fs, e2);
+        <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e2);
+        <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e1);
+        e1-&gt;info = <A HREF="lcode.c.html#luaK_codeABC">luaK_codeABC</A>(fs, <A HREF="lopcodes.h.html#OP_CONCAT">OP_CONCAT</A>, 0, e1-&gt;info, e2-&gt;info);
+        e1-&gt;k = <A HREF="lparser.h.html#VRELOCABLE">VRELOCABLE</A>;
+      }
+      break;
+    }
+    default: {
+      int o1 = <A HREF="lcode.c.html#luaK_exp2RK">luaK_exp2RK</A>(fs, e1);
+      int o2 = <A HREF="lcode.c.html#luaK_exp2RK">luaK_exp2RK</A>(fs, e2);
+      <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e2);
+      <A HREF="lcode.c.html#freeexp">freeexp</A>(fs, e1);
+      <A HREF="lcode.c.html#codebinop">codebinop</A>(fs, e1, op, o1, o2);
+    }
+  }
+}
+
+
+void <A NAME="luaK_fixline"><SPAN CLASS="definition">luaK_fixline</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, int line) {
+  fs-&gt;f-&gt;lineinfo[fs-&gt;pc - 1] = line;
+}
+
+
+int <A NAME="luaK_code"><SPAN CLASS="definition">luaK_code</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="llimits.h.html#Instruction">Instruction</A> i, int line) {
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = fs-&gt;f;
+  <A HREF="lcode.c.html#luaK_dischargejpc">luaK_dischargejpc</A>(fs);  /* `pc' will change */
+  /* put new instruction in code array */
+  <A HREF="lmem.h.html#luaM_growvector">luaM_growvector</A>(fs-&gt;L, f-&gt;code, fs-&gt;pc, f-&gt;sizecode, <A HREF="llimits.h.html#Instruction">Instruction</A>,
+                  <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>, "code size overflow");
+  f-&gt;code[fs-&gt;pc] = i;
+  /* save corresponding line information */
+  <A HREF="lmem.h.html#luaM_growvector">luaM_growvector</A>(fs-&gt;L, f-&gt;lineinfo, fs-&gt;pc, f-&gt;sizelineinfo, int,
+                  <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>, "code size overflow");
+  f-&gt;lineinfo[fs-&gt;pc] = line;
+  return fs-&gt;pc++;
+}
+
+
+int <A NAME="luaK_codeABC"><SPAN CLASS="definition">luaK_codeABC</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lopcodes.h.html#OpCode">OpCode</A> o, int a, int b, int c) {
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lopcodes.h.html#getOpMode">getOpMode</A>(o) == <A HREF="lopcodes.h.html#iABC">iABC</A>);
+  return <A HREF="lcode.c.html#luaK_code">luaK_code</A>(fs, <A HREF="lopcodes.h.html#CREATE_ABC">CREATE_ABC</A>(o, a, b, c), fs-&gt;ls-&gt;lastline);
+}
+
+
+int <A NAME="luaK_codeABx"><SPAN CLASS="definition">luaK_codeABx</SPAN></A> (<A HREF="lparser.h.html#FuncState">FuncState</A> *fs, <A HREF="lopcodes.h.html#OpCode">OpCode</A> o, int a, unsigned int bc) {
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lopcodes.h.html#getOpMode">getOpMode</A>(o) == <A HREF="lopcodes.h.html#iABx">iABx</A> || <A HREF="lopcodes.h.html#getOpMode">getOpMode</A>(o) == <A HREF="lopcodes.h.html#iAsBx">iAsBx</A>);
+  return <A HREF="lcode.c.html#luaK_code">luaK_code</A>(fs, <A HREF="lopcodes.h.html#CREATE_ABx">CREATE_ABx</A>(o, a, bc), fs-&gt;ls-&gt;lastline);
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

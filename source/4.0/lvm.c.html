@@ -1,0 +1,745 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lvm.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lvm.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lvm.c,v 1.146a 2000/10/26 12:47:05 roberto Exp $
+** Lua virtual machine
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lapi.h.html">lapi.h</A>"
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+
+
+#ifdef OLD_ANSI
+#define <A NAME="strcoll"><SPAN CLASS="definition">strcoll</SPAN></A>(a,b)    strcmp(a,b)
+#endif
+
+
+
+/*
+** Extra stack size to run a function:
+** TAG_LINE(1), NAME(1), <A HREF="ltm.h.html#TM">TM</A> calls(3) (plus some extra...)
+*/
+#define <A NAME="EXTRA_STACK"><SPAN CLASS="definition">EXTRA_STACK</SPAN></A>     8
+
+
+
+int <A NAME="luaV_tonumber"><SPAN CLASS="definition">luaV_tonumber</SPAN></A> (<A HREF="lobject.h.html#TObject">TObject</A> *obj) {
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(obj) != <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>)
+    return 1;
+  else {
+    if (!<A HREF="lobject.c.html#luaO_str2d">luaO_str2d</A>(<A HREF="lobject.h.html#svalue">svalue</A>(obj), &amp;<A HREF="lobject.h.html#nvalue">nvalue</A>(obj)))
+      return 2;
+    <A HREF="lobject.h.html#ttype">ttype</A>(obj) = <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>;
+    return 0;
+  }
+}
+
+
+int <A NAME="luaV_tostring"><SPAN CLASS="definition">luaV_tostring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#TObject">TObject</A> *obj) {  /* LUA_NUMBER */
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(obj) != <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>)
+    return 1;
+  else {
+    char s[32];  /* 16 digits, sign, point and \0  (+ some extra...) */
+    <A HREF="llimits.h.html#lua_number2str">lua_number2str</A>(s, <A HREF="lobject.h.html#nvalue">nvalue</A>(obj));  /* convert `s' to number */
+    <A HREF="lobject.h.html#tsvalue">tsvalue</A>(obj) = <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, s);
+    <A HREF="lobject.h.html#ttype">ttype</A>(obj) = <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+    return 0;
+  }
+}
+
+
+static void <A NAME="traceexec"><SPAN CLASS="definition">traceexec</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> base, <A HREF="lstate.h.html#StkId">StkId</A> top, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> linehook) {
+  <A HREF="lobject.h.html#CallInfo">CallInfo</A> *ci = <A HREF="lobject.h.html#infovalue">infovalue</A>(base-1);
+  int *lineinfo = ci-&gt;func-&gt;f.l-&gt;lineinfo;
+  int pc = (*ci-&gt;pc - ci-&gt;func-&gt;f.l-&gt;code) - 1;
+  int newline;
+  if (pc == 0) {  /* may be first time? */
+    ci-&gt;line = 1;
+    ci-&gt;refi = 0;
+    ci-&gt;lastpc = pc+1;  /* make sure it will call linehook */
+  }
+  newline = <A HREF="ldebug.c.html#luaG_getline">luaG_getline</A>(lineinfo, pc, ci-&gt;line, &amp;ci-&gt;refi);
+  /* calls linehook when enters a new line or jumps back (loop) */
+  if (newline != ci-&gt;line || pc &lt;= ci-&gt;lastpc) {
+    ci-&gt;line = newline;
+    L-&gt;top = top;
+    <A HREF="ldo.c.html#luaD_lineHook">luaD_lineHook</A>(L, base-1, newline, linehook);
+  }
+  ci-&gt;lastpc = pc;
+}
+
+
+static <A HREF="lobject.h.html#Closure">Closure</A> *<A NAME="luaV_closure"><SPAN CLASS="definition">luaV_closure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nelems) {
+  <A HREF="lobject.h.html#Closure">Closure</A> *c = <A HREF="lfunc.c.html#luaF_newclosure">luaF_newclosure</A>(L, nelems);
+  L-&gt;top -= nelems;
+  while (nelems--)
+    c-&gt;upvalue[nelems] = *(L-&gt;top+nelems);
+  <A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top) = c;
+  <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+  <A HREF="ldo.h.html#incr_top">incr_top</A>;
+  return c;
+}
+
+
+void <A NAME="luaV_Cclosure"><SPAN CLASS="definition">luaV_Cclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> c, int nelems) {
+  <A HREF="lobject.h.html#Closure">Closure</A> *cl = <A HREF="lvm.c.html#luaV_closure">luaV_closure</A>(L, nelems);
+  cl-&gt;f.c = c;
+  cl-&gt;isC = 1;
+}
+
+
+void <A NAME="luaV_Lclosure"><SPAN CLASS="definition">luaV_Lclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *l, int nelems) {
+  <A HREF="lobject.h.html#Closure">Closure</A> *cl = <A HREF="lvm.c.html#luaV_closure">luaV_closure</A>(L, nelems);
+  cl-&gt;f.l = l;
+  cl-&gt;isC = 0;
+}
+
+
+/*
+** Function to index a table.
+** Receives the table at `t' and the <A HREF="ltable.h.html#key">key</A> at top.
+*/
+const <A HREF="lobject.h.html#TObject">TObject</A> *<A NAME="luaV_gettable"><SPAN CLASS="definition">luaV_gettable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> t) {
+  <A HREF="lobject.h.html#Closure">Closure</A> *tm;
+  int tg;
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(t) == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A> &amp;&amp;  /* `t' is a table? */
+      ((tg = <A HREF="lobject.h.html#hvalue">hvalue</A>(t)-&gt;htag) == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A> ||  /* with default tag? */
+        <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, tg, <A HREF="ltm.h.html#TM_GETTABLE">TM_GETTABLE</A>) == NULL)) { /* or no <A HREF="ltm.h.html#TM">TM</A>? */
+    /* do a primitive get */
+    const <A HREF="lobject.h.html#TObject">TObject</A> *h = <A HREF="ltable.c.html#luaH_get">luaH_get</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(t), L-&gt;top-1);
+    /* result is no nil or there is no `index' tag method? */
+    if (<A HREF="lobject.h.html#ttype">ttype</A>(h) != <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A> || ((tm=<A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, tg, <A HREF="ltm.h.html#TM_INDEX">TM_INDEX</A>)) == NULL))
+      return h;  /* return result */
+    /* else call `index' tag method */
+  }
+  else {  /* try a `gettable' tag method */
+    tm = <A HREF="ltm.h.html#luaT_gettmbyObj">luaT_gettmbyObj</A>(L, t, <A HREF="ltm.h.html#TM_GETTABLE">TM_GETTABLE</A>);
+  }
+  if (tm != NULL) {  /* is there a tag method? */
+    <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, 2);
+    *(L-&gt;top+1) = *(L-&gt;top-1);  /* <A HREF="ltable.h.html#key">key</A> */
+    *L-&gt;top = *t;  /* table */
+    <A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top-1) = tm;  /* tag method */
+    <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top-1) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+    L-&gt;top += 2;
+    <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, L-&gt;top - 3, 1);
+    return L-&gt;top - 1;  /* call result */
+  }
+  else {  /* no tag method */
+    <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A>(L, t, "index");
+    return NULL;  /* to avoid warnings */
+  }
+}
+
+
+/*
+** Receives table at `t', <A HREF="ltable.h.html#key">key</A> at `<A HREF="ltable.h.html#key">key</A>' and value at top.
+*/
+void <A NAME="luaV_settable"><SPAN CLASS="definition">luaV_settable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> t, <A HREF="lstate.h.html#StkId">StkId</A> <A HREF="ltable.h.html#key">key</A>) {
+  int tg;
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(t) == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A> &amp;&amp;  /* `t' is a table? */
+      ((tg = <A HREF="lobject.h.html#hvalue">hvalue</A>(t)-&gt;htag) == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A> ||  /* with default tag? */
+        <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, tg, <A HREF="ltm.h.html#TM_SETTABLE">TM_SETTABLE</A>) == NULL)) /* or no <A HREF="ltm.h.html#TM">TM</A>? */
+    *<A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(t), <A HREF="ltable.h.html#key">key</A>) = *(L-&gt;top-1);  /* do a primitive set */
+  else {  /* try a `settable' tag method */
+    <A HREF="lobject.h.html#Closure">Closure</A> *tm = <A HREF="ltm.h.html#luaT_gettmbyObj">luaT_gettmbyObj</A>(L, t, <A HREF="ltm.h.html#TM_SETTABLE">TM_SETTABLE</A>);
+    if (tm != NULL) {
+      <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, 3);
+      *(L-&gt;top+2) = *(L-&gt;top-1);
+      *(L-&gt;top+1) = *<A HREF="ltable.h.html#key">key</A>;
+      *(L-&gt;top) = *t;
+      <A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top-1) = tm;
+      <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top-1) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+      L-&gt;top += 3;
+      <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, L-&gt;top - 4, 0);  /* call `settable' tag method */
+    }
+    else  /* no tag method... */
+      <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A>(L, t, "index");
+  }
+}
+
+
+const <A HREF="lobject.h.html#TObject">TObject</A> *<A NAME="luaV_getglobal"><SPAN CLASS="definition">luaV_getglobal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#TString">TString</A> *s) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *value = <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>(L-&gt;gt, s);
+  <A HREF="lobject.h.html#Closure">Closure</A> *tm = <A HREF="ltm.h.html#luaT_gettmbyObj">luaT_gettmbyObj</A>(L, value, <A HREF="ltm.h.html#TM_GETGLOBAL">TM_GETGLOBAL</A>);
+  if (tm == NULL)  /* is there a tag method? */
+    return value;  /* default behavior */
+  else {  /* tag method */
+    <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, 3);
+    <A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top) = tm;
+    <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+    <A HREF="lobject.h.html#tsvalue">tsvalue</A>(L-&gt;top+1) = s;  /* global name */
+    <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top+1) = <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+    *(L-&gt;top+2) = *value;
+    L-&gt;top += 3;
+    <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, L-&gt;top - 3, 1);
+    return L-&gt;top - 1;
+  }
+}
+
+
+void <A NAME="luaV_setglobal"><SPAN CLASS="definition">luaV_setglobal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#TString">TString</A> *s) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *oldvalue = <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>(L-&gt;gt, s);
+  <A HREF="lobject.h.html#Closure">Closure</A> *tm = <A HREF="ltm.h.html#luaT_gettmbyObj">luaT_gettmbyObj</A>(L, oldvalue, <A HREF="ltm.h.html#TM_SETGLOBAL">TM_SETGLOBAL</A>);
+  if (tm == NULL) {  /* is there a tag method? */
+    if (oldvalue != &amp;<A HREF="lobject.c.html#luaO_nilobject">luaO_nilobject</A>) {
+      /* cast to remove `const' is OK, because `oldvalue' != <A HREF="lobject.c.html#luaO_nilobject">luaO_nilobject</A> */
+      *(<A HREF="lobject.h.html#TObject">TObject</A> *)oldvalue = *(L-&gt;top - 1);
+    }
+    else {
+      <A HREF="lobject.h.html#TObject">TObject</A> <A HREF="ltable.h.html#key">key</A>;
+      <A HREF="lobject.h.html#ttype">ttype</A>(&amp;<A HREF="ltable.h.html#key">key</A>) = <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+      <A HREF="lobject.h.html#tsvalue">tsvalue</A>(&amp;<A HREF="ltable.h.html#key">key</A>) = s;
+      *<A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, L-&gt;gt, &amp;<A HREF="ltable.h.html#key">key</A>) = *(L-&gt;top - 1);
+    }
+  }
+  else {
+    <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, 3);
+    *(L-&gt;top+2) = *(L-&gt;top-1);  /* new value */
+    *(L-&gt;top+1) = *oldvalue;
+    <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) = <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+    <A HREF="lobject.h.html#tsvalue">tsvalue</A>(L-&gt;top) = s;
+    <A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top-1) = tm;
+    <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top-1) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+    L-&gt;top += 3;
+    <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, L-&gt;top - 4, 0);
+  }
+}
+
+
+static int <A NAME="call_binTM"><SPAN CLASS="definition">call_binTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> top, <A HREF="ltm.h.html#TMS">TMS</A> event) {
+  /* try first operand */
+  <A HREF="lobject.h.html#Closure">Closure</A> *tm = <A HREF="ltm.h.html#luaT_gettmbyObj">luaT_gettmbyObj</A>(L, top-2, event);
+  L-&gt;top = top;
+  if (tm == NULL) {
+    tm = <A HREF="ltm.h.html#luaT_gettmbyObj">luaT_gettmbyObj</A>(L, top-1, event);  /* try second operand */
+    if (tm == NULL) {
+      tm = <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, 0, event);  /* try a `global' method */
+      if (tm == NULL)
+        return 0;  /* error */
+    }
+  }
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, <A HREF="ltm.c.html#luaT_eventname">luaT_eventname</A>[event]);
+  <A HREF="ldo.c.html#luaD_callTM">luaD_callTM</A>(L, tm, 3, 1);
+  return 1;
+}
+
+
+static void <A NAME="call_arith"><SPAN CLASS="definition">call_arith</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> top, <A HREF="ltm.h.html#TMS">TMS</A> event) {
+  if (!<A HREF="lvm.c.html#call_binTM">call_binTM</A>(L, top, event))
+    <A HREF="ldebug.c.html#luaG_binerror">luaG_binerror</A>(L, top-2, <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>, "perform arithmetic on");
+}
+
+
+static int <A NAME="luaV_strcomp"><SPAN CLASS="definition">luaV_strcomp</SPAN></A> (const <A HREF="lobject.h.html#TString">TString</A> *ls, const <A HREF="lobject.h.html#TString">TString</A> *rs) {
+  const char *l = ls-&gt;str;
+  size_t ll = ls-&gt;len;
+  const char *r = rs-&gt;str;
+  size_t lr = rs-&gt;len;
+  for (;;) {
+    int temp = <A HREF="lvm.c.html#strcoll">strcoll</A>(l, r);
+    if (temp != 0) return temp;
+    else {  /* strings are equal up to a '\0' */
+      size_t len = strlen(l);  /* index of first '\0' in both strings */
+      if (len == ll)  /* l is finished? */
+        return (len == lr) ? 0 : -1;  /* l is equal or smaller than r */
+      else if (len == lr)  /* r is finished? */
+        return 1;  /* l is greater than r (because l is not finished) */
+      /* both strings longer than `len'; go on comparing (after the '\0') */
+      len++;
+      l += len; ll -= len; r += len; lr -= len;
+    }
+  }
+}
+
+
+int <A NAME="luaV_lessthan"><SPAN CLASS="definition">luaV_lessthan</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *l, const <A HREF="lobject.h.html#TObject">TObject</A> *r, <A HREF="lstate.h.html#StkId">StkId</A> top) {
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(l) == <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A> &amp;&amp; <A HREF="lobject.h.html#ttype">ttype</A>(r) == <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>)
+    return (<A HREF="lobject.h.html#nvalue">nvalue</A>(l) &lt; <A HREF="lobject.h.html#nvalue">nvalue</A>(r));
+  else if (<A HREF="lobject.h.html#ttype">ttype</A>(l) == <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A> &amp;&amp; <A HREF="lobject.h.html#ttype">ttype</A>(r) == <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>)
+    return (<A HREF="lvm.c.html#luaV_strcomp">luaV_strcomp</A>(<A HREF="lobject.h.html#tsvalue">tsvalue</A>(l), <A HREF="lobject.h.html#tsvalue">tsvalue</A>(r)) &lt; 0);
+  else {  /* call <A HREF="ltm.h.html#TM">TM</A> */
+    <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, 2);
+    *top++ = *l;
+    *top++ = *r;
+    if (!<A HREF="lvm.c.html#call_binTM">call_binTM</A>(L, top, <A HREF="ltm.h.html#TM_LT">TM_LT</A>))
+      <A HREF="ldebug.c.html#luaG_ordererror">luaG_ordererror</A>(L, top-2);
+    L-&gt;top--;
+    return (<A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) != <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>);
+  }
+}
+
+
+void <A NAME="luaV_strconc"><SPAN CLASS="definition">luaV_strconc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int total, <A HREF="lstate.h.html#StkId">StkId</A> top) {
+  do {
+    int n = 2;  /* number of elements handled in this pass (at least 2) */
+    if (<A HREF="lvm.h.html#tostring">tostring</A>(L, top-2) || <A HREF="lvm.h.html#tostring">tostring</A>(L, top-1)) {
+      if (!<A HREF="lvm.c.html#call_binTM">call_binTM</A>(L, top, <A HREF="ltm.h.html#TM_CONCAT">TM_CONCAT</A>))
+        <A HREF="ldebug.c.html#luaG_binerror">luaG_binerror</A>(L, top-2, <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>, "concat");
+    }
+    else if (<A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-1)-&gt;len &gt; 0) {  /* if len=0, do nothing */
+      /* at least two string values; get as many as possible */
+      <A HREF="llimits.h.html#lint32">lint32</A> tl = (<A HREF="llimits.h.html#lint32">lint32</A>)<A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-1)-&gt;len + 
+                  (<A HREF="llimits.h.html#lint32">lint32</A>)<A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-2)-&gt;len;
+      char *buffer;
+      int i;
+      while (n &lt; total &amp;&amp; !<A HREF="lvm.h.html#tostring">tostring</A>(L, top-n-1)) {  /* collect total length */
+        tl += <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-n-1)-&gt;len;
+        n++;
+      }
+      if (tl &gt; <A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A>) <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "string size overflow");
+      buffer = <A HREF="lobject.c.html#luaO_openspace">luaO_openspace</A>(L, tl);
+      tl = 0;
+      for (i=n; i&gt;0; i--) {  /* concat all strings */
+        size_t l = <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-i)-&gt;len;
+        memcpy(buffer+tl, <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-i)-&gt;str, l);
+        tl += l;
+      }
+      <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-n) = <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, buffer, tl);
+    }
+    total -= n-1;  /* got `n' strings to create 1 new */
+    top -= n-1;
+  } while (total &gt; 1);  /* repeat until only 1 result left */
+}
+
+
+static void <A NAME="luaV_pack"><SPAN CLASS="definition">luaV_pack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> firstelem) {
+  int i;
+  <A HREF="lobject.h.html#Hash">Hash</A> *htab = <A HREF="ltable.c.html#luaH_new">luaH_new</A>(L, 0);
+  for (i=0; firstelem+i&lt;L-&gt;top; i++)
+    *<A HREF="ltable.c.html#luaH_setint">luaH_setint</A>(L, htab, i+1) = *(firstelem+i);
+  /* store counter in field `n' */
+  <A HREF="ltable.c.html#luaH_setstrnum">luaH_setstrnum</A>(L, htab, <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, "n"), i);
+  L-&gt;top = firstelem;  /* remove elements from the stack */
+  <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) = <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>;
+  <A HREF="lobject.h.html#hvalue">hvalue</A>(L-&gt;top) = htab;
+  <A HREF="ldo.h.html#incr_top">incr_top</A>;
+}
+
+
+static void <A NAME="adjust_varargs"><SPAN CLASS="definition">adjust_varargs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> base, int nfixargs) {
+  int nvararg = (L-&gt;top-base) - nfixargs;
+  if (nvararg &lt; 0)
+    <A HREF="ldo.c.html#luaD_adjusttop">luaD_adjusttop</A>(L, base, nfixargs);
+  <A HREF="lvm.c.html#luaV_pack">luaV_pack</A>(L, base+nfixargs);
+}
+
+
+
+#define <A NAME="dojump"><SPAN CLASS="definition">dojump</SPAN></A>(pc, i)   { int d = <A HREF="lopcodes.h.html#GETARG_S">GETARG_S</A>(i); pc += d; }
+
+/*
+** Executes the given Lua function. Parameters are between [base,top).
+** Returns n such that the the results are between [n,top).
+*/
+<A HREF="lstate.h.html#StkId">StkId</A> <A NAME="luaV_execute"><SPAN CLASS="definition">luaV_execute</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#Closure">Closure</A> *cl, <A HREF="lstate.h.html#StkId">StkId</A> base) {
+  const <A HREF="lobject.h.html#Proto">Proto</A> *const tf = cl-&gt;f.l;
+  <A HREF="lstate.h.html#StkId">StkId</A> top;  /* keep top local, for performance */
+  const <A HREF="llimits.h.html#Instruction">Instruction</A> *pc = tf-&gt;code;
+  <A HREF="lobject.h.html#TString">TString</A> **const kstr = tf-&gt;kstr;
+  const <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> linehook = L-&gt;linehook;
+  <A HREF="lobject.h.html#infovalue">infovalue</A>(base-1)-&gt;pc = &amp;pc;
+  <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, tf-&gt;maxstacksize+<A HREF="lvm.c.html#EXTRA_STACK">EXTRA_STACK</A>);
+  if (tf-&gt;is_vararg)  /* varargs? */
+    <A HREF="lvm.c.html#adjust_varargs">adjust_varargs</A>(L, base, tf-&gt;numparams);
+  else
+    <A HREF="ldo.c.html#luaD_adjusttop">luaD_adjusttop</A>(L, base, tf-&gt;numparams);
+  top = L-&gt;top;
+  /* <A HREF="lua.c.html#main">main</A> loop of interpreter */
+  for (;;) {
+    const <A HREF="llimits.h.html#Instruction">Instruction</A> i = *pc++;
+    if (linehook)
+      <A HREF="lvm.c.html#traceexec">traceexec</A>(L, base, top, linehook);
+    switch (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i)) {
+      case <A HREF="lopcodes.h.html#OP_END">OP_END</A>: {
+        L-&gt;top = top;
+        return top;
+      }
+      case <A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A>: {
+        L-&gt;top = top;
+        return base+<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+      }
+      case <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>: {
+        int nres = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        if (nres == <A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>) nres = <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>;
+        L-&gt;top = top;
+        <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, base+<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i), nres);
+        top = L-&gt;top;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_TAILCALL">OP_TAILCALL</A>: {
+        L-&gt;top = top;
+        <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, base+<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i), <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>);
+        return base+<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHNIL">OP_PUSHNIL</A>: {
+        int n = <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(n&gt;0, "invalid argument");
+        do {
+          <A HREF="lobject.h.html#ttype">ttype</A>(top++) = <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>;
+        } while (--n &gt; 0);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_POP">OP_POP</A>: {
+        top -= <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHINT">OP_PUSHINT</A>: {
+        <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>;
+        <A HREF="lobject.h.html#nvalue">nvalue</A>(top) = (<A HREF="llimits.h.html#Number">Number</A>)<A HREF="lopcodes.h.html#GETARG_S">GETARG_S</A>(i);
+        top++;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHSTRING">OP_PUSHSTRING</A>: {
+        <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+        <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top) = kstr[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)];
+        top++;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHNUM">OP_PUSHNUM</A>: {
+        <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>;
+        <A HREF="lobject.h.html#nvalue">nvalue</A>(top) = tf-&gt;knum[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)];
+        top++;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHNEGNUM">OP_PUSHNEGNUM</A>: {
+        <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>;
+        <A HREF="lobject.h.html#nvalue">nvalue</A>(top) = -tf-&gt;knum[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)];
+        top++;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHUPVALUE">OP_PUSHUPVALUE</A>: {
+        *top++ = cl-&gt;upvalue[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)];
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_GETLOCAL">OP_GETLOCAL</A>: {
+        *top++ = *(base+<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_GETGLOBAL">OP_GETGLOBAL</A>: {
+        L-&gt;top = top;
+        *top = *<A HREF="lvm.c.html#luaV_getglobal">luaV_getglobal</A>(L, kstr[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)]);
+        top++;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_GETTABLE">OP_GETTABLE</A>: {
+        L-&gt;top = top;
+        top--;
+        *(top-1) = *<A HREF="lvm.c.html#luaV_gettable">luaV_gettable</A>(L, top-1);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_GETDOTTED">OP_GETDOTTED</A>: {
+        <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+        <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top) = kstr[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)];
+        L-&gt;top = top+1;
+        *(top-1) = *<A HREF="lvm.c.html#luaV_gettable">luaV_gettable</A>(L, top-1);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_GETINDEXED">OP_GETINDEXED</A>: {
+        *top = *(base+<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i));
+        L-&gt;top = top+1;
+        *(top-1) = *<A HREF="lvm.c.html#luaV_gettable">luaV_gettable</A>(L, top-1);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHSELF">OP_PUSHSELF</A>: {
+        <A HREF="lobject.h.html#TObject">TObject</A> receiver;
+        receiver = *(top-1);
+        <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+        <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top++) = kstr[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)];
+        L-&gt;top = top;
+        *(top-2) = *<A HREF="lvm.c.html#luaV_gettable">luaV_gettable</A>(L, top-2);
+        *(top-1) = receiver;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CREATETABLE">OP_CREATETABLE</A>: {
+        L-&gt;top = top;
+        <A HREF="lgc.c.html#luaC_checkGC">luaC_checkGC</A>(L);
+        <A HREF="lobject.h.html#hvalue">hvalue</A>(top) = <A HREF="ltable.c.html#luaH_new">luaH_new</A>(L, <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i));
+        <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>;
+        top++;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETLOCAL">OP_SETLOCAL</A>: {
+        *(base+<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)) = *(--top);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETGLOBAL">OP_SETGLOBAL</A>: {
+        L-&gt;top = top;
+        <A HREF="lvm.c.html#luaV_setglobal">luaV_setglobal</A>(L, kstr[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)]);
+        top--;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETTABLE">OP_SETTABLE</A>: {
+        <A HREF="lstate.h.html#StkId">StkId</A> t = top-<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i);
+        L-&gt;top = top;
+        <A HREF="lvm.c.html#luaV_settable">luaV_settable</A>(L, t, t+1);
+        top -= <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);  /* pop values */
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>: {
+        int aux = <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i) * <A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>;
+        int n = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        <A HREF="lobject.h.html#Hash">Hash</A> *arr = <A HREF="lobject.h.html#hvalue">hvalue</A>(top-n-1);
+        L-&gt;top = top-n;  /* final value of `top' (in case of errors) */
+        for (; n; n--)
+          *<A HREF="ltable.c.html#luaH_setint">luaH_setint</A>(L, arr, n+aux) = *(--top);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETMAP">OP_SETMAP</A>: {
+        int n = <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+        <A HREF="lstate.h.html#StkId">StkId</A> finaltop = top-2*n;
+        <A HREF="lobject.h.html#Hash">Hash</A> *arr = <A HREF="lobject.h.html#hvalue">hvalue</A>(finaltop-1);
+        L-&gt;top = finaltop;  /* final value of `top' (in case of errors) */
+        for (; n; n--) {
+          top-=2;
+          *<A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, arr, top) = *(top+1);
+        }
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_ADD">OP_ADD</A>: {
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-2) || <A HREF="lvm.h.html#tonumber">tonumber</A>(top-1))
+          <A HREF="lvm.c.html#call_arith">call_arith</A>(L, top, <A HREF="ltm.h.html#TM_ADD">TM_ADD</A>);
+        else
+          <A HREF="lobject.h.html#nvalue">nvalue</A>(top-2) += <A HREF="lobject.h.html#nvalue">nvalue</A>(top-1);
+        top--;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_ADDI">OP_ADDI</A>: {
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-1)) {
+          <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>;
+          <A HREF="lobject.h.html#nvalue">nvalue</A>(top) = (<A HREF="llimits.h.html#Number">Number</A>)<A HREF="lopcodes.h.html#GETARG_S">GETARG_S</A>(i);
+          <A HREF="lvm.c.html#call_arith">call_arith</A>(L, top+1, <A HREF="ltm.h.html#TM_ADD">TM_ADD</A>);
+        }
+        else
+          <A HREF="lobject.h.html#nvalue">nvalue</A>(top-1) += (<A HREF="llimits.h.html#Number">Number</A>)<A HREF="lopcodes.h.html#GETARG_S">GETARG_S</A>(i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SUB">OP_SUB</A>: {
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-2) || <A HREF="lvm.h.html#tonumber">tonumber</A>(top-1))
+          <A HREF="lvm.c.html#call_arith">call_arith</A>(L, top, <A HREF="ltm.h.html#TM_SUB">TM_SUB</A>);
+        else
+          <A HREF="lobject.h.html#nvalue">nvalue</A>(top-2) -= <A HREF="lobject.h.html#nvalue">nvalue</A>(top-1);
+        top--;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_MULT">OP_MULT</A>: {
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-2) || <A HREF="lvm.h.html#tonumber">tonumber</A>(top-1))
+          <A HREF="lvm.c.html#call_arith">call_arith</A>(L, top, <A HREF="ltm.h.html#TM_MUL">TM_MUL</A>);
+        else
+          <A HREF="lobject.h.html#nvalue">nvalue</A>(top-2) *= <A HREF="lobject.h.html#nvalue">nvalue</A>(top-1);
+        top--;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_DIV">OP_DIV</A>: {
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-2) || <A HREF="lvm.h.html#tonumber">tonumber</A>(top-1))
+          <A HREF="lvm.c.html#call_arith">call_arith</A>(L, top, <A HREF="ltm.h.html#TM_DIV">TM_DIV</A>);
+        else
+          <A HREF="lobject.h.html#nvalue">nvalue</A>(top-2) /= <A HREF="lobject.h.html#nvalue">nvalue</A>(top-1);
+        top--;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_POW">OP_POW</A>: {
+        if (!<A HREF="lvm.c.html#call_binTM">call_binTM</A>(L, top, <A HREF="ltm.h.html#TM_POW">TM_POW</A>))
+          <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "undefined operation");
+        top--;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CONCAT">OP_CONCAT</A>: {
+        int n = <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+        <A HREF="lvm.c.html#luaV_strconc">luaV_strconc</A>(L, n, top);
+        top -= n-1;
+        L-&gt;top = top;
+        <A HREF="lgc.c.html#luaC_checkGC">luaC_checkGC</A>(L);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_MINUS">OP_MINUS</A>: {
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-1)) {
+          <A HREF="lobject.h.html#ttype">ttype</A>(top) = <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>;
+          <A HREF="lvm.c.html#call_arith">call_arith</A>(L, top+1, <A HREF="ltm.h.html#TM_UNM">TM_UNM</A>);
+        }
+        else
+          <A HREF="lobject.h.html#nvalue">nvalue</A>(top-1) = -<A HREF="lobject.h.html#nvalue">nvalue</A>(top-1);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_NOT">OP_NOT</A>: {
+        <A HREF="lobject.h.html#ttype">ttype</A>(top-1) =
+           (<A HREF="lobject.h.html#ttype">ttype</A>(top-1) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) ? <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A> : <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>;
+        <A HREF="lobject.h.html#nvalue">nvalue</A>(top-1) = 1;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPNE">OP_JMPNE</A>: {
+        top -= 2;
+        if (!<A HREF="lobject.c.html#luaO_equalObj">luaO_equalObj</A>(top, top+1)) <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPEQ">OP_JMPEQ</A>: {
+        top -= 2;
+        if (<A HREF="lobject.c.html#luaO_equalObj">luaO_equalObj</A>(top, top+1)) <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPLT">OP_JMPLT</A>: {
+        top -= 2;
+        if (<A HREF="lvm.c.html#luaV_lessthan">luaV_lessthan</A>(L, top, top+1, top+2)) <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPLE">OP_JMPLE</A>: {  /* a &lt;= b  ===  !(b&lt;a) */
+        top -= 2;
+        if (!<A HREF="lvm.c.html#luaV_lessthan">luaV_lessthan</A>(L, top+1, top, top+2)) <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPGT">OP_JMPGT</A>: {  /* a &gt; b  ===  (b&lt;a) */
+        top -= 2;
+        if (<A HREF="lvm.c.html#luaV_lessthan">luaV_lessthan</A>(L, top+1, top, top+2)) <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPGE">OP_JMPGE</A>: {  /* a &gt;= b  ===  !(a&lt;b) */
+        top -= 2;
+        if (!<A HREF="lvm.c.html#luaV_lessthan">luaV_lessthan</A>(L, top, top+1, top+2)) <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPT">OP_JMPT</A>: {
+        if (<A HREF="lobject.h.html#ttype">ttype</A>(--top) != <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPF">OP_JMPF</A>: {
+        if (<A HREF="lobject.h.html#ttype">ttype</A>(--top) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPONT">OP_JMPONT</A>: {
+        if (<A HREF="lobject.h.html#ttype">ttype</A>(top-1) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) top--;
+        else <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPONF">OP_JMPONF</A>: {
+        if (<A HREF="lobject.h.html#ttype">ttype</A>(top-1) != <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) top--;
+        else <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMP">OP_JMP</A>: {
+        <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHNILJMP">OP_PUSHNILJMP</A>: {
+        <A HREF="lobject.h.html#ttype">ttype</A>(top++) = <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>;
+        pc++;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_FORPREP">OP_FORPREP</A>: {
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-1))
+          <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "`for' step must be a number");
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-2))
+          <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "`for' limit must be a number");
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(top-3))
+          <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "`for' initial value must be a number");
+        if (<A HREF="lobject.h.html#nvalue">nvalue</A>(top-1) &gt; 0 ?
+            <A HREF="lobject.h.html#nvalue">nvalue</A>(top-3) &gt; <A HREF="lobject.h.html#nvalue">nvalue</A>(top-2) :
+            <A HREF="lobject.h.html#nvalue">nvalue</A>(top-3) &lt; <A HREF="lobject.h.html#nvalue">nvalue</A>(top-2)) {  /* `empty' loop? */
+          top -= 3;  /* remove control variables */
+          <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);  /* jump to loop end */
+        }
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_FORLOOP">OP_FORLOOP</A>: {
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lobject.h.html#ttype">ttype</A>(top-1) == <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>, "invalid step");
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lobject.h.html#ttype">ttype</A>(top-2) == <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>, "invalid limit");
+        if (<A HREF="lobject.h.html#ttype">ttype</A>(top-3) != <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>)
+          <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "`for' index must be a number");
+        <A HREF="lobject.h.html#nvalue">nvalue</A>(top-3) += <A HREF="lobject.h.html#nvalue">nvalue</A>(top-1);  /* increment index */
+        if (<A HREF="lobject.h.html#nvalue">nvalue</A>(top-1) &gt; 0 ?
+            <A HREF="lobject.h.html#nvalue">nvalue</A>(top-3) &gt; <A HREF="lobject.h.html#nvalue">nvalue</A>(top-2) :
+            <A HREF="lobject.h.html#nvalue">nvalue</A>(top-3) &lt; <A HREF="lobject.h.html#nvalue">nvalue</A>(top-2))
+          top -= 3;  /* end loop: remove control variables */
+        else
+          <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);  /* repeat loop */
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_LFORPREP">OP_LFORPREP</A>: {
+        <A HREF="lobject.h.html#Node">Node</A> *<A HREF="ltable.h.html#node">node</A>;
+        if (<A HREF="lobject.h.html#ttype">ttype</A>(top-1) != <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>)
+          <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "`for' table must be a table");
+        <A HREF="ltable.h.html#node">node</A> = <A HREF="ltable.c.html#luaH_next">luaH_next</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(top-1), &amp;<A HREF="lobject.c.html#luaO_nilobject">luaO_nilobject</A>);
+        if (<A HREF="ltable.h.html#node">node</A> == NULL) {  /* `empty' loop? */
+          top--;  /* remove table */
+          <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);  /* jump to loop end */
+        }
+        else {
+          top += 2;  /* index,value */
+          *(top-2) = *<A HREF="ltable.h.html#key">key</A>(<A HREF="ltable.h.html#node">node</A>);
+          *(top-1) = *<A HREF="ltable.h.html#val">val</A>(<A HREF="ltable.h.html#node">node</A>);
+        }
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_LFORLOOP">OP_LFORLOOP</A>: {
+        <A HREF="lobject.h.html#Node">Node</A> *<A HREF="ltable.h.html#node">node</A>;
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lobject.h.html#ttype">ttype</A>(top-3) == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>, "invalid table");
+        <A HREF="ltable.h.html#node">node</A> = <A HREF="ltable.c.html#luaH_next">luaH_next</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(top-3), top-2);
+        if (<A HREF="ltable.h.html#node">node</A> == NULL)  /* end loop? */
+          top -= 3;  /* remove table, <A HREF="ltable.h.html#key">key</A>, and value */
+        else {
+          *(top-2) = *<A HREF="ltable.h.html#key">key</A>(<A HREF="ltable.h.html#node">node</A>);
+          *(top-1) = *<A HREF="ltable.h.html#val">val</A>(<A HREF="ltable.h.html#node">node</A>);
+          <A HREF="lvm.c.html#dojump">dojump</A>(pc, i);  /* repeat loop */
+        }
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A>: {
+        L-&gt;top = top;
+        <A HREF="lvm.c.html#luaV_Lclosure">luaV_Lclosure</A>(L, tf-&gt;kproto[<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i)], <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i));
+        top = L-&gt;top;
+        <A HREF="lgc.c.html#luaC_checkGC">luaC_checkGC</A>(L);
+        break;
+      }
+    }
+  }
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

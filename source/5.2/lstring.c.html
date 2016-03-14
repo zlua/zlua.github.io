@@ -1,0 +1,220 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lstring.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstring.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstring.c,v 2.26.1.1 2013/04/12 18:48:47 roberto Exp $
+** String table (keeps all strings handled by Lua)
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;string.h&gt;
+
+#define <A NAME="lstring_c"><SPAN CLASS="definition">lstring_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+
+
+/*
+** Lua will use at most ~(2^<A HREF="lstring.c.html#LUAI_HASHLIMIT">LUAI_HASHLIMIT</A>) bytes from a string to
+** compute its hash
+*/
+#if !defined(<A HREF="lstring.c.html#LUAI_HASHLIMIT">LUAI_HASHLIMIT</A>)
+#define <A NAME="LUAI_HASHLIMIT"><SPAN CLASS="definition">LUAI_HASHLIMIT</SPAN></A>          5
+#endif
+
+
+/*
+** equality for long strings
+*/
+int <A NAME="luaS_eqlngstr"><SPAN CLASS="definition">luaS_eqlngstr</SPAN></A> (<A HREF="lobject.h.html#TString">TString</A> *a, <A HREF="lobject.h.html#TString">TString</A> *b) {
+  size_t len = a-&gt;tsv.len;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(a-&gt;tsv.tt == <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A> &amp;&amp; b-&gt;tsv.tt == <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>);
+  return (a == b) ||  /* same instance or... */
+    ((len == b-&gt;tsv.len) &amp;&amp;  /* equal length and ... */
+     (memcmp(<A HREF="lobject.h.html#getstr">getstr</A>(a), <A HREF="lobject.h.html#getstr">getstr</A>(b), len) == 0));  /* equal contents */
+}
+
+
+/*
+** equality for strings
+*/
+int <A NAME="luaS_eqstr"><SPAN CLASS="definition">luaS_eqstr</SPAN></A> (<A HREF="lobject.h.html#TString">TString</A> *a, <A HREF="lobject.h.html#TString">TString</A> *b) {
+  return (a-&gt;tsv.tt == b-&gt;tsv.tt) &amp;&amp;
+         (a-&gt;tsv.tt == <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A> ? <A HREF="lstring.h.html#eqshrstr">eqshrstr</A>(a, b) : <A HREF="lstring.c.html#luaS_eqlngstr">luaS_eqlngstr</A>(a, b));
+}
+
+
+unsigned int <A NAME="luaS_hash"><SPAN CLASS="definition">luaS_hash</SPAN></A> (const char *str, size_t l, unsigned int seed) {
+  unsigned int h = seed ^ <A HREF="llimits.h.html#cast">cast</A>(unsigned int, l);
+  size_t l1;
+  size_t step = (l &gt;&gt; <A HREF="lstring.c.html#LUAI_HASHLIMIT">LUAI_HASHLIMIT</A>) + 1;
+  for (l1 = l; l1 &gt;= step; l1 -= step)
+    h = h ^ ((h&lt;&lt;5) + (h&gt;&gt;2) + <A HREF="llimits.h.html#cast_byte">cast_byte</A>(str[l1 - 1]));
+  return h;
+}
+
+
+/*
+** resizes the string table
+*/
+void <A NAME="luaS_resize"><SPAN CLASS="definition">luaS_resize</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int newsize) {
+  int i;
+  <A HREF="lstate.h.html#stringtable">stringtable</A> *tb = &amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;strt;
+  /* cannot resize while GC is traversing strings */
+  <A HREF="lgc.c.html#luaC_runtilstate">luaC_runtilstate</A>(L, ~<A HREF="lgc.h.html#bitmask">bitmask</A>(<A HREF="lgc.h.html#GCSsweepstring">GCSsweepstring</A>));
+  if (newsize &gt; tb-&gt;size) {
+    <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, tb-&gt;hash, tb-&gt;size, newsize, <A HREF="lstate.h.html#GCObject">GCObject</A> *);
+    for (i = tb-&gt;size; i &lt; newsize; i++) tb-&gt;hash[i] = NULL;
+  }
+  /* rehash */
+  for (i=0; i&lt;tb-&gt;size; i++) {
+    <A HREF="lstate.h.html#GCObject">GCObject</A> *p = tb-&gt;hash[i];
+    tb-&gt;hash[i] = NULL;
+    while (p) {  /* for each node in the list */
+      <A HREF="lstate.h.html#GCObject">GCObject</A> *next = <A HREF="lstate.h.html#gch">gch</A>(p)-&gt;next;  /* save next */
+      unsigned int h = <A HREF="lobject.h.html#lmod">lmod</A>(<A HREF="lstate.h.html#gco2ts">gco2ts</A>(p)-&gt;hash, newsize);  /* new position */
+      <A HREF="lstate.h.html#gch">gch</A>(p)-&gt;next = tb-&gt;hash[h];  /* chain it */
+      tb-&gt;hash[h] = p;
+      <A HREF="lgc.h.html#resetoldbit">resetoldbit</A>(p);  /* see MOVE OLD rule */
+      p = next;
+    }
+  }
+  if (newsize &lt; tb-&gt;size) {
+    /* shrinking slice must be empty */
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(tb-&gt;hash[newsize] == NULL &amp;&amp; tb-&gt;hash[tb-&gt;size - 1] == NULL);
+    <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, tb-&gt;hash, tb-&gt;size, newsize, <A HREF="lstate.h.html#GCObject">GCObject</A> *);
+  }
+  tb-&gt;size = newsize;
+}
+
+
+/*
+** creates a new string object
+*/
+static <A HREF="lobject.h.html#TString">TString</A> *<A NAME="createstrobj"><SPAN CLASS="definition">createstrobj</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l,
+                              int tag, unsigned int h, <A HREF="lstate.h.html#GCObject">GCObject</A> **list) {
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+  size_t totalsize;  /* total size of <A HREF="lobject.h.html#TString">TString</A> object */
+  totalsize = sizeof(<A HREF="lobject.h.html#TString">TString</A>) + ((l + 1) * sizeof(char));
+  ts = &amp;<A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, tag, totalsize, list, 0)-&gt;ts;
+  ts-&gt;tsv.len = l;
+  ts-&gt;tsv.hash = h;
+  ts-&gt;tsv.extra = 0;
+  memcpy(ts+1, str, l*sizeof(char));
+  ((char *)(ts+1))[l] = '\0';  /* ending 0 */
+  return ts;
+}
+
+
+/*
+** creates a new short string, inserting it into string table
+*/
+static <A HREF="lobject.h.html#TString">TString</A> *<A NAME="newshrstr"><SPAN CLASS="definition">newshrstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l,
+                                       unsigned int h) {
+  <A HREF="lstate.h.html#GCObject">GCObject</A> **list;  /* (pointer to) list where it will be inserted */
+  <A HREF="lstate.h.html#stringtable">stringtable</A> *tb = &amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;strt;
+  <A HREF="lobject.h.html#TString">TString</A> *s;
+  if (tb-&gt;nuse &gt;= <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_int32">lu_int32</A>, tb-&gt;size) &amp;&amp; tb-&gt;size &lt;= <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>/2)
+    <A HREF="lstring.c.html#luaS_resize">luaS_resize</A>(L, tb-&gt;size*2);  /* too crowded */
+  list = &amp;tb-&gt;hash[<A HREF="lobject.h.html#lmod">lmod</A>(h, tb-&gt;size)];
+  s = <A HREF="lstring.c.html#createstrobj">createstrobj</A>(L, str, l, <A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>, h, list);
+  tb-&gt;nuse++;
+  return s;
+}
+
+
+/*
+** checks whether short string exists and reuses it or creates a new one
+*/
+static <A HREF="lobject.h.html#TString">TString</A> *<A NAME="internshrstr"><SPAN CLASS="definition">internshrstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l) {
+  <A HREF="lstate.h.html#GCObject">GCObject</A> *o;
+  <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+  unsigned int h = <A HREF="lstring.c.html#luaS_hash">luaS_hash</A>(str, l, g-&gt;seed);
+  for (o = g-&gt;strt.hash[<A HREF="lobject.h.html#lmod">lmod</A>(h, g-&gt;strt.size)];
+       o != NULL;
+       o = <A HREF="lstate.h.html#gch">gch</A>(o)-&gt;next) {
+    <A HREF="lobject.h.html#TString">TString</A> *ts = <A HREF="lstate.h.html#rawgco2ts">rawgco2ts</A>(o);
+    if (h == ts-&gt;tsv.hash &amp;&amp;
+        l == ts-&gt;tsv.len &amp;&amp;
+        (memcmp(str, <A HREF="lobject.h.html#getstr">getstr</A>(ts), l * sizeof(char)) == 0)) {
+      if (<A HREF="lgc.h.html#isdead">isdead</A>(<A HREF="lstate.h.html#G">G</A>(L), o))  /* string is dead (but was not collected yet)? */
+        <A HREF="lgc.h.html#changewhite">changewhite</A>(o);  /* resurrect it */
+      return ts;
+    }
+  }
+  return <A HREF="lstring.c.html#newshrstr">newshrstr</A>(L, str, l, h);  /* not found; create a new string */
+}
+
+
+/*
+** new string (with explicit length)
+*/
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_newlstr"><SPAN CLASS="definition">luaS_newlstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l) {
+  if (l &lt;= <A HREF="luaconf.h.html#LUAI_MAXSHORTLEN">LUAI_MAXSHORTLEN</A>)  /* short string? */
+    return <A HREF="lstring.c.html#internshrstr">internshrstr</A>(L, str, l);
+  else {
+    if (l + 1 &gt; (<A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A> - sizeof(<A HREF="lobject.h.html#TString">TString</A>))/sizeof(char))
+      <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>(L);
+    return <A HREF="lstring.c.html#createstrobj">createstrobj</A>(L, str, l, <A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>, <A HREF="lstate.h.html#G">G</A>(L)-&gt;seed, NULL);
+  }
+}
+
+
+/*
+** new zero-terminated string
+*/
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_new"><SPAN CLASS="definition">luaS_new</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str) {
+  return <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, str, strlen(str));
+}
+
+
+<A HREF="lobject.h.html#Udata">Udata</A> *<A NAME="luaS_newudata"><SPAN CLASS="definition">luaS_newudata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t s, <A HREF="lobject.h.html#Table">Table</A> *e) {
+  <A HREF="lobject.h.html#Udata">Udata</A> *u;
+  if (s &gt; <A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A> - sizeof(<A HREF="lobject.h.html#Udata">Udata</A>))
+    <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>(L);
+  u = &amp;<A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>, sizeof(<A HREF="lobject.h.html#Udata">Udata</A>) + s, NULL, 0)-&gt;u;
+  u-&gt;uv.len = s;
+  u-&gt;uv.metatable = NULL;
+  u-&gt;uv.env = e;
+  return u;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

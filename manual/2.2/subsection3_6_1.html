@@ -1,0 +1,123 @@
+<HEAD>
+<TITLE>6.1 Predefined Functions</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_6_2.html>6.2 String Manipulation</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<HR>
+<H2><A NAME=S0610>6.1 Predefined Functions</A></H2>
+<P>
+<H3><A NAME=S0611> <TT><B>dofile (filename)</B></TT></A></H3>
+
+This function receives a file name,
+opens it and executes its contents as a Lua chunk.
+It returns 1 if there are no errors, <B>nil</B> otherwise.
+<P>
+<H3><A NAME=S0612> <TT><B>dostring (string)</B></TT></A></H3>
+
+This function executes a given string as a Lua chunk.
+It returns 1 if there are no errors, <B>nil</B> otherwise.
+<P>
+<H3><A NAME=S0613> <TT><B>next (table, index)</B></TT></A></H3>
+
+This function allows a program to traverse all fields of a table.
+Its first argument is a table and its second argument
+is an index in this table.
+It returns the next index of the table and the
+value associated with the index.
+When called with <B>nil</B> as its second argument,
+the function returns the first index
+of the table (and its associated value).
+When called with the last index, or with <B>nil</B> in an empty table,
+it returns <B>nil</B>.
+<P>
+In Lua there is no declaration of fields;
+semantically, there is no difference between a
+field not present in a table or a field with value <B>nil</B>.
+Therefore, the function only considers fields with non nil values.
+The order the indices are enumerated is not specified,
+<I>even for numeric indices</I>.
+<P>
+See Section <A HREF=subsection3_7_1.html#exnext>7.1</A> for an example of the use of this function.
+<P>
+<H3><A NAME=S0614> <TT><B>nextvar (name)</B></TT></A></H3>
+
+This function is similar to the function <TT><B>next</B></TT>,
+but it iterates over the global variables.
+Its single argument is the name of a global variable,
+or <B>nil</B> to get a first name.
+Similarly to <TT><B>next</B></TT>, it returns the name of another variable
+and its value,
+or <B>nil</B> if there are no more variables.
+See Section <A HREF=subsection3_7_1.html#exnext>7.1</A> for an example of the use of this function.
+<P>
+<H3><A NAME=S0615> <TT><B>print (e1, e2, ...)</B></TT></A></H3>
+
+This function receives any number of arguments,
+and prints their values in a reasonable format.
+Each value is printed in a new line.
+This function is not intended for formatted output,
+but as a quick way to show a value,
+for instance for error messages or debugging.
+See Section <A HREF=subsection3_6_4.html#libio>6.4</A> for functions for formatted output.
+<P>
+<H3><A NAME=S0616> <TT><B>tonumber (e)</B></TT></A></H3>
+
+This function receives one argument,
+and tries to convert it to a number.
+If the argument is already a number or a string convertible
+to a number (see Section <A HREF=subsection3_4_2.html#coercion>4.2</A>), it returns that number;
+otherwise, it returns <B>nil</B>.
+<P>
+<H3><A NAME=S0617> <TT><B>type (v)</B></TT></A></H3>
+
+This function allows Lua to test the type of a value.
+It receives one argument, and returns its type, coded as a string.
+The possible results of this function are
+<TT><B>"nil"</B></TT> (a string, not the value <B>nil</B>),
+<TT><B>"number"</B></TT>,
+<TT><B>"string"</B></TT>,
+<TT><B>"table"</B></TT>,
+<TT><B>"function"</B></TT> (returned both for C functions and Lua functions),
+and <TT><B>"userdata"</B></TT>.
+<P>
+Besides this string, the function returns a second result,
+which is the <I>tag</I> of the value.
+This tag can be used to distinguish between user
+data with different tags,
+and between C functions and Lua functions.
+<P>
+<H3><A NAME=S0618> <TT><B>error (message)</B></TT></A></H3>
+
+This function issues an error message and terminates
+the last called function from the library
+(<TT><B>lua_dofile</B></TT>, <TT><B>lua_dostring</B></TT>, ...).
+It never returns.
+<P>
+<H3><A NAME=S0619> <TT><B>setglobal (name, value)</B></TT></A></H3>
+
+This function assigns the given value to a global variable.
+The string <TT><B>name</B></TT> does not need to be a syntactically valid variable name.
+Therefore, this function can set global variables with strange names like
+<TT><B>m v 1</B></TT> or <TT><B>34</B></TT>.
+<P>
+<H3><A NAME=S06110> <TT><B>getglobal (name)</B></TT></A></H3>
+
+This function retrieves the value of a global variable.
+The string <TT><B>name</B></TT> does not need to be a syntactically valid variable name.
+<P>
+<H3><A NAME=S06111> <TT><B>setfallback (fallbackname, newfallback)</B></TT></A></H3>
+<P>
+
+This function sets a new fallback function to the given fallback.
+It returns the old fallback function.
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_6_2.html>6.2 String Manipulation</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<HR>
+
+</BODY>

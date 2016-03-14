@@ -1,0 +1,644 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lua.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lua.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lua.c,v 1.226 2015/08/14 19:11:20 roberto Exp $
+** Lua stand-alone interpreter
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lua_c"><SPAN CLASS="definition">lua_c</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;signal.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+#if !defined(<A HREF="lua.c.html#LUA_PROMPT">LUA_PROMPT</A>)
+#define <A NAME="LUA_PROMPT"><SPAN CLASS="definition">LUA_PROMPT</SPAN></A>              "&gt; "
+#define <A NAME="LUA_PROMPT2"><SPAN CLASS="definition">LUA_PROMPT2</SPAN></A>             "&gt;&gt; "
+#endif
+
+#if !defined(<A HREF="lua.c.html#LUA_PROGNAME">LUA_PROGNAME</A>)
+#define <A NAME="LUA_PROGNAME"><SPAN CLASS="definition">LUA_PROGNAME</SPAN></A>            "lua"
+#endif
+
+#if !defined(<A HREF="lua.c.html#LUA_MAXINPUT">LUA_MAXINPUT</A>)
+#define <A NAME="LUA_MAXINPUT"><SPAN CLASS="definition">LUA_MAXINPUT</SPAN></A>            512
+#endif
+
+#if !defined(<A HREF="lua.c.html#LUA_INIT_VAR">LUA_INIT_VAR</A>)
+#define <A NAME="LUA_INIT_VAR"><SPAN CLASS="definition">LUA_INIT_VAR</SPAN></A>            "LUA_INIT"
+#endif
+
+#define <A NAME="LUA_INITVARVERSION"><SPAN CLASS="definition">LUA_INITVARVERSION</SPAN></A>  \
+        <A HREF="lua.c.html#LUA_INIT_VAR">LUA_INIT_VAR</A> "_" <A HREF="lua.h.html#LUA_VERSION_MAJOR">LUA_VERSION_MAJOR</A> "_" <A HREF="lua.h.html#LUA_VERSION_MINOR">LUA_VERSION_MINOR</A>
+
+
+/*
+** <A HREF="lua.c.html#lua_stdin_is_tty">lua_stdin_is_tty</A> detects whether the standard input is a 'tty' (that
+** is, whether we're running lua interactively).
+*/
+#if !defined(<A HREF="lua.c.html#lua_stdin_is_tty">lua_stdin_is_tty</A>)  /* { */
+
+#if defined(<A HREF="luaconf.h.html#LUA_USE_POSIX">LUA_USE_POSIX</A>)      /* { */
+
+#include &lt;unistd.h&gt;
+#define <A HREF="lua.c.html#lua_stdin_is_tty">lua_stdin_is_tty</A>()      isatty(0)
+
+#elif defined(<A HREF="luaconf.h.html#LUA_USE_WINDOWS">LUA_USE_WINDOWS</A>)  /* }{ */
+
+#include &lt;io.h&gt;
+#define <A HREF="lua.c.html#lua_stdin_is_tty">lua_stdin_is_tty</A>()      _isatty(_fileno(stdin))
+
+#else                           /* }{ */
+
+/* ISO C definition */
+#define <A NAME="lua_stdin_is_tty"><SPAN CLASS="definition">lua_stdin_is_tty</SPAN></A>()      1  /* assume stdin is a tty */
+
+#endif                          /* } */
+
+#endif                          /* } */
+
+
+/*
+** <A HREF="lua.c.html#lua_readline">lua_readline</A> defines how to show a prompt and then read a line from
+** the standard input.
+** <A HREF="lua.c.html#lua_saveline">lua_saveline</A> defines how to "save" a read line in a "history".
+** <A HREF="lua.c.html#lua_freeline">lua_freeline</A> defines how to free a line read by <A HREF="lua.c.html#lua_readline">lua_readline</A>.
+*/
+#if !defined(<A HREF="lua.c.html#lua_readline">lua_readline</A>)      /* { */
+
+#if defined(<A HREF="luaconf.h.html#LUA_USE_READLINE">LUA_USE_READLINE</A>)   /* { */
+
+#include &lt;readline/readline.h&gt;
+#include &lt;readline/history.h&gt;
+#define <A HREF="lua.c.html#lua_readline">lua_readline</A>(L,b,p)     ((void)L, ((b)=readline(p)) != NULL)
+#define <A HREF="lua.c.html#lua_saveline">lua_saveline</A>(L,line)    ((void)L, add_history(line))
+#define <A HREF="lua.c.html#lua_freeline">lua_freeline</A>(L,b)       ((void)L, free(b))
+
+#else                           /* }{ */
+
+#define <A NAME="lua_readline"><SPAN CLASS="definition">lua_readline</SPAN></A>(L,b,p) \
+        ((void)L, fputs(p, stdout), fflush(stdout),  /* show prompt */ \
+        fgets(b, <A HREF="lua.c.html#LUA_MAXINPUT">LUA_MAXINPUT</A>, stdin) != NULL)  /* get line */
+#define <A NAME="lua_saveline"><SPAN CLASS="definition">lua_saveline</SPAN></A>(L,line)    { (void)L; (void)line; }
+#define <A NAME="lua_freeline"><SPAN CLASS="definition">lua_freeline</SPAN></A>(L,b)       { (void)L; (void)b; }
+
+#endif                          /* } */
+
+#endif                          /* } */
+
+
+
+
+static <A HREF="lstate.h.html#lua_State">lua_State</A> *<A NAME="globalL"><SPAN CLASS="definition">globalL</SPAN></A> = NULL;
+
+static const char *<A NAME="progname"><SPAN CLASS="definition">progname</SPAN></A> = <A HREF="lua.c.html#LUA_PROGNAME">LUA_PROGNAME</A>;
+
+
+/*
+** Hook set by signal function to stop the interpreter.
+*/
+static void <A NAME="lstop"><SPAN CLASS="definition">lstop</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Debug">lua_Debug</A> *ar) {
+  (void)ar;  /* unused arg. */
+  <A HREF="ldebug.c.html#lua_sethook">lua_sethook</A>(L, NULL, 0, 0);  /* reset hook */
+  <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "interrupted!");
+}
+
+
+/*
+** Function to be called at a C signal. Because a C signal cannot
+** just change a Lua state (as there is no proper synchronization),
+** this function only sets a hook that, when called, will stop the
+** interpreter.
+*/
+static void <A NAME="laction"><SPAN CLASS="definition">laction</SPAN></A> (int i) {
+  signal(i, SIG_DFL); /* if another SIGINT happens, terminate process */
+  <A HREF="ldebug.c.html#lua_sethook">lua_sethook</A>(<A HREF="lua.c.html#globalL">globalL</A>, <A HREF="lua.c.html#lstop">lstop</A>, <A HREF="lua.h.html#LUA_MASKCALL">LUA_MASKCALL</A> | <A HREF="lua.h.html#LUA_MASKRET">LUA_MASKRET</A> | <A HREF="lua.h.html#LUA_MASKCOUNT">LUA_MASKCOUNT</A>, 1);
+}
+
+
+static void <A NAME="print_usage"><SPAN CLASS="definition">print_usage</SPAN></A> (const char *badoption) {
+  <A HREF="lauxlib.h.html#lua_writestringerror">lua_writestringerror</A>("%s: ", <A HREF="lua.c.html#progname">progname</A>);
+  if (badoption[1] == 'e' || badoption[1] == 'l')
+    <A HREF="lauxlib.h.html#lua_writestringerror">lua_writestringerror</A>("'%s' needs argument\n", badoption);
+  else
+    <A HREF="lauxlib.h.html#lua_writestringerror">lua_writestringerror</A>("unrecognized option '%s'\n", badoption);
+  <A HREF="lauxlib.h.html#lua_writestringerror">lua_writestringerror</A>(
+  "usage: %s [options] [script [args]]\n"
+  "Available options are:\n"
+  "  -e stat  execute string 'stat'\n"
+  "  -i       enter interactive mode after executing 'script'\n"
+  "  -l name  require library 'name'\n"
+  "  -v       show version information\n"
+  "  -E       ignore environment variables\n"
+  "  --       stop handling options\n"
+  "  -        stop handling options and execute stdin\n"
+  ,
+  <A HREF="lua.c.html#progname">progname</A>);
+}
+
+
+/*
+** Prints an error message, adding the program name in front of it
+** (if present)
+*/
+static void <A NAME="l_message"><SPAN CLASS="definition">l_message</SPAN></A> (const char *pname, const char *msg) {
+  if (pname) <A HREF="lauxlib.h.html#lua_writestringerror">lua_writestringerror</A>("%s: ", pname);
+  <A HREF="lauxlib.h.html#lua_writestringerror">lua_writestringerror</A>("%s\n", msg);
+}
+
+
+/*
+** Check whether 'status' is not OK and, if so, prints the error
+** message on the top of the stack. It assumes that the error object
+** is a string, as it was either generated by Lua or by '<A HREF="lua.c.html#msghandler">msghandler</A>'.
+*/
+static int <A NAME="report"><SPAN CLASS="definition">report</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int status) {
+  if (status != <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) {
+    const char *msg = <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1);
+    <A HREF="lua.c.html#l_message">l_message</A>(<A HREF="lua.c.html#progname">progname</A>, msg);
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove message */
+  }
+  return status;
+}
+
+
+/*
+** Message handler used to run all chunks
+*/
+static int <A NAME="msghandler"><SPAN CLASS="definition">msghandler</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *msg = <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, 1);
+  if (msg == NULL) {  /* is error object not a string? */
+    if (<A HREF="lauxlib.c.html#luaL_callmeta">luaL_callmeta</A>(L, 1, "__tostring") &amp;&amp;  /* does it have a metamethod */
+        <A HREF="lapi.c.html#lua_type">lua_type</A>(L, -1) == <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>)  /* that produces a string? */
+      return 1;  /* that is the message */
+    else
+      msg = <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "(error object is a %s value)",
+                               <A HREF="lauxlib.h.html#luaL_typename">luaL_typename</A>(L, 1));
+  }
+  <A HREF="lauxlib.c.html#luaL_traceback">luaL_traceback</A>(L, L, msg, 1);  /* append a standard traceback */
+  return 1;  /* return the traceback */
+}
+
+
+/*
+** Interface to '<A HREF="lua.h.html#lua_pcall">lua_pcall</A>', which sets appropriate message function
+** and C-signal handler. Used to run all chunks.
+*/
+static int <A NAME="docall"><SPAN CLASS="definition">docall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg, int nres) {
+  int status;
+  int base = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) - narg;  /* function index */
+  <A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, <A HREF="lua.c.html#msghandler">msghandler</A>);  /* push message handler */
+  <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, base);  /* put it under function and args */
+  <A HREF="lua.c.html#globalL">globalL</A> = L;  /* to be available to '<A HREF="lua.c.html#laction">laction</A>' */
+  signal(SIGINT, <A HREF="lua.c.html#laction">laction</A>);  /* set C-signal handler */
+  status = <A HREF="lua.h.html#lua_pcall">lua_pcall</A>(L, narg, nres, base);
+  signal(SIGINT, SIG_DFL); /* reset C-signal handler */
+  <A HREF="lua.h.html#lua_remove">lua_remove</A>(L, base);  /* remove message handler from the stack */
+  return status;
+}
+
+
+static void <A NAME="print_version"><SPAN CLASS="definition">print_version</SPAN></A> (void) {
+  <A HREF="lauxlib.h.html#lua_writestring">lua_writestring</A>(<A HREF="lua.h.html#LUA_COPYRIGHT">LUA_COPYRIGHT</A>, strlen(<A HREF="lua.h.html#LUA_COPYRIGHT">LUA_COPYRIGHT</A>));
+  <A HREF="lauxlib.h.html#lua_writeline">lua_writeline</A>();
+}
+
+
+/*
+** Create the 'arg' table, which stores all arguments from the
+** command line ('argv'). It should be aligned so that, at index 0,
+** it has 'argv[script]', which is the script name. The arguments
+** to the script (everything after 'script') go to positive indices;
+** other arguments (before the script name) go to negative indices.
+** If there is no script name, assume interpreter's name as base.
+*/
+static void <A NAME="createargtable"><SPAN CLASS="definition">createargtable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, char **argv, int argc, int script) {
+  int i, narg;
+  if (script == argc) script = 0;  /* no script name? */
+  narg = argc - (script + 1);  /* number of positive indices */
+  <A HREF="lapi.c.html#lua_createtable">lua_createtable</A>(L, narg, script + 1);
+  for (i = 0; i &lt; argc; i++) {
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, argv[i]);
+    <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, -2, i - script);
+  }
+  <A HREF="lapi.c.html#lua_setglobal">lua_setglobal</A>(L, "arg");
+}
+
+
+static int <A NAME="dochunk"><SPAN CLASS="definition">dochunk</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int status) {
+  if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) status = <A HREF="lua.c.html#docall">docall</A>(L, 0, 0);
+  return <A HREF="lua.c.html#report">report</A>(L, status);
+}
+
+
+static int <A NAME="dofile"><SPAN CLASS="definition">dofile</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *name) {
+  return <A HREF="lua.c.html#dochunk">dochunk</A>(L, <A HREF="lauxlib.h.html#luaL_loadfile">luaL_loadfile</A>(L, name));
+}
+
+
+static int <A NAME="dostring"><SPAN CLASS="definition">dostring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, const char *name) {
+  return <A HREF="lua.c.html#dochunk">dochunk</A>(L, <A HREF="lauxlib.h.html#luaL_loadbuffer">luaL_loadbuffer</A>(L, s, strlen(s), name));
+}
+
+
+/*
+** Calls 'require(name)' and stores the result in a global variable
+** with the given name.
+*/
+static int <A NAME="dolibrary"><SPAN CLASS="definition">dolibrary</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *name) {
+  int status;
+  <A HREF="lapi.c.html#lua_getglobal">lua_getglobal</A>(L, "require");
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, name);
+  status = <A HREF="lua.c.html#docall">docall</A>(L, 1, 1);  /* call 'require(name)' */
+  if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>)
+    <A HREF="lapi.c.html#lua_setglobal">lua_setglobal</A>(L, name);  /* global[name] = require return */
+  return <A HREF="lua.c.html#report">report</A>(L, status);
+}
+
+
+/*
+** Returns the string to be used as a prompt by the interpreter.
+*/
+static const char *<A NAME="get_prompt"><SPAN CLASS="definition">get_prompt</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int firstline) {
+  const char *p;
+  <A HREF="lapi.c.html#lua_getglobal">lua_getglobal</A>(L, firstline ? "_PROMPT" : "_PROMPT2");
+  p = <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1);
+  if (p == NULL) p = (firstline ? <A HREF="lua.c.html#LUA_PROMPT">LUA_PROMPT</A> : <A HREF="lua.c.html#LUA_PROMPT2">LUA_PROMPT2</A>);
+  return p;
+}
+
+/* mark in error messages for <A HREF="lua.c.html#incomplete">incomplete</A> statements */
+#define <A NAME="EOFMARK"><SPAN CLASS="definition">EOFMARK</SPAN></A>         "&lt;eof&gt;"
+#define <A NAME="marklen"><SPAN CLASS="definition">marklen</SPAN></A>         (sizeof(<A HREF="lua.c.html#EOFMARK">EOFMARK</A>)/sizeof(char) - 1)
+
+
+/*
+** Check whether 'status' signals a syntax error and the error
+** message at the top of the stack ends with the above mark for
+** <A HREF="lua.c.html#incomplete">incomplete</A> statements.
+*/
+static int <A NAME="incomplete"><SPAN CLASS="definition">incomplete</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int status) {
+  if (status == <A HREF="lua.h.html#LUA_ERRSYNTAX">LUA_ERRSYNTAX</A>) {
+    size_t lmsg;
+    const char *msg = <A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>(L, -1, &amp;lmsg);
+    if (lmsg &gt;= <A HREF="lua.c.html#marklen">marklen</A> &amp;&amp; strcmp(msg + lmsg - <A HREF="lua.c.html#marklen">marklen</A>, <A HREF="lua.c.html#EOFMARK">EOFMARK</A>) == 0) {
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);
+      return 1;
+    }
+  }
+  return 0;  /* else... */
+}
+
+
+/*
+** Prompt the user, read a line, and push it into the Lua stack.
+*/
+static int <A NAME="pushline"><SPAN CLASS="definition">pushline</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int firstline) {
+  char buffer[<A HREF="lua.c.html#LUA_MAXINPUT">LUA_MAXINPUT</A>];
+  char *b = buffer;
+  size_t l;
+  const char *prmt = <A HREF="lua.c.html#get_prompt">get_prompt</A>(L, firstline);
+  int readstatus = <A HREF="lua.c.html#lua_readline">lua_readline</A>(L, b, prmt);
+  if (readstatus == 0)
+    return 0;  /* no input (prompt will be popped by caller) */
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove prompt */
+  l = strlen(b);
+  if (l &gt; 0 &amp;&amp; b[l-1] == '\n')  /* line ends with newline? */
+    b[--l] = '\0';  /* remove it */
+  if (firstline &amp;&amp; b[0] == '=')  /* for compatibility with 5.2, ... */
+    <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "return %s", b + 1);  /* change '=' to 'return' */
+  else
+    <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, b, l);
+  <A HREF="lua.c.html#lua_freeline">lua_freeline</A>(L, b);
+  return 1;
+}
+
+
+/*
+** Try to compile line on the stack as 'return &lt;line&gt;;'; on return, stack
+** has either compiled chunk or original line (if compilation failed).
+*/
+static int <A NAME="addreturn"><SPAN CLASS="definition">addreturn</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *line = <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1);  /* original line */
+  const char *retline = <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "return %s;", line);
+  int status = <A HREF="lauxlib.h.html#luaL_loadbuffer">luaL_loadbuffer</A>(L, retline, strlen(retline), "=stdin");
+  if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) {
+    <A HREF="lua.h.html#lua_remove">lua_remove</A>(L, -2);  /* remove modified line */
+    if (line[0] != '\0')  /* non empty? */
+      <A HREF="lua.c.html#lua_saveline">lua_saveline</A>(L, line);  /* keep history */
+  }
+  else
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 2);  /* pop result from '<A HREF="lauxlib.h.html#luaL_loadbuffer">luaL_loadbuffer</A>' and modified line */
+  return status;
+}
+
+
+/*
+** Read multiple lines until a complete Lua statement
+*/
+static int <A NAME="multiline"><SPAN CLASS="definition">multiline</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  for (;;) {  /* repeat until gets a complete statement */
+    size_t len;
+    const char *line = <A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>(L, 1, &amp;len);  /* get what it has */
+    int status = <A HREF="lauxlib.h.html#luaL_loadbuffer">luaL_loadbuffer</A>(L, line, len, "=stdin");  /* try it */
+    if (!<A HREF="lua.c.html#incomplete">incomplete</A>(L, status) || !<A HREF="lua.c.html#pushline">pushline</A>(L, 0)) {
+      <A HREF="lua.c.html#lua_saveline">lua_saveline</A>(L, line);  /* keep history */
+      return status;  /* cannot or should not try to add continuation line */
+    }
+    <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "\n");  /* add newline... */
+    <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, -2);  /* ...between the two lines */
+    <A HREF="lapi.c.html#lua_concat">lua_concat</A>(L, 3);  /* join them */
+  }
+}
+
+
+/*
+** Read a line and try to load (compile) it first as an expression (by
+** adding "return " in front of it) and second as a statement. Return
+** the final status of load/call with the resulting function (if any)
+** in the top of the stack.
+*/
+static int <A NAME="loadline"><SPAN CLASS="definition">loadline</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int status;
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 0);
+  if (!<A HREF="lua.c.html#pushline">pushline</A>(L, 1))
+    return -1;  /* no input */
+  if ((status = <A HREF="lua.c.html#addreturn">addreturn</A>(L)) != <A HREF="lua.h.html#LUA_OK">LUA_OK</A>)  /* 'return ...' did not work? */
+    status = <A HREF="lua.c.html#multiline">multiline</A>(L);  /* try as command, maybe with continuation lines */
+  <A HREF="lua.h.html#lua_remove">lua_remove</A>(L, 1);  /* remove line from the stack */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) == 1);
+  return status;
+}
+
+
+/*
+** Prints (calling the Lua 'print' function) any values on the stack
+*/
+static void <A NAME="l_print"><SPAN CLASS="definition">l_print</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);
+  if (n &gt; 0) {  /* any result to be printed? */
+    <A HREF="lauxlib.c.html#luaL_checkstack">luaL_checkstack</A>(L, <A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>, "too many results to print");
+    <A HREF="lapi.c.html#lua_getglobal">lua_getglobal</A>(L, "print");
+    <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, 1);
+    if (<A HREF="lua.h.html#lua_pcall">lua_pcall</A>(L, n, 0, 0) != <A HREF="lua.h.html#LUA_OK">LUA_OK</A>)
+      <A HREF="lua.c.html#l_message">l_message</A>(<A HREF="lua.c.html#progname">progname</A>, <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "error calling 'print' (%s)",
+                                             <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1)));
+  }
+}
+
+
+/*
+** Do the REPL: repeatedly read (load) a line, evaluate (call) it, and
+** print any results.
+*/
+static void <A NAME="doREPL"><SPAN CLASS="definition">doREPL</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int status;
+  const char *oldprogname = <A HREF="lua.c.html#progname">progname</A>;
+  <A HREF="lua.c.html#progname">progname</A> = NULL;  /* no '<A HREF="lua.c.html#progname">progname</A>' on errors in interactive mode */
+  while ((status = <A HREF="lua.c.html#loadline">loadline</A>(L)) != -1) {
+    if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>)
+      status = <A HREF="lua.c.html#docall">docall</A>(L, 0, <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>);
+    if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) <A HREF="lua.c.html#l_print">l_print</A>(L);
+    else <A HREF="lua.c.html#report">report</A>(L, status);
+  }
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 0);  /* clear stack */
+  <A HREF="lauxlib.h.html#lua_writeline">lua_writeline</A>();
+  <A HREF="lua.c.html#progname">progname</A> = oldprogname;
+}
+
+
+/*
+** Push on the stack the contents of table 'arg' from 1 to #arg
+*/
+static int <A NAME="pushargs"><SPAN CLASS="definition">pushargs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int i, n;
+  if (<A HREF="lapi.c.html#lua_getglobal">lua_getglobal</A>(L, "arg") != <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>)
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "'arg' is not a table");
+  n = (int)<A HREF="lauxlib.c.html#luaL_len">luaL_len</A>(L, -1);
+  <A HREF="lauxlib.c.html#luaL_checkstack">luaL_checkstack</A>(L, n + 3, "too many arguments to script");
+  for (i = 1; i &lt;= n; i++)
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, -i, i);
+  <A HREF="lua.h.html#lua_remove">lua_remove</A>(L, -i);  /* remove table from the stack */
+  return n;
+}
+
+
+static int <A NAME="handle_script"><SPAN CLASS="definition">handle_script</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, char **argv) {
+  int status;
+  const char *fname = argv[0];
+  if (strcmp(fname, "-") == 0 &amp;&amp; strcmp(argv[-1], "--") != 0)
+    fname = NULL;  /* stdin */
+  status = <A HREF="lauxlib.h.html#luaL_loadfile">luaL_loadfile</A>(L, fname);
+  if (status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) {
+    int n = <A HREF="lua.c.html#pushargs">pushargs</A>(L);  /* push arguments to script */
+    status = <A HREF="lua.c.html#docall">docall</A>(L, n, <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>);
+  }
+  return <A HREF="lua.c.html#report">report</A>(L, status);
+}
+
+
+
+/* bits of various argument indicators in 'args' */
+#define <A NAME="has_error"><SPAN CLASS="definition">has_error</SPAN></A>       1       /* bad option */
+#define <A NAME="has_i"><SPAN CLASS="definition">has_i</SPAN></A>           2       /* -i */
+#define <A NAME="has_v"><SPAN CLASS="definition">has_v</SPAN></A>           4       /* -v */
+#define <A NAME="has_e"><SPAN CLASS="definition">has_e</SPAN></A>           8       /* -e */
+#define <A NAME="has_E"><SPAN CLASS="definition">has_E</SPAN></A>           16      /* -E */
+
+/*
+** Traverses all arguments from 'argv', returning a mask with those
+** needed before running any Lua code (or an error code if it finds
+** any invalid argument). 'first' returns the first not-handled argument 
+** (either the script name or a bad argument in case of error).
+*/
+static int <A NAME="collectargs"><SPAN CLASS="definition">collectargs</SPAN></A> (char **argv, int *first) {
+  int args = 0;
+  int i;
+  for (i = 1; argv[i] != NULL; i++) {
+    *first = i;
+    if (argv[i][0] != '-')  /* not an option? */
+        return args;  /* stop handling options */
+    switch (argv[i][1]) {  /* else check option */
+      case '-':  /* '--' */
+        if (argv[i][2] != '\0')  /* extra characters after '--'? */
+          return <A HREF="lua.c.html#has_error">has_error</A>;  /* invalid option */
+        *first = i + 1;
+        return args;
+      case '\0':  /* '-' */
+        return args;  /* script "name" is '-' */
+      case 'E':
+        if (argv[i][2] != '\0')  /* extra characters after 1st? */
+          return <A HREF="lua.c.html#has_error">has_error</A>;  /* invalid option */
+        args |= <A HREF="lua.c.html#has_E">has_E</A>;
+        break;
+      case 'i':
+        args |= <A HREF="lua.c.html#has_i">has_i</A>;  /* (-i implies -v) *//* FALLTHROUGH */ 
+      case 'v':
+        if (argv[i][2] != '\0')  /* extra characters after 1st? */
+          return <A HREF="lua.c.html#has_error">has_error</A>;  /* invalid option */
+        args |= <A HREF="lua.c.html#has_v">has_v</A>;
+        break;
+      case 'e':
+        args |= <A HREF="lua.c.html#has_e">has_e</A>;  /* FALLTHROUGH */
+      case 'l':  /* both options need an argument */
+        if (argv[i][2] == '\0') {  /* no concatenated argument? */
+          i++;  /* try next 'argv' */
+          if (argv[i] == NULL || argv[i][0] == '-')
+            return <A HREF="lua.c.html#has_error">has_error</A>;  /* no next argument or it is another option */
+        }
+        break;
+      default:  /* invalid option */
+        return <A HREF="lua.c.html#has_error">has_error</A>;
+    }
+  }
+  *first = i;  /* no script name */
+  return args;
+}
+
+
+/*
+** Processes options 'e' and 'l', which involve running Lua code.
+** Returns 0 if some code raises an error.
+*/
+static int <A NAME="runargs"><SPAN CLASS="definition">runargs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, char **argv, int n) {
+  int i;
+  for (i = 1; i &lt; n; i++) {
+    int option = argv[i][1];
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(argv[i][0] == '-');  /* already checked */
+    if (option == 'e' || option == 'l') {
+      int status;
+      const char *extra = argv[i] + 2;  /* both options need an argument */
+      if (*extra == '\0') extra = argv[++i];
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(extra != NULL);
+      status = (option == 'e')
+               ? <A HREF="lua.c.html#dostring">dostring</A>(L, extra, "=(command line)")
+               : <A HREF="lua.c.html#dolibrary">dolibrary</A>(L, extra);
+      if (status != <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) return 0;
+    }
+  }
+  return 1;
+}
+
+
+static int <A NAME="handle_luainit"><SPAN CLASS="definition">handle_luainit</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *name = "=" <A HREF="lua.c.html#LUA_INITVARVERSION">LUA_INITVARVERSION</A>;
+  const char *init = getenv(name + 1);
+  if (init == NULL) {
+    name = "=" <A HREF="lua.c.html#LUA_INIT_VAR">LUA_INIT_VAR</A>;
+    init = getenv(name + 1);  /* try alternative name */
+  }
+  if (init == NULL) return <A HREF="lua.h.html#LUA_OK">LUA_OK</A>;
+  else if (init[0] == '@')
+    return <A HREF="lua.c.html#dofile">dofile</A>(L, init+1);
+  else
+    return <A HREF="lua.c.html#dostring">dostring</A>(L, init, name);
+}
+
+
+/*
+** Main body of stand-alone interpreter (to be called in protected mode).
+** Reads the options and handles them all.
+*/
+static int <A NAME="pmain"><SPAN CLASS="definition">pmain</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int argc = (int)<A HREF="lua.h.html#lua_tointeger">lua_tointeger</A>(L, 1);
+  char **argv = (char **)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, 2);
+  int script;
+  int args = <A HREF="lua.c.html#collectargs">collectargs</A>(argv, &amp;script);
+  <A HREF="lauxlib.h.html#luaL_checkversion">luaL_checkversion</A>(L);  /* check that interpreter has correct version */
+  if (argv[0] &amp;&amp; argv[0][0]) <A HREF="lua.c.html#progname">progname</A> = argv[0];
+  if (args == <A HREF="lua.c.html#has_error">has_error</A>) {  /* bad arg? */
+    <A HREF="lua.c.html#print_usage">print_usage</A>(argv[script]);  /* 'script' has index of bad arg. */
+    return 0;
+  }
+  if (args &amp; <A HREF="lua.c.html#has_v">has_v</A>)  /* option '-v'? */
+    <A HREF="lua.c.html#print_version">print_version</A>();
+  if (args &amp; <A HREF="lua.c.html#has_E">has_E</A>) {  /* option '-E'? */
+    <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 1);  /* signal for libraries to ignore env. vars. */
+    <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, "LUA_NOENV");
+  }
+  <A HREF="linit.c.html#luaL_openlibs">luaL_openlibs</A>(L);  /* open standard libraries */
+  <A HREF="lua.c.html#createargtable">createargtable</A>(L, argv, argc, script);  /* create table 'arg' */
+  if (!(args &amp; <A HREF="lua.c.html#has_E">has_E</A>)) {  /* no option '-E'? */
+    if (<A HREF="lua.c.html#handle_luainit">handle_luainit</A>(L) != <A HREF="lua.h.html#LUA_OK">LUA_OK</A>)  /* run LUA_INIT */
+      return 0;  /* error running LUA_INIT */
+  }
+  if (!<A HREF="lua.c.html#runargs">runargs</A>(L, argv, script))  /* execute arguments -e and -l */
+    return 0;  /* something failed */
+  if (script &lt; argc &amp;&amp;  /* execute <A HREF="lua.c.html#main">main</A> script (if there is one) */
+      <A HREF="lua.c.html#handle_script">handle_script</A>(L, argv + script) != <A HREF="lua.h.html#LUA_OK">LUA_OK</A>)
+    return 0;
+  if (args &amp; <A HREF="lua.c.html#has_i">has_i</A>)  /* -i option? */
+    <A HREF="lua.c.html#doREPL">doREPL</A>(L);  /* do read-eval-print loop */
+  else if (script == argc &amp;&amp; !(args &amp; (<A HREF="lua.c.html#has_e">has_e</A> | <A HREF="lua.c.html#has_v">has_v</A>))) {  /* no arguments? */
+    if (<A HREF="lua.c.html#lua_stdin_is_tty">lua_stdin_is_tty</A>()) {  /* running in interactive mode? */
+      <A HREF="lua.c.html#print_version">print_version</A>();
+      <A HREF="lua.c.html#doREPL">doREPL</A>(L);  /* do read-eval-print loop */
+    }
+    else <A HREF="lua.c.html#dofile">dofile</A>(L, NULL);  /* executes stdin as a file */
+  }
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 1);  /* signal no errors */
+  return 1;
+}
+
+
+int <A NAME="main"><SPAN CLASS="definition">main</SPAN></A> (int argc, char **argv) {
+  int status, result;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L = <A HREF="lauxlib.c.html#luaL_newstate">luaL_newstate</A>();  /* create state */
+  if (L == NULL) {
+    <A HREF="lua.c.html#l_message">l_message</A>(argv[0], "cannot create state: not enough memory");
+    return EXIT_FAILURE;
+  }
+  <A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, &amp;<A HREF="lua.c.html#pmain">pmain</A>);  /* to call '<A HREF="lua.c.html#pmain">pmain</A>' in protected mode */
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, argc);  /* 1st argument */
+  <A HREF="lapi.c.html#lua_pushlightuserdata">lua_pushlightuserdata</A>(L, argv); /* 2nd argument */
+  status = <A HREF="lua.h.html#lua_pcall">lua_pcall</A>(L, 2, 1, 0);  /* do the call */
+  result = <A HREF="lapi.c.html#lua_toboolean">lua_toboolean</A>(L, -1);  /* get result */
+  <A HREF="lua.c.html#report">report</A>(L, status);
+  <A HREF="lstate.c.html#lua_close">lua_close</A>(L);
+  return (result &amp;&amp; status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:16 2015
+</P>
+
+</BODY>
+</HTML>

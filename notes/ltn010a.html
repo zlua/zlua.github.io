@@ -1,0 +1,356 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"><html><head><meta name="MSSmartTagsPreventParsing" content="TRUE">
+<title>Technical Note 10 - Weave your own description languages</title>
+</head>
+<body><center><h1>Technical Note 10 - Weave your own description languages</h1>
+<h3>Web page construction as an example</h3>
+<h6>G.C.Wraith</h6>
+</center>
+<table  width="90%" cellspacing=10 cellpadding=10><tr><td>
+<p>
+This note was inspired by Anna Hester's HTMLToolkit and 
+Roberto Ierusalimschy's Technical Note 9 on the inefficiencies of
+concatenating strings. The mathematical abstraction that underlies
+grammars and the structure of, for example HTML documents, is that  
+of a tree. We present here a short Lua program, called weave, for
+building trees out of descriptions and writing them out. This
+document, for example, is constructed by weave adapted to HTML.
+The big drawback of HTML is that it has neither variables nor
+abstraction facilities. I make all my web pages with weave now.<a href="#source"> The weave source of this web page is shown below.</a>
+
+<p>
+By a 'tree' we mean a table, whose indices are integers,
+and whose values are either strings (leaves of the tree) or trees.
+Here is the function 'node' which constructs trees. It has two
+methods, 'push' and 'walk'. Push inserts a new string or tree.
+Walk applies a function recursively to the leaves.<b><tt><pre> 
+
+node = function (list)
+       local a
+       if list then 
+         a = list
+         a.n = getn(list)
+       else a = { n = 0 } end -- if
+       if not a.push then
+         a.push = function (self,x) tinsert(self,x) end
+       end -- if
+       if not a.walk then  
+        a.walk = function (self,f)
+                 local b
+                 for i = 1,self.n do
+                   b = self[i]
+                   if type(b) == "string" then f(b)
+                   else b:walk(f) end -- if
+                 end -- for
+               end -- function
+       end -- if        
+       return a
+       end -- function
+       
+</pre>
+</tt>
+</b>
+This is the core of weave. Then some specific definitions
+are required to interpret the structure in question, in this case
+HTML. It makes sense to modularise weave by reading in these
+definitions using dofile. The final part of weave writes out the
+leaves to its output, 'out', which I am presuming is specified by the
+document being processed (which is given by 'arg[1]'). Here it is:<b><tt><pre>
+
+page,out = PAGE(dofile(arg[1])) -- read the page description
+assert(page,"Cannot read "..arg[1])
+writeto(out)
+page:walk(write) -- write the HTML file
+writeto() 
+
+</pre>
+</tt>
+</b>
+It remains to describe the HTML-specific part of weave,
+and, in particular, the function PAGE. This function takes three
+arguments, the title, the pathname of the file that the document is to 
+reside in, and the tree describing the body of the document. It 
+outputs the whole tree and the pathname.<b><tt><pre>
+
+PAGE = function (title, saveas, body)
+       local x = node {
+       [[&lt;!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"&gt;]],
+       HTML { 
+              HEAD {
+                   [[&lt;meta name="MSSmartTagsPreventParsing" content="TRUE"&gt;]],
+                   TITLE { title }
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+                    }, -- HEAD   
+             BODY(body)
+            } -- HTML
+                    } -- node
+       return x,saveas
+       end -- function 
+       
+</pre>
+</tt>
+</b>
+We have used the convention of using upper case versions of
+HTML tag names for constructors (i.e. nodes of the tree) to contrast
+with lower case variable names for the user to choose for their
+arguments, much in the style of Haskell. These are defined by:<b><tt><pre>
+
+tag = function (name,attr)
+      local f = function (obj)
+                  local n,att,x = %name,%attr,node()
+                  x:push "&lt;"
+                  x:push(n)
+                  if att then
+                    x:push " "
+                    x:push(att)
+                  end -- if
+                  x:push "&gt;"
+                  x:push(node(obj))
+                  x:push "&lt;/"
+                  x:push(n)
+                  x:push "&gt;\n"
+                return x  
+                end -- function
+      return f
+      end -- function        
+
+monotags = { "p","b","hr" }
+
+for _,s in monotags do
+  setglobal(strupper(s),"\n&lt;"..s.."&gt;\n")
+end -- for                
+
+tagwords = { "html","head","body","title","center",
+             "h1","h2","h3","h4","h5","h6","tt","b",
+             "ul","ol","li","dl","dd","dt","tr","td",
+             "th","pre","small"} 
+             
+for _,s in tagwords do             
+ setglobal(strupper(s),tag(s))
+end -- for  
+
+</pre>
+</tt>
+</b>
+You can probably now write your own definitions for
+anchors, images and other bits of HTML. A useful non-HTML addition
+is the facility to INCLUDE another file as a piece of text in
+the document.<b><tt><pre>
+
+INCLUDE = function (fname)
+           readfrom(fname)
+           local text = read("*a")
+           readfrom()
+           return text
+          end -- function 
+          
+</pre>
+</tt>
+</b>
+By way of example, if you want to read this whole document
+all over again, but in the form of weave source code, here it is.<a name="source">
+<p>
+</a>
+<b><tt><pre>-- Technote source for weave
+--  GCW August 2001
+
+-- Please set value of filename for your own computer
+filename = "ltn010.html"
+
+-- Please adjust XXX yourself
+title = "Technical Note 10 - Weave your own description languages"
+
+this = "article" -- filename of this file. Please adjust if necessary.
+
+subtitle = "Web page construction as an example"
+author = "G.C.Wraith"
+mailto = "mailto:gavin@wraith.u-net.com"
+
+code = function (x)
+       return B(TT(PRE {x}))
+       end
+       
+intro = [[This note was inspired by Anna Hester's HTMLToolkit and 
+Roberto Ierusalimschy's Technical Note 9 on the inefficiencies of
+concatenating strings. The mathematical abstraction that underlies
+grammars and the structure of, for example HTML documents, is that  
+of a tree. We present here a short Lua program, called weave, for
+building trees out of descriptions and writing them out. This
+document, for example, is constructed by weave adapted to HTML.
+The big drawback of HTML is that it has neither variables nor
+abstraction facilities. I make all my web pages with weave now.]]   
+
+para1 = [[By a 'tree' we mean a table, whose indices are integers,
+and whose values are either strings (leaves of the tree) or trees.
+Here is the function 'node' which constructs trees. It has two
+methods, 'push' and 'walk'. Push inserts a new string or tree.
+Walk applies a function recursively to the leaves.]]
+
+node_def = [[ 
+
+node = function (list)
+       local a
+       if list then 
+         a = list
+         a.n = getn(list)
+       else a = { n = 0 } end -- if
+       if not a.push then
+         a.push = function (self,x) tinsert(self,x) end
+       end -- if
+       if not a.walk then  
+        a.walk = function (self,f)
+                 local b
+                 for i = 1,self.n do
+                   b = self[i]
+                   if type(b) == "string" then f(b)
+                   else b:walk(f) end -- if
+                 end -- for
+               end -- function
+       end -- if        
+       return a
+       end -- function
+       
+]]  
+
+para2 = [[This is the core of weave. Then some specific definitions
+are required to interpret the structure in question, in this case
+HTML. It makes sense to modularise weave by reading in these
+definitions using dofile. The final part of weave writes out the
+leaves to its output, 'out', which I am presuming is specified by the
+document being processed (which is given by 'arg[1]'). Here it is:]]
+
+out_def = [[
+
+page,out = PAGE(dofile(arg[1])) -- read the page description
+assert(page,"Cannot read "..arg[1])
+writeto(out)
+page:walk(write) -- write the HTML file
+writeto() 
+
+]]
+
+para3 = [[It remains to describe the HTML-specific part of weave,
+and, in particular, the function PAGE. This function takes three
+arguments, the title, the pathname of the file that the document is to 
+reside in, and the tree describing the body of the document. It 
+outputs the whole tree and the pathname.]]
+
+PAGE_def = [[
+
+PAGE = function (title, saveas, body)
+       local x = node {
+       [[&lt;!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"&gt;]],
+       HTML { 
+              HEAD {
+                   [[&lt;meta name="MSSmartTagsPreventParsing" content="TRUE"&gt;]],
+                   TITLE { title }
+                    }, -- HEAD   
+             BODY(body)
+            } -- HTML
+                    } -- node
+       return x,saveas
+       end -- function 
+       
+]]  
+
+para4 = [[We have used the convention of using upper case versions of
+HTML tag names for constructors (i.e. nodes of the tree) to contrast
+with lower case variable names for the user to choose for their
+arguments, much in the style of Haskell. These are defined by:]]
+
+tag_def = [[
+
+tag = function (name,attr)
+      local f = function (obj)
+                  local n,att,x = %name,%attr,node()
+                  x:push "&lt;"
+                  x:push(n)
+                  if att then
+                    x:push " "
+                    x:push(att)
+                  end -- if
+                  x:push "&gt;"
+                  x:push(node(obj))
+                  x:push "&lt;/"
+                  x:push(n)
+                  x:push "&gt;\n"
+                return x  
+                end -- function
+      return f
+      end -- function        
+
+monotags = { "p","b","hr" }
+
+for _,s in monotags do
+  setglobal(strupper(s),"\n&lt;"..s.."&gt;\n")
+end -- for                
+
+tagwords = { "html","head","body","title","center",
+             "h1","h2","h3","h4","h5","h6","tt","b",
+             "ul","ol","li","dl","dd","dt","tr","td",
+             "th","pre","small"} 
+             
+for _,s in tagwords do             
+ setglobal(strupper(s),tag(s))
+end -- for  
+
+]]  
+
+para5 = [[You can probably now write your own definitions for
+anchors, images and other bits of HTML. A useful non-HTML addition
+is the facility to INCLUDE another file as a piece of text in
+the document.]]
+
+INCLUDE_def = [[
+
+INCLUDE = function (fname)
+           readfrom(fname)
+           local text = read("*a")
+           readfrom()
+           return text
+          end -- function 
+          
+]]  
+
+para6 = [[By way of example, if you want to read this whole document
+all over again, but in the form of weave source code, here it is.]] 
+
+margin = function (x)
+          return TABLE(TR(TD(x)))
+         end
+         
+get_source = " The weave source of this web page is shown below."         
+       
+body = { CENTER {
+                  H1 {title},
+                  H3 {subtitle},
+                  H6 {author}
+                 }, -- CENTER
+         margin {         
+          P, intro, 
+          A("#source") {get_source},
+          P, para1, code(node_def), 
+          para2, code(out_def),
+          para3, code(PAGE_def), 
+          para4, code(tag_def), 
+          para5, code(INCLUDE_def),
+          para6, LABEL("source") {P}, code(INCLUDE(this)) -- self reference !
+                }, -- margin
+         HR,
+         SMALL { "by", A(mailto) {"gcw"} }
+       } -- body
+
+         
+return title, filename, body
+-- end weave source --------
+</pre>
+</tt>
+</b>
+</td>
+</tr>
+</table>
+
+<hr>
+<small>by<a href="mailto:gavin@wraith.u-net.com">gcw</a>
+</small>
+</body>
+</html>

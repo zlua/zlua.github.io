@@ -1,0 +1,291 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lutf8lib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lutf8lib.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lutf8lib.c,v 1.15 2015/03/28 19:16:55 roberto Exp $
+** Standard library for UTF-8 manipulation
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lutf8lib_c"><SPAN CLASS="definition">lutf8lib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;assert.h&gt;
+#include &lt;limits.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+#define <A NAME="MAXUNICODE"><SPAN CLASS="definition">MAXUNICODE</SPAN></A>      0x10FFFF
+
+#define <A NAME="iscont"><SPAN CLASS="definition">iscont</SPAN></A>(p)       ((*(p) &amp; 0xC0) == 0x80)
+
+
+/* from strlib */
+/* translate a relative string position: negative means back from end */
+static <A HREF="lua.h.html#lua_Integer">lua_Integer</A> <A NAME="u_posrelat"><SPAN CLASS="definition">u_posrelat</SPAN></A> (<A HREF="lua.h.html#lua_Integer">lua_Integer</A> pos, size_t len) {
+  if (pos &gt;= 0) return pos;
+  else if (0u - (size_t)pos &gt; len) return 0;
+  else return (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)len + pos + 1;
+}
+
+
+/*
+** Decode one UTF-8 sequence, returning NULL if byte sequence is invalid.
+*/
+static const char *<A NAME="utf8_decode"><SPAN CLASS="definition">utf8_decode</SPAN></A> (const char *o, int *val) {
+  static const unsigned int limits[] = {0xFF, 0x7F, 0x7FF, 0xFFFF};
+  const unsigned char *s = (const unsigned char *)o;
+  unsigned int c = s[0];
+  unsigned int res = 0;  /* final result */
+  if (c &lt; 0x80)  /* ascii? */
+    res = c;
+  else {
+    int count = 0;  /* to count number of continuation bytes */
+    while (c &amp; 0x40) {  /* still have continuation bytes? */
+      int cc = s[++count];  /* read next byte */
+      if ((cc &amp; 0xC0) != 0x80)  /* not a continuation byte? */
+        return NULL;  /* invalid byte sequence */
+      res = (res &lt;&lt; 6) | (cc &amp; 0x3F);  /* add lower 6 bits from cont. byte */
+      c &lt;&lt;= 1;  /* to test next bit */
+    }
+    res |= ((c &amp; 0x7F) &lt;&lt; (count * 5));  /* add first byte */
+    if (count &gt; 3 || res &gt; <A HREF="lutf8lib.c.html#MAXUNICODE">MAXUNICODE</A> || res &lt;= limits[count])
+      return NULL;  /* invalid byte sequence */
+    s += count;  /* skip continuation bytes read */
+  }
+  if (val) *val = res;
+  return (const char *)s + 1;  /* +1 to include first byte */
+}
+
+
+/*
+** utf8len(s [, i [, j]]) --&gt; number of characters that start in the
+** range [i,j], or nil + current position if 's' is not well formed in
+** that interval
+*/
+static int <A NAME="utflen"><SPAN CLASS="definition">utflen</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = 0;
+  size_t len;
+  const char *s = <A HREF="lauxlib.c.html#luaL_checklstring">luaL_checklstring</A>(L, 1, &amp;len);
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> posi = <A HREF="lutf8lib.c.html#u_posrelat">u_posrelat</A>(<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, 2, 1), len);
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> posj = <A HREF="lutf8lib.c.html#u_posrelat">u_posrelat</A>(<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, 3, -1), len);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, 1 &lt;= posi &amp;&amp; --posi &lt;= (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)len, 2,
+                   "initial position out of string");
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, --posj &lt; (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)len, 3,
+                   "final position out of string");
+  while (posi &lt;= posj) {
+    const char *s1 = <A HREF="lutf8lib.c.html#utf8_decode">utf8_decode</A>(s + posi, NULL);
+    if (s1 == NULL) {  /* conversion error? */
+      <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);  /* return nil ... */
+      <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, posi + 1);  /* ... and current position */
+      return 2;
+    }
+    posi = s1 - s;
+    n++;
+  }
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, n);
+  return 1;
+}
+
+
+/*
+** <A HREF="lutf8lib.c.html#codepoint">codepoint</A>(s, [i, [j]])  -&gt; returns codepoints for all characters
+** that start in the range [i,j]
+*/
+static int <A NAME="codepoint"><SPAN CLASS="definition">codepoint</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t len;
+  const char *s = <A HREF="lauxlib.c.html#luaL_checklstring">luaL_checklstring</A>(L, 1, &amp;len);
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> posi = <A HREF="lutf8lib.c.html#u_posrelat">u_posrelat</A>(<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, 2, 1), len);
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> pose = <A HREF="lutf8lib.c.html#u_posrelat">u_posrelat</A>(<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, 3, posi), len);
+  int n;
+  const char *se;
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, posi &gt;= 1, 2, "out of range");
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, pose &lt;= (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)len, 3, "out of range");
+  if (posi &gt; pose) return 0;  /* empty interval; return no values */
+  if (pose - posi &gt;= INT_MAX)  /* (<A HREF="lua.h.html#lua_Integer">lua_Integer</A> -&gt; int) overflow? */
+    return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "string slice too long");
+  n = (int)(pose -  posi) + 1;
+  <A HREF="lauxlib.c.html#luaL_checkstack">luaL_checkstack</A>(L, n, "string slice too long");
+  n = 0;
+  se = s + pose;
+  for (s += posi - 1; s &lt; se;) {
+    int code;
+    s = <A HREF="lutf8lib.c.html#utf8_decode">utf8_decode</A>(s, &amp;code);
+    if (s == NULL)
+      return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "invalid UTF-8 code");
+    <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, code);
+    n++;
+  }
+  return n;
+}
+
+
+static void <A NAME="pushutfchar"><SPAN CLASS="definition">pushutfchar</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int arg) {
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> code = <A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, arg);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, 0 &lt;= code &amp;&amp; code &lt;= <A HREF="lutf8lib.c.html#MAXUNICODE">MAXUNICODE</A>, arg, "value out of range");
+  <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "%U", (long)code);
+}
+
+
+/*
+** <A HREF="lutf8lib.c.html#utfchar">utfchar</A>(n1, n2, ...)  -&gt; char(n1)..char(n2)...
+*/
+static int <A NAME="utfchar"><SPAN CLASS="definition">utfchar</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);  /* number of arguments */
+  if (n == 1)  /* optimize common case of single char */
+    <A HREF="lutf8lib.c.html#pushutfchar">pushutfchar</A>(L, 1);
+  else {
+    int i;
+    <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+    <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+    for (i = 1; i &lt;= n; i++) {
+      <A HREF="lutf8lib.c.html#pushutfchar">pushutfchar</A>(L, i);
+      <A HREF="lauxlib.c.html#luaL_addvalue">luaL_addvalue</A>(&amp;b);
+    }
+    <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  }
+  return 1;
+}
+
+
+/*
+** offset(s, n, [i])  -&gt; index where n-th character counting from
+**   position 'i' starts; 0 means character at 'i'.
+*/
+static int <A NAME="byteoffset"><SPAN CLASS="definition">byteoffset</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t len;
+  const char *s = <A HREF="lauxlib.c.html#luaL_checklstring">luaL_checklstring</A>(L, 1, &amp;len);
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n  = <A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, 2);
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> posi = (n &gt;= 0) ? 1 : len + 1;
+  posi = <A HREF="lutf8lib.c.html#u_posrelat">u_posrelat</A>(<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, 3, posi), len);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, 1 &lt;= posi &amp;&amp; --posi &lt;= (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)len, 3,
+                   "position out of range");
+  if (n == 0) {
+    /* find beginning of current byte sequence */
+    while (posi &gt; 0 &amp;&amp; <A HREF="lutf8lib.c.html#iscont">iscont</A>(s + posi)) posi--;
+  }
+  else {
+    if (<A HREF="lutf8lib.c.html#iscont">iscont</A>(s + posi))
+      <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "initial position is a continuation byte");
+    if (n &lt; 0) {
+       while (n &lt; 0 &amp;&amp; posi &gt; 0) {  /* move back */
+         do {  /* find beginning of previous character */
+           posi--;
+         } while (posi &gt; 0 &amp;&amp; <A HREF="lutf8lib.c.html#iscont">iscont</A>(s + posi));
+         n++;
+       }
+     }
+     else {
+       n--;  /* do not move for 1st character */
+       while (n &gt; 0 &amp;&amp; posi &lt; (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)len) {
+         do {  /* find beginning of next character */
+           posi++;
+         } while (<A HREF="lutf8lib.c.html#iscont">iscont</A>(s + posi));  /* (cannot pass final '\0') */
+         n--;
+       }
+     }
+  }
+  if (n == 0)  /* did it find given character? */
+    <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, posi + 1);
+  else  /* no such character */
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+  return 1;  
+}
+
+
+static int <A NAME="iter_aux"><SPAN CLASS="definition">iter_aux</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  size_t len;
+  const char *s = <A HREF="lauxlib.c.html#luaL_checklstring">luaL_checklstring</A>(L, 1, &amp;len);
+  <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n = <A HREF="lua.h.html#lua_tointeger">lua_tointeger</A>(L, 2) - 1;
+  if (n &lt; 0)  /* first iteration? */
+    n = 0;  /* start from here */
+  else if (n &lt; (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)len) {
+    n++;  /* skip current byte */
+    while (<A HREF="lutf8lib.c.html#iscont">iscont</A>(s + n)) n++;  /* and its continuations */
+  }
+  if (n &gt;= (<A HREF="lua.h.html#lua_Integer">lua_Integer</A>)len)
+    return 0;  /* no more codepoints */
+  else {
+    int code;
+    const char *next = <A HREF="lutf8lib.c.html#utf8_decode">utf8_decode</A>(s + n, &amp;code);
+    if (next == NULL || <A HREF="lutf8lib.c.html#iscont">iscont</A>(next))
+      return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "invalid UTF-8 code");
+    <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, n + 1);
+    <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, code);
+    return 2;
+  }
+}
+
+
+static int <A NAME="iter_codes"><SPAN CLASS="definition">iter_codes</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  <A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, <A HREF="lutf8lib.c.html#iter_aux">iter_aux</A>);
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, 1);
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, 0);
+  return 3;
+}
+
+
+/* pattern to match a single UTF-8 character */
+#define <A NAME="UTF8PATT"><SPAN CLASS="definition">UTF8PATT</SPAN></A>        "[\0-\x7F\xC2-\xF4][\x80-\xBF]*"
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="funcs"><SPAN CLASS="definition">funcs</SPAN></A>[] = {
+  {"offset", <A HREF="lutf8lib.c.html#byteoffset">byteoffset</A>},
+  {"<A HREF="lutf8lib.c.html#codepoint">codepoint</A>", <A HREF="lutf8lib.c.html#codepoint">codepoint</A>},
+  {"char", <A HREF="lutf8lib.c.html#utfchar">utfchar</A>},
+  {"len", <A HREF="lutf8lib.c.html#utflen">utflen</A>},
+  {"codes", <A HREF="lutf8lib.c.html#iter_codes">iter_codes</A>},
+  /* placeholders */
+  {"charpattern", NULL},
+  {NULL, NULL}
+};
+
+
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int <A NAME="luaopen_utf8"><SPAN CLASS="definition">luaopen_utf8</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.h.html#luaL_newlib">luaL_newlib</A>(L, <A HREF="lutf8lib.c.html#funcs">funcs</A>);
+  <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, <A HREF="lutf8lib.c.html#UTF8PATT">UTF8PATT</A>, sizeof(<A HREF="lutf8lib.c.html#UTF8PATT">UTF8PATT</A>)/sizeof(char) - 1);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "charpattern");
+  return 1;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:16 2015
+</P>
+
+</BODY>
+</HTML>

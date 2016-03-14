@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lvm.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lvm.h
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lvm.h,v 2.39 2015/09/09 13:44:07 roberto Exp $
+** Lua virtual machine
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lvm.h.html#lvm_h">lvm_h</A>
+#define <A NAME="lvm_h"><SPAN CLASS="definition">lvm_h</SPAN></A>
+
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+
+
+#if !defined(LUA_NOCVTN2S)
+#define <A HREF="lvm.h.html#cvt2str">cvt2str</A>(o)      <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(o)
+#else
+#define <A NAME="cvt2str"><SPAN CLASS="definition">cvt2str</SPAN></A>(o)      0       /* no conversion from numbers to strings */
+#endif
+
+
+#if !defined(LUA_NOCVTS2N)
+#define <A HREF="lvm.h.html#cvt2num">cvt2num</A>(o)      <A HREF="lobject.h.html#ttisstring">ttisstring</A>(o)
+#else
+#define <A NAME="cvt2num"><SPAN CLASS="definition">cvt2num</SPAN></A>(o)      0       /* no conversion from strings to numbers */
+#endif
+
+
+/*
+** You can define <A HREF="lvm.h.html#LUA_FLOORN2I">LUA_FLOORN2I</A> if you want to convert floats to integers
+** by flooring them (instead of raising an error if they are not
+** integral values)
+*/
+#if !defined(<A HREF="lvm.h.html#LUA_FLOORN2I">LUA_FLOORN2I</A>)
+#define <A NAME="LUA_FLOORN2I"><SPAN CLASS="definition">LUA_FLOORN2I</SPAN></A>            0
+#endif
+
+
+#define <A NAME="tonumber"><SPAN CLASS="definition">tonumber</SPAN></A>(o,n) \
+        (<A HREF="lobject.h.html#ttisfloat">ttisfloat</A>(o) ? (*(n) = <A HREF="lobject.h.html#fltvalue">fltvalue</A>(o), 1) : <A HREF="lvm.c.html#luaV_tonumber_">luaV_tonumber_</A>(o,n))
+
+#define <A NAME="tointeger"><SPAN CLASS="definition">tointeger</SPAN></A>(o,i) \
+    (<A HREF="lobject.h.html#ttisinteger">ttisinteger</A>(o) ? (*(i) = <A HREF="lobject.h.html#ivalue">ivalue</A>(o), 1) : <A HREF="lvm.c.html#luaV_tointeger">luaV_tointeger</A>(o,i,<A HREF="lvm.h.html#LUA_FLOORN2I">LUA_FLOORN2I</A>))
+
+#define <A NAME="intop"><SPAN CLASS="definition">intop</SPAN></A>(op,v1,v2) <A HREF="llimits.h.html#l_castU2S">l_castU2S</A>(<A HREF="llimits.h.html#l_castS2U">l_castS2U</A>(v1) op <A HREF="llimits.h.html#l_castS2U">l_castS2U</A>(v2))
+
+#define <A NAME="luaV_rawequalobj"><SPAN CLASS="definition">luaV_rawequalobj</SPAN></A>(t1,t2)         <A HREF="lvm.c.html#luaV_equalobj">luaV_equalobj</A>(NULL,t1,t2)
+
+
+/*
+** fast track for 'gettable': 1 means 'aux' points to resulted value;
+** 0 means 'aux' is metamethod (if 't' is a table) or NULL. 'f' is
+** the raw get function to use.
+*/
+#define <A NAME="luaV_fastget"><SPAN CLASS="definition">luaV_fastget</SPAN></A>(L,t,k,aux,f) \
+  (!<A HREF="lobject.h.html#ttistable">ttistable</A>(t)  \
+   ? (aux = NULL, 0)  /* not a table; 'aux' is NULL and result is 0 */  \
+   : (aux = f(<A HREF="lobject.h.html#hvalue">hvalue</A>(t), k),  /* else, do raw access */  \
+      !<A HREF="lobject.h.html#ttisnil">ttisnil</A>(aux) ? 1  /* result not nil? 'aux' has it */  \
+      : (aux = <A HREF="ltm.h.html#fasttm">fasttm</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(t)-&gt;metatable, <A HREF="ltm.h.html#TM_INDEX">TM_INDEX</A>),  /* get metamethod */\
+         aux != NULL  ? 0  /* has metamethod? must call it */  \
+         : (aux = <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>, 1))))  /* else, final result is nil */
+
+/*
+** standard implementation for 'gettable'
+*/
+#define <A NAME="luaV_gettable"><SPAN CLASS="definition">luaV_gettable</SPAN></A>(L,t,k,v) { const <A HREF="lobject.h.html#TValue">TValue</A> *aux; \
+  if (<A HREF="lvm.h.html#luaV_fastget">luaV_fastget</A>(L,t,k,aux,<A HREF="ltable.c.html#luaH_get">luaH_get</A>)) { <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, v, aux); } \
+  else <A HREF="lvm.c.html#luaV_finishget">luaV_finishget</A>(L,t,k,v,aux); }
+
+
+/*
+** Fast track for set table. If 't' is a table and 't[k]' is not nil,
+** call GC barrier, do a raw 't[k]=v', and return true; otherwise,
+** return false with 'slot' equal to NULL (if 't' is not a table) or
+** 'nil'. (This is needed by '<A HREF="lvm.c.html#luaV_finishget">luaV_finishget</A>'.) Note that, if the macro
+** returns true, there is no need to '<A HREF="ltable.h.html#invalidateTMcache">invalidateTMcache</A>', because the
+** call is not creating a new entry.
+*/
+#define <A NAME="luaV_fastset"><SPAN CLASS="definition">luaV_fastset</SPAN></A>(L,t,k,slot,f,v) \
+  (!<A HREF="lobject.h.html#ttistable">ttistable</A>(t) \
+   ? (slot = NULL, 0) \
+   : (slot = f(<A HREF="lobject.h.html#hvalue">hvalue</A>(t), k), \
+     <A HREF="lobject.h.html#ttisnil">ttisnil</A>(slot) ? 0 \
+     : (<A HREF="lgc.h.html#luaC_barrierback">luaC_barrierback</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(t), v), \
+        <A HREF="lobject.h.html#setobj2t">setobj2t</A>(L, <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#TValue">TValue</A> *,slot), v), \
+        1)))
+
+
+#define <A NAME="luaV_settable"><SPAN CLASS="definition">luaV_settable</SPAN></A>(L,t,k,v) { const <A HREF="lobject.h.html#TValue">TValue</A> *slot; \
+  if (!<A HREF="lvm.h.html#luaV_fastset">luaV_fastset</A>(L,t,k,slot,<A HREF="ltable.c.html#luaH_get">luaH_get</A>,v)) \
+    <A HREF="lvm.c.html#luaV_finishset">luaV_finishset</A>(L,t,k,v,slot); }
+  
+
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lvm.c.html#luaV_equalobj">luaV_equalobj</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *t1, const <A HREF="lobject.h.html#TValue">TValue</A> *t2);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lvm.c.html#luaV_lessthan">luaV_lessthan</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *l, const <A HREF="lobject.h.html#TValue">TValue</A> *r);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lvm.c.html#luaV_lessequal">luaV_lessequal</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *l, const <A HREF="lobject.h.html#TValue">TValue</A> *r);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lvm.c.html#luaV_tonumber_">luaV_tonumber_</A> (const <A HREF="lobject.h.html#TValue">TValue</A> *obj, <A HREF="lua.h.html#lua_Number">lua_Number</A> *n);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lvm.c.html#luaV_tointeger">luaV_tointeger</A> (const <A HREF="lobject.h.html#TValue">TValue</A> *obj, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> *p, int mode);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_finishget">luaV_finishget</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *t, <A HREF="lobject.h.html#TValue">TValue</A> *key,
+                               <A HREF="lobject.h.html#StkId">StkId</A> val, const <A HREF="lobject.h.html#TValue">TValue</A> *tm);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_finishset">luaV_finishset</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *t, <A HREF="lobject.h.html#TValue">TValue</A> *key,
+                               <A HREF="lobject.h.html#StkId">StkId</A> val, const <A HREF="lobject.h.html#TValue">TValue</A> *oldval);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_finishOp">luaV_finishOp</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_execute">luaV_execute</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_concat">luaV_concat</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int total);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lua.h.html#lua_Integer">lua_Integer</A> <A HREF="lvm.c.html#luaV_div">luaV_div</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> x, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> y);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lua.h.html#lua_Integer">lua_Integer</A> <A HREF="lvm.c.html#luaV_mod">luaV_mod</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> x, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> y);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lua.h.html#lua_Integer">lua_Integer</A> <A HREF="lvm.c.html#luaV_shiftl">luaV_shiftl</A> (<A HREF="lua.h.html#lua_Integer">lua_Integer</A> x, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> y);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lvm.c.html#luaV_objlen">luaV_objlen</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> ra, const <A HREF="lobject.h.html#TValue">TValue</A> *rb);
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:17 2015
+</P>
+
+</BODY>
+</HTML>

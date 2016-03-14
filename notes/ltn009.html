@@ -1,0 +1,159 @@
+<HTML>
+<HEAD>
+<TITLE>Lua: technical note 9</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+</HEAD>
+
+<BODY>
+
+<HR>
+<H1><A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua" BORDER=0></A>
+Technical Note 9
+</H1>
+
+<H2>Creating Strings Piece by Piece</H2>
+by <A HREF="http://www.inf.puc-rio.br/~roberto/">Roberto Ierusalimschy</A>
+
+<h2>Abstract</h2>
+In Lua, "accumulation" of string results
+(that is, loops over a code like <code> s = s..x </code>)
+can be quite expensive.
+This note describes an efficient way to create a string
+piece by piece in Lua.
+
+
+<h2>The Problem</h2>
+
+<p>Suppose you are building a string piecemeal,
+for instance reading a file line by line.
+Your typical code would look like this:
+<pre>
+-- WARNING: bad code ahead!!
+local buff = ""
+while 1 do
+  local line = read()
+  if line == nil then break end
+  buff = buff..line.."\n"
+end
+</pre>
+Despite its innocent look,
+this code in Lua can cause a huge performance penalty for large files:
+For instance,
+it takes almost a minute to read a 350 Kbyte file.
+
+<p>Frequently this is not a problem.
+For small strings, the above loop is OK.
+To read a whole file, you can use the <code>"*all"</code> option,
+that reads it at once.
+But sometimes you have no such simple solution.
+Then, the only solution is a more efficient algorithm for your problem.
+Here we show one (algorithm, not problem).
+
+
+<h2>The Solution</h2>
+
+The heart of the algorithm is a stack,
+that keeps the large strings already created in its bottom,
+while small strings enter through the top.
+The main invariant of this stack is similar to that of
+the popular (among programmers, I mean) "Tower of Hanoy":
+A string in the stack can never sit over a shorter string.
+Whenever a new string is pushed over a shorter one,
+then (and only then) the algorithm concatenates both.
+This concatenation creates a larger string,
+that now may be larger than its neighbor in the previous floor.
+If that happens, they are also joined.
+Those concatenations go down the stack until the loop reaches
+a larger string or the stack bottom.
+<pre>
+function newBuffer ()
+  return {n=0}     -- 'n' counts number of elements in the stack
+end
+
+function addString (stack, s)
+  tinsert(stack, s)       -- push 's' into the top of the stack
+  for i=stack.n-1, 1, -1 do
+    if strlen(stack[i]) &gt; strlen(stack[i+1]) then break end
+    stack[i] = stack[i]..tremove(stack)
+  end
+end
+</pre>
+To get the final contents of the buffer,
+we just need to concatenate all strings down the bottom:
+<pre>
+function toString (stack)
+  for i=stack.n-1, 1, -1 do
+    stack[i] = stack[i]..tremove(stack)
+  end
+  return stack[1]
+end
+</pre>
+
+<p>Using this new data structure,
+we can rewrite our program as follows:
+<pre>
+local s = newBuffer()
+while 1 do
+  local line = read()
+  if line == nil then break end
+  addString(s, line.."\n")  
+end
+s = toString(s)
+</pre>
+This new program reduces our original time
+to read a 350 Kbyte file from 40 seconds to 0.5 seconds.
+(The call <code>read"*all"</code> is still faster,
+finishing the job in 0.02 seconds.)
+
+
+<h2>Explanation</h2>
+
+<p>To understand what happens with the naive approach,
+let us assume that we are in the middle of the reading;
+<code>buff</code> is already a string with 50 Kbytes,
+and each line has 20 bytes.
+After the assignment
+<pre>
+    buff = buff..line.."\n"
+</pre>
+<code>buff</code> is a new string with 50,020 bytes,
+and the old string in now garbage.
+After two loop cycles, <code>buff</code> is a string with 50,040 bytes,
+and there are two old strings making a
+total of more than 100 Kbytes of garbage.
+Therefore, Lua decides, quite correctly,
+that it is a good time to run its garbage collector,
+and so it frees those 100 Kbytes.
+The problem is that this will happen every two cycles,
+and so Lua will run its garbage collector
+two thousand times before finishing the loop.
+Even with all this work,
+its memory usage will be around three times the file size.
+To make things worse,
+each concatenation must copy the whole string content
+(50 Kbytes and growing) into the new string.
+
+<p>This problem is not exclusive of Lua:
+other languages with true garbage collection,
+and where strings are immutable objects,
+present a similar behavior
+(Java being the most famous example).
+
+
+<p>Our original loop did a "linear" approach to the problem,
+concatenating small strings one by one into the accumulator.
+The new algorithm avoids this,
+using a binary approach.
+It concatenates many small strings among them,
+and once in a while it concatenates the resulting
+large strings into larger ones.
+<P>
+
+<HR>
+<SMALL>
+Last update:
+Mon Aug 12 15:51:58 EST 2002
+</SMALL>
+
+</BODY>
+</HTML>

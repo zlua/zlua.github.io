@@ -1,0 +1,76 @@
+<HEAD>
+<TITLE>Reference Manual of the Programming Language Lua 2.1</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=section3_1.html>1 Introduction</A>
+<P>
+<H1>Reference Manual of the Programming Language Lua 2.1</H1>
+<P><B><A HREF="http://www.inf.puc-rio.br/~roberto">Roberto Ierusalimschy</A>, 
+<A HREF="http://csg.uwaterloo.ca/~lhf">Luiz Henrique de Figueiredo</A>, 
+<A HREF="http://www.graphics.cornell.edu/~celes"><A HREF="http://www.graphics.cornell.edu/~celes">Waldemar Celes Filho</A></A>
+<BR><I><A HREF="mailto:lhf@csg.uwaterloo.ca">roberto,lhf,celes@icad.puc-rio.br</A></I>
+<BR><BR>
+<A HREF="http://www.icad.puc-rio.br">TeCGraf</A>,
+<A HREF="http://www.inf.puc-rio.br">Computer Science Department</A>,
+<A HREF="http://www.puc-rio.br">PUC-Rio</A>
+</B></B></TT></B><P>
+<HR><B>Abstract. </B>
+<I>Lua is an extension programming language designed to be used
+as a configuration language for any program that needs one.
+This document describes version 2.1 of the Lua programming language and the
+API that allows interaction between Lua programs and its host C program.
+It also presents some examples of using the main features of the system.
+</I><HR>
+<P>
+<P>
+<UL> 
+<LI> <A HREF=section3_1.html#S0100>1 Introduction</A>
+<LI> <A HREF=section3_2.html#S0200>2 Environment and Modules</A>
+<LI> <A HREF=section3_3.html#S0300>3 Types</A>
+<LI> <A HREF=section3_4.html#S0400>4 The Language</A>
+<UL> 
+<LI> <A HREF=subsection3_4_1.html#S0410>4.1 Lexical Conventions</A>
+<LI> <A HREF=subsection3_4_2.html#S0420>4.2 Coercion</A>
+<LI> <A HREF=subsection3_4_3.html#S0430>4.3 Adjustment</A>
+<LI> <A HREF=subsection3_4_4.html#S0440>4.4 Statements</A>
+<LI> <A HREF=subsection3_4_5.html#S0450>4.5 Expressions</A>
+<LI> <A HREF=subsection3_4_6.html#S0460>4.6 Function Definitions</A>
+<LI> <A HREF=subsection3_4_7.html#S0470>4.7 Fallbacks</A>
+<LI> <A HREF=subsection3_4_8.html#S0480>4.8 Error Handling</A>
+</UL> 
+<LI> <A HREF=section3_5.html#S0500>5 The Application Program Interface</A>
+<UL> 
+<LI> <A HREF=subsection3_5_1.html#S0510>5.1 Executing Lua Code</A>
+<LI> <A HREF=subsection3_5_2.html#S0520>5.2 Converting Values between C and Lua</A>
+<LI> <A HREF=subsection3_5_3.html#S0530>5.3 Manipulating Lua Objects</A>
+<LI> <A HREF=subsection3_5_4.html#S0540>5.4 Calling Lua Functions</A>
+<LI> <A HREF=subsection3_5_5.html#S0550>5.5 C Functions</A>
+<LI> <A HREF=subsection3_5_6.html#S0560>5.6 Locking Lua Objects</A>
+</UL> 
+<LI> <A HREF=section3_6.html#S0600>6 Predefined Functions and Libraries</A>
+<UL> 
+<LI> <A HREF=subsection3_6_1.html#S0610>6.1 Predefined Functions</A>
+<LI> <A HREF=subsection3_6_2.html#S0620>6.2 String Manipulation</A>
+<LI> <A HREF=subsection3_6_3.html#S0630>6.3 Mathematical Functions</A>
+<LI> <A HREF=subsection3_6_4.html#S0640>6.4 I/O Facilities</A>
+</UL> 
+<LI> <A HREF=section3_7.html#S0700>7 Some Examples</A>
+<UL> 
+<LI> <A HREF=subsection3_7_1.html#S0710>7.1 The Functions <TT><B><B>next</B></B></TT> and <TT><B><B>nextvar</B></B></TT></A>
+<LI> <A HREF=subsection3_7_2.html#S0720>7.2 Manipulating Strings</A>
+<LI> <A HREF=subsection3_7_3.html#S0730>7.3 Persistence</A>
+<LI> <A HREF=subsection3_7_4.html#S0740>7.4 Inheritance</A>
+<LI> <A HREF=subsection3_7_5.html#S0750>7.5 A CFunction</A>
+<LI> <A HREF=subsection3_7_6.html#S0760>7.6 Calling Lua Functions from C</A>
+</UL> 
+<LI> <A HREF=sectionstar3_8.html#S0800> Acknowledgments</A>
+<LI> <A HREF=section3_9.html#S0900>Incompatibilities with Previous Versions</A>
+<UL> 
+<LI> <A HREF=subsectionstar3_9_1.html#S0910> Incompatibilities in the Language</A>
+<LI> <A HREF=subsectionstar3_9_2.html#S0920> Incompatibilities in the API</A>
+</UL> 
+<LI> <A HREF=section3_10.html#S01000>  <I>About this document ...</I> </A>
+</UL>
+<B> Next:</B> <A HREF=section3_1.html>1 Introduction</A>
+
+</BODY>

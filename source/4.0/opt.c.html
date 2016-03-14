@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - opt.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+opt.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: opt.c,v 1.22 2000/10/31 16:57:23 lhf Exp $
+** optimize bytecodes
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="luac.h.html">luac.h</A>"
+
+static int <A NAME="MapConstant"><SPAN CLASS="definition">MapConstant</SPAN></A>(<A HREF="lobject.h.html#Hash">Hash</A>* t, int j, const <A HREF="lobject.h.html#TObject">TObject</A>* <A HREF="ltable.h.html#key">key</A>)
+{
+ const <A HREF="lobject.h.html#TObject">TObject</A>* o=<A HREF="ltable.c.html#luaH_get">luaH_get</A>(L,t,<A HREF="ltable.h.html#key">key</A>);
+ if (<A HREF="lobject.h.html#ttype">ttype</A>(o)==<A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>)
+  return (int) <A HREF="lobject.h.html#nvalue">nvalue</A>(o);
+ else
+ {
+  <A HREF="lobject.h.html#TObject">TObject</A> <A HREF="ltable.h.html#val">val</A>;
+  <A HREF="lobject.h.html#ttype">ttype</A>(&amp;<A HREF="ltable.h.html#val">val</A>)=<A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>;
+  <A HREF="lobject.h.html#nvalue">nvalue</A>(&amp;<A HREF="ltable.h.html#val">val</A>)=j;
+  *<A HREF="ltable.c.html#luaH_set">luaH_set</A>(L,t,<A HREF="ltable.h.html#key">key</A>)=<A HREF="ltable.h.html#val">val</A>;
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(j&gt;=0,"<A HREF="opt.c.html#MapConstant">MapConstant</A> returns negative!");
+  return j;
+ }
+}
+
+static int <A NAME="MapConstants"><SPAN CLASS="definition">MapConstants</SPAN></A>(<A HREF="lobject.h.html#Proto">Proto</A>* tf, <A HREF="lobject.h.html#Hash">Hash</A>* map)
+{
+ int i,j,k,n,m=0;
+ <A HREF="lobject.h.html#TObject">TObject</A> o;
+ j=0; n=tf-&gt;nknum; <A HREF="lobject.h.html#ttype">ttype</A>(&amp;o)=<A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>;
+ for (i=0; i&lt;n; i++)
+ {
+  <A HREF="lobject.h.html#nvalue">nvalue</A>(&amp;o)=tf-&gt;knum[i];
+  k=<A HREF="opt.c.html#MapConstant">MapConstant</A>(map,j,&amp;o);
+  if (k==j) j++;
+ }
+ m=j;
+ j=0; n=tf-&gt;nkstr; <A HREF="lobject.h.html#ttype">ttype</A>(&amp;o)=<A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+ for (i=0; i&lt;n; i++)
+ {
+  <A HREF="lobject.h.html#tsvalue">tsvalue</A>(&amp;o)=tf-&gt;kstr[i];
+  k=<A HREF="opt.c.html#MapConstant">MapConstant</A>(map,j,&amp;o);
+  if (k==j) j++;
+ }
+ return m+j;
+}
+
+static void <A NAME="PackConstants"><SPAN CLASS="definition">PackConstants</SPAN></A>(<A HREF="lobject.h.html#Proto">Proto</A>* tf, <A HREF="lobject.h.html#Hash">Hash</A>* map)
+{
+ int i,j,k,n;
+ <A HREF="lobject.h.html#TObject">TObject</A> o;
+#ifdef DEBUG
+ printf("%p before pack nknum=%d nkstr=%d\n",tf,tf-&gt;nknum,tf-&gt;nkstr);
+#endif
+ j=0; n=tf-&gt;nknum; <A HREF="lobject.h.html#ttype">ttype</A>(&amp;o)=<A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>;
+ for (i=0; i&lt;n; i++)
+ {
+  <A HREF="lobject.h.html#nvalue">nvalue</A>(&amp;o)=tf-&gt;knum[i];
+  k=<A HREF="opt.c.html#MapConstant">MapConstant</A>(map,-1,&amp;o);
+  if (k==j) tf-&gt;knum[j++]=tf-&gt;knum[i];
+ }
+ tf-&gt;nknum=j;
+ j=0; n=tf-&gt;nkstr; <A HREF="lobject.h.html#ttype">ttype</A>(&amp;o)=<A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+ for (i=0; i&lt;n; i++)
+ {
+  <A HREF="lobject.h.html#tsvalue">tsvalue</A>(&amp;o)=tf-&gt;kstr[i];
+  k=<A HREF="opt.c.html#MapConstant">MapConstant</A>(map,-1,&amp;o);
+  if (k==j) tf-&gt;kstr[j++]=tf-&gt;kstr[i];
+ }
+ tf-&gt;nkstr=j;
+#ifdef DEBUG
+ printf("%p after  pack nknum=%d nkstr=%d\n",tf,tf-&gt;nknum,tf-&gt;nkstr);
+#endif
+}
+
+static void <A NAME="OptConstants"><SPAN CLASS="definition">OptConstants</SPAN></A>(<A HREF="lobject.h.html#Proto">Proto</A>* tf)
+{
+ <A HREF="llimits.h.html#Instruction">Instruction</A>* p;
+ int n=tf-&gt;nknum+tf-&gt;nkstr;
+ <A HREF="lobject.h.html#Hash">Hash</A>* map=<A HREF="ltable.c.html#luaH_new">luaH_new</A>(L,n);
+ int m=<A HREF="opt.c.html#MapConstants">MapConstants</A>(tf,map);
+#ifdef DEBUG
+ printf("%p n=%d m=%d %s\n",tf,n,m,(m==n)?"nothing to optimize":"yes!");
+#endif
+ if (m==n) return;
+ for (p=tf-&gt;code;; p++)
+ {
+  <A HREF="llimits.h.html#Instruction">Instruction</A> i=*p;
+  int op=<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i);
+  switch (op)
+  {
+   <A HREF="lobject.h.html#TObject">TObject</A> o;
+   int j,k;
+   case <A HREF="lopcodes.h.html#OP_PUSHNUM">OP_PUSHNUM</A>: case <A HREF="lopcodes.h.html#OP_PUSHNEGNUM">OP_PUSHNEGNUM</A>:
+    j=<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+    <A HREF="lobject.h.html#ttype">ttype</A>(&amp;o)=<A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>; <A HREF="lobject.h.html#nvalue">nvalue</A>(&amp;o)=tf-&gt;knum[j];
+    k=<A HREF="opt.c.html#MapConstant">MapConstant</A>(map,-1,&amp;o);
+    if (k!=j) *p=<A HREF="lopcodes.h.html#CREATE_U">CREATE_U</A>(op,k);
+    break;
+   case <A HREF="lopcodes.h.html#OP_PUSHSTRING">OP_PUSHSTRING</A>: case <A HREF="lopcodes.h.html#OP_GETGLOBAL">OP_GETGLOBAL</A>: case <A HREF="lopcodes.h.html#OP_GETDOTTED">OP_GETDOTTED</A>:
+   case <A HREF="lopcodes.h.html#OP_PUSHSELF">OP_PUSHSELF</A>:   case <A HREF="lopcodes.h.html#OP_SETGLOBAL">OP_SETGLOBAL</A>:
+    j=<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+    <A HREF="lobject.h.html#ttype">ttype</A>(&amp;o)=<A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>; <A HREF="lobject.h.html#tsvalue">tsvalue</A>(&amp;o)=tf-&gt;kstr[j];
+    k=<A HREF="opt.c.html#MapConstant">MapConstant</A>(map,-1,&amp;o);
+    if (k!=j) *p=<A HREF="lopcodes.h.html#CREATE_U">CREATE_U</A>(op,k);
+    break;
+   case <A HREF="lopcodes.h.html#OP_END">OP_END</A>:
+    <A HREF="opt.c.html#PackConstants">PackConstants</A>(tf,map);
+    <A HREF="ltable.c.html#luaH_free">luaH_free</A>(L,map);
+    return;
+   default:
+    break;
+  }
+ }
+}
+
+#define <A NAME="OptFunction"><SPAN CLASS="definition">OptFunction</SPAN></A> luaU_optchunk
+
+void <A HREF="opt.c.html#OptFunction">OptFunction</A>(<A HREF="lobject.h.html#Proto">Proto</A>* tf)
+{
+ int i,n=tf-&gt;nkproto;
+ <A HREF="opt.c.html#OptConstants">OptConstants</A>(tf);
+ for (i=0; i&lt;n; i++) <A HREF="opt.c.html#OptFunction">OptFunction</A>(tf-&gt;kproto[i]);
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

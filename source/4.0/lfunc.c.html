@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lfunc.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lfunc.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lfunc.c,v 1.34 2000/10/30 12:20:29 roberto Exp $
+** Auxiliary functions to manipulate prototypes and closures
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdlib.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+#define <A NAME="sizeclosure"><SPAN CLASS="definition">sizeclosure</SPAN></A>(n)  ((int)sizeof(<A HREF="lobject.h.html#Closure">Closure</A>) + (int)sizeof(<A HREF="lobject.h.html#TObject">TObject</A>)*((n)-1))
+
+
+<A HREF="lobject.h.html#Closure">Closure</A> *<A NAME="luaF_newclosure"><SPAN CLASS="definition">luaF_newclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nelems) {
+  int size = <A HREF="lfunc.c.html#sizeclosure">sizeclosure</A>(nelems);
+  <A HREF="lobject.h.html#Closure">Closure</A> *c = (<A HREF="lobject.h.html#Closure">Closure</A> *)<A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L, size);
+  c-&gt;next = L-&gt;rootcl;
+  L-&gt;rootcl = c;
+  c-&gt;mark = c;
+  c-&gt;nupvalues = nelems;
+  L-&gt;nblocks += size;
+  return c;
+}
+
+
+<A HREF="lobject.h.html#Proto">Proto</A> *<A NAME="luaF_newproto"><SPAN CLASS="definition">luaF_newproto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = <A HREF="lmem.h.html#luaM_new">luaM_new</A>(L, <A HREF="lobject.h.html#Proto">Proto</A>);
+  f-&gt;knum = NULL;
+  f-&gt;nknum = 0;
+  f-&gt;kstr = NULL;
+  f-&gt;nkstr = 0;
+  f-&gt;kproto = NULL;
+  f-&gt;nkproto = 0;
+  f-&gt;code = NULL;
+  f-&gt;ncode = 0;
+  f-&gt;numparams = 0;
+  f-&gt;is_vararg = 0;
+  f-&gt;maxstacksize = 0;
+  f-&gt;marked = 0;
+  f-&gt;lineinfo = NULL;
+  f-&gt;nlineinfo = 0;
+  f-&gt;nlocvars = 0;
+  f-&gt;locvars = NULL;
+  f-&gt;lineDefined = 0;
+  f-&gt;source = NULL;
+  f-&gt;next = L-&gt;rootproto;  /* chain in list of protos */
+  L-&gt;rootproto = f;
+  return f;
+}
+
+
+static size_t <A NAME="protosize"><SPAN CLASS="definition">protosize</SPAN></A> (<A HREF="lobject.h.html#Proto">Proto</A> *f) {
+  return sizeof(<A HREF="lobject.h.html#Proto">Proto</A>)
+       + f-&gt;nknum*sizeof(<A HREF="llimits.h.html#Number">Number</A>)
+       + f-&gt;nkstr*sizeof(<A HREF="lobject.h.html#TString">TString</A> *)
+       + f-&gt;nkproto*sizeof(<A HREF="lobject.h.html#Proto">Proto</A> *)
+       + f-&gt;ncode*sizeof(<A HREF="llimits.h.html#Instruction">Instruction</A>)
+       + f-&gt;nlocvars*sizeof(struct <A HREF="lobject.h.html#LocVar">LocVar</A>)
+       + f-&gt;nlineinfo*sizeof(int);
+}
+
+
+void <A NAME="luaF_protook"><SPAN CLASS="definition">luaF_protook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *f, int pc) {
+  f-&gt;ncode = pc;  /* signal that proto was properly created */
+  L-&gt;nblocks += <A HREF="lfunc.c.html#protosize">protosize</A>(f);
+}
+
+
+void <A NAME="luaF_freeproto"><SPAN CLASS="definition">luaF_freeproto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *f) {
+  if (f-&gt;ncode &gt; 0)  /* function was properly created? */
+    L-&gt;nblocks -= <A HREF="lfunc.c.html#protosize">protosize</A>(f);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f-&gt;code);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f-&gt;locvars);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f-&gt;kstr);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f-&gt;knum);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f-&gt;kproto);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f-&gt;lineinfo);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f);
+}
+
+
+void <A NAME="luaF_freeclosure"><SPAN CLASS="definition">luaF_freeclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Closure">Closure</A> *c) {
+  L-&gt;nblocks -= <A HREF="lfunc.c.html#sizeclosure">sizeclosure</A>(c-&gt;nupvalues);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, c);
+}
+
+
+/*
+** Look for n-th local variable at line `line' in function `func'.
+** Returns NULL if not found.
+*/
+const char *<A NAME="luaF_getlocalname"><SPAN CLASS="definition">luaF_getlocalname</SPAN></A> (const <A HREF="lobject.h.html#Proto">Proto</A> *f, int local_number, int pc) {
+  int i;
+  for (i = 0; i&lt;f-&gt;nlocvars &amp;&amp; f-&gt;locvars[i].startpc &lt;= pc; i++) {
+    if (pc &lt; f-&gt;locvars[i].endpc) {  /* is variable active? */
+      local_number--;
+      if (local_number == 0)
+        return f-&gt;locvars[i].varname-&gt;str;
+    }
+  }
+  return NULL;  /* not found */
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

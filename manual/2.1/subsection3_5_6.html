@@ -1,0 +1,33 @@
+<HEAD>
+<TITLE>5.6 Locking Lua Objects</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B>Up:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B> Previous:</B> <A HREF=subsection3_5_5.html>5.5 C Functions</A>
+<H2><A NAME=S0560>5.6 Locking Lua Objects</A></H2>
+<P>
+As already noted, <TT><B><B>lua_Object</B></B></TT>s are volatile.
+If the C code needs to keep a <TT><B><B>lua_Object</B></B></TT> outside block boundaries,
+it has to <I>lock</I> the object.
+The routines to manipulate locking are the following:
+<TT><B><B><PRE>
+int        lua_lock (void);
+lua_Object lua_getlocked  (int ref);
+void       lua_pushlocked (int ref);
+void       lua_unlock (int ref);</PRE></B></B></TT>
+The function <TT><B><B>lua_lock</B></B></TT> locks the object
+which are on the top of the stack,
+and returns a reference to it.
+Whenever the locked object is needed,
+a call to <TT><B><B>lua_getlocked</B></B></TT>
+returns a handle to it,
+while <TT><B><B>lua_pushlocked</B></B></TT> pushes the handle on the stack.
+When a locked object is no longer needed,
+it can be unlocked with a call to <TT><B><B>lua_unlock</B></B></TT>.
+<P>
+<B> Next:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B>Up:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B> Previous:</B> <A HREF=subsection3_5_5.html>5.5 C Functions</A>
+
+</BODY>

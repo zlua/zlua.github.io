@@ -1,0 +1,103 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - linit.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+linit.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: linit.c,v 1.38 2015/01/05 13:48:33 roberto Exp $
+** Initialization of libraries for lua.c and other clients
+** See Copyright Notice in lua.h
+*/
+
+
+#define <A NAME="linit_c"><SPAN CLASS="definition">linit_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+/*
+** If you embed Lua in your program and need to open the standard
+** libraries, call <A HREF="linit.c.html#luaL_openlibs">luaL_openlibs</A> in your program. If you need a
+** different set of libraries, copy this file to your project and edit
+** it to suit your needs.
+**
+** You can also *preload* libraries, so that a later 'require' can
+** open the library, which is already linked to the application.
+** For that, do the following code:
+**
+**  <A HREF="lauxlib.c.html#luaL_getsubtable">luaL_getsubtable</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, "_PRELOAD");
+**  <A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, luaopen_modname);
+**  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, modname);
+**  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  // remove _PRELOAD table
+*/
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;stddef.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+
+
+/*
+** these libs are loaded by lua.c and are readily available to any Lua
+** program
+*/
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="loadedlibs"><SPAN CLASS="definition">loadedlibs</SPAN></A>[] = {
+  {"_G", <A HREF="lbaselib.c.html#luaopen_base">luaopen_base</A>},
+  {<A HREF="lualib.h.html#LUA_LOADLIBNAME">LUA_LOADLIBNAME</A>, <A HREF="loadlib.c.html#luaopen_package">luaopen_package</A>},
+  {<A HREF="lualib.h.html#LUA_COLIBNAME">LUA_COLIBNAME</A>, <A HREF="lcorolib.c.html#luaopen_coroutine">luaopen_coroutine</A>},
+  {<A HREF="lualib.h.html#LUA_TABLIBNAME">LUA_TABLIBNAME</A>, <A HREF="ltablib.c.html#luaopen_table">luaopen_table</A>},
+  {<A HREF="lualib.h.html#LUA_IOLIBNAME">LUA_IOLIBNAME</A>, <A HREF="liolib.c.html#luaopen_io">luaopen_io</A>},
+  {<A HREF="lualib.h.html#LUA_OSLIBNAME">LUA_OSLIBNAME</A>, <A HREF="loslib.c.html#luaopen_os">luaopen_os</A>},
+  {<A HREF="lualib.h.html#LUA_STRLIBNAME">LUA_STRLIBNAME</A>, <A HREF="lstrlib.c.html#luaopen_string">luaopen_string</A>},
+  {<A HREF="lualib.h.html#LUA_MATHLIBNAME">LUA_MATHLIBNAME</A>, <A HREF="lmathlib.c.html#luaopen_math">luaopen_math</A>},
+  {<A HREF="lualib.h.html#LUA_UTF8LIBNAME">LUA_UTF8LIBNAME</A>, <A HREF="lutf8lib.c.html#luaopen_utf8">luaopen_utf8</A>},
+  {<A HREF="lualib.h.html#LUA_DBLIBNAME">LUA_DBLIBNAME</A>, <A HREF="ldblib.c.html#luaopen_debug">luaopen_debug</A>},
+#if defined(<A HREF="luaconf.h.html#LUA_COMPAT_BITLIB">LUA_COMPAT_BITLIB</A>)
+  {<A HREF="lualib.h.html#LUA_BITLIBNAME">LUA_BITLIBNAME</A>, <A HREF="lbitlib.c.html#luaopen_bit32">luaopen_bit32</A>},
+#endif
+  {NULL, NULL}
+};
+
+
+<A HREF="luaconf.h.html#LUALIB_API">LUALIB_API</A> void <A NAME="luaL_openlibs"><SPAN CLASS="definition">luaL_openlibs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> *lib;
+  /* "require" functions from '<A HREF="linit.c.html#loadedlibs">loadedlibs</A>' and set results to global table */
+  for (lib = <A HREF="linit.c.html#loadedlibs">loadedlibs</A>; lib-&gt;func; lib++) {
+    <A HREF="lauxlib.c.html#luaL_requiref">luaL_requiref</A>(L, lib-&gt;name, lib-&gt;func, 1);
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove lib */
+  }
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

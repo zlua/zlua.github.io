@@ -1,0 +1,80 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lprefix.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lprefix.h
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lprefix.h,v 1.2 2014/12/29 16:54:13 roberto Exp $
+** Definitions for Lua code that must come before any other header file
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lprefix.h.html#lprefix_h">lprefix_h</A>
+#define <A NAME="lprefix_h"><SPAN CLASS="definition">lprefix_h</SPAN></A>
+
+
+/*
+** Allows POSIX/XSI stuff
+*/
+#if !defined(<A HREF="luaconf.h.html#LUA_USE_C89">LUA_USE_C89</A>)       /* { */
+
+#if !defined(<A HREF="lprefix.h.html#_XOPEN_SOURCE">_XOPEN_SOURCE</A>)
+#define <A HREF="lprefix.h.html#_XOPEN_SOURCE">_XOPEN_SOURCE</A>           600
+#elif <A HREF="lprefix.h.html#_XOPEN_SOURCE">_XOPEN_SOURCE</A> == 0
+#undef <A NAME="_XOPEN_SOURCE"><SPAN CLASS="definition">_XOPEN_SOURCE</SPAN></A>  /* use -D_XOPEN_SOURCE=0 to undefine it */
+#endif
+
+/*
+** Allows manipulation of large files in gcc and some other compilers
+*/
+#if !defined(LUA_32BITS) &amp;&amp; !defined(<A HREF="lprefix.h.html#_FILE_OFFSET_BITS">_FILE_OFFSET_BITS</A>)
+#define <A NAME="_LARGEFILE_SOURCE"><SPAN CLASS="definition">_LARGEFILE_SOURCE</SPAN></A>       1
+#define <A NAME="_FILE_OFFSET_BITS"><SPAN CLASS="definition">_FILE_OFFSET_BITS</SPAN></A>       64
+#endif
+
+#endif                          /* } */
+
+
+/*
+** Windows stuff
+*/
+#if defined(_WIN32)     /* { */
+
+#if !defined(<A HREF="lprefix.h.html#_CRT_SECURE_NO_WARNINGS">_CRT_SECURE_NO_WARNINGS</A>)
+#define <A NAME="_CRT_SECURE_NO_WARNINGS"><SPAN CLASS="definition">_CRT_SECURE_NO_WARNINGS</SPAN></A>  /* avoid warnings about ISO C functions */
+#endif
+
+#endif                  /* } */
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:15 2015
+</P>
+
+</BODY>
+</HTML>

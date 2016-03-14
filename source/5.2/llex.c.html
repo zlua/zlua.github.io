@@ -1,0 +1,565 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - llex.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+llex.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: <A HREF="llex.c.html#llex">llex</A>.c,v 2.63.1.3 2015/02/09 17:56:34 roberto Exp $
+** Lexical Analyzer
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;locale.h&gt;
+#include &lt;string.h&gt;
+
+#define <A NAME="llex_c"><SPAN CLASS="definition">llex_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lctype.h.html">lctype.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="llex.h.html">llex.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lparser.h.html">lparser.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+
+#define <A NAME="next"><SPAN CLASS="definition">next</SPAN></A>(ls) (ls-&gt;current = <A HREF="lzio.h.html#zgetc">zgetc</A>(ls-&gt;z))
+
+
+
+#define <A NAME="currIsNewline"><SPAN CLASS="definition">currIsNewline</SPAN></A>(ls)       (ls-&gt;current == '\n' || ls-&gt;current == '\r')
+
+
+/* ORDER <A HREF="llex.h.html#RESERVED">RESERVED</A> */
+static const char *const <A NAME="luaX_tokens"><SPAN CLASS="definition">luaX_tokens</SPAN></A> [] = {
+    "and", "break", "do", "else", "elseif",
+    "end", "false", "for", "function", "goto", "if",
+    "in", "local", "nil", "not", "or", "repeat",
+    "return", "then", "true", "until", "while",
+    "..", "...", "==", "&gt;=", "&lt;=", "~=", "::", "&lt;eof&gt;",
+    "&lt;number&gt;", "&lt;name&gt;", "&lt;string&gt;"
+};
+
+
+#define <A NAME="save_and_next"><SPAN CLASS="definition">save_and_next</SPAN></A>(ls) (<A HREF="llex.c.html#save">save</A>(ls, ls-&gt;current), <A HREF="llex.c.html#next">next</A>(ls))
+
+
+static <A HREF="llimits.h.html#l_noret">l_noret</A> <A HREF="llex.c.html#lexerror">lexerror</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *msg, int token);
+
+
+static void <A NAME="save"><SPAN CLASS="definition">save</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int c) {
+  <A HREF="lzio.h.html#Mbuffer">Mbuffer</A> *b = ls-&gt;buff;
+  if (<A HREF="lzio.h.html#luaZ_bufflen">luaZ_bufflen</A>(b) + 1 &gt; <A HREF="lzio.h.html#luaZ_sizebuffer">luaZ_sizebuffer</A>(b)) {
+    size_t newsize;
+    if (<A HREF="lzio.h.html#luaZ_sizebuffer">luaZ_sizebuffer</A>(b) &gt;= <A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A>/2)
+      <A HREF="llex.c.html#lexerror">lexerror</A>(ls, "lexical element too long", 0);
+    newsize = <A HREF="lzio.h.html#luaZ_sizebuffer">luaZ_sizebuffer</A>(b) * 2;
+    <A HREF="lzio.h.html#luaZ_resizebuffer">luaZ_resizebuffer</A>(ls-&gt;L, b, newsize);
+  }
+  b-&gt;buffer[<A HREF="lzio.h.html#luaZ_bufflen">luaZ_bufflen</A>(b)++] = <A HREF="llimits.h.html#cast">cast</A>(char, c);
+}
+
+
+void <A NAME="luaX_init"><SPAN CLASS="definition">luaX_init</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int i;
+  for (i=0; i&lt;<A HREF="llex.h.html#NUM_RESERVED">NUM_RESERVED</A>; i++) {
+    <A HREF="lobject.h.html#TString">TString</A> *ts = <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, <A HREF="llex.c.html#luaX_tokens">luaX_tokens</A>[i]);
+    <A HREF="lstring.h.html#luaS_fix">luaS_fix</A>(ts);  /* reserved words are never collected */
+    ts-&gt;tsv.extra = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(i+1);  /* reserved word */
+  }
+}
+
+
+const char *<A NAME="luaX_token2str"><SPAN CLASS="definition">luaX_token2str</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int token) {
+  if (token &lt; <A HREF="llex.h.html#FIRST_RESERVED">FIRST_RESERVED</A>) {  /* single-byte symbols? */
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(token == <A HREF="llimits.h.html#cast">cast</A>(unsigned char, token));
+    return (<A HREF="lctype.h.html#lisprint">lisprint</A>(token)) ? <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(ls-&gt;L, <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("%c"), token) :
+                              <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(ls-&gt;L, "char(%d)", token);
+  }
+  else {
+    const char *s = <A HREF="llex.c.html#luaX_tokens">luaX_tokens</A>[token - <A HREF="llex.h.html#FIRST_RESERVED">FIRST_RESERVED</A>];
+    if (token &lt; <A HREF="llex.h.html#TK_EOS">TK_EOS</A>)  /* fixed format (symbols and reserved words)? */
+      return <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(ls-&gt;L, <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A>, s);
+    else  /* names, strings, and numerals */
+      return s;
+  }
+}
+
+
+static const char *<A NAME="txtToken"><SPAN CLASS="definition">txtToken</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int token) {
+  switch (token) {
+    case <A HREF="llex.h.html#TK_NAME">TK_NAME</A>:
+    case <A HREF="llex.h.html#TK_STRING">TK_STRING</A>:
+    case <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>:
+      <A HREF="llex.c.html#save">save</A>(ls, '\0');
+      return <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(ls-&gt;L, <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A>, <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(ls-&gt;buff));
+    default:
+      return <A HREF="llex.c.html#luaX_token2str">luaX_token2str</A>(ls, token);
+  }
+}
+
+
+static <A HREF="llimits.h.html#l_noret">l_noret</A> <A NAME="lexerror"><SPAN CLASS="definition">lexerror</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *msg, int token) {
+  char buff[<A HREF="luaconf.h.html#LUA_IDSIZE">LUA_IDSIZE</A>];
+  <A HREF="lobject.c.html#luaO_chunkid">luaO_chunkid</A>(buff, <A HREF="lobject.h.html#getstr">getstr</A>(ls-&gt;source), <A HREF="luaconf.h.html#LUA_IDSIZE">LUA_IDSIZE</A>);
+  msg = <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(ls-&gt;L, "%s:%d: %s", buff, ls-&gt;linenumber, msg);
+  if (token)
+    <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(ls-&gt;L, "%s near %s", msg, <A HREF="llex.c.html#txtToken">txtToken</A>(ls, token));
+  <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(ls-&gt;L, <A HREF="lua.h.html#LUA_ERRSYNTAX">LUA_ERRSYNTAX</A>);
+}
+
+
+<A HREF="llimits.h.html#l_noret">l_noret</A> <A NAME="luaX_syntaxerror"><SPAN CLASS="definition">luaX_syntaxerror</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *msg) {
+  <A HREF="llex.c.html#lexerror">lexerror</A>(ls, msg, ls-&gt;t.token);
+}
+
+
+/*
+** creates a new string and anchors it in function's table so that
+** it will not be collected until the end of the function's compilation
+** (by that time it should be anchored in function's prototype)
+*/
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaX_newstring"><SPAN CLASS="definition">luaX_newstring</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *str, size_t l) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L = ls-&gt;L;
+  <A HREF="lobject.h.html#TValue">TValue</A> *o;  /* entry for `str' */
+  <A HREF="lobject.h.html#TString">TString</A> *ts = <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, str, l);  /* create new string */
+  <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top++, ts);  /* temporarily anchor it in stack */
+  o = <A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, ls-&gt;fs-&gt;h, L-&gt;top - 1);
+  if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(o)) {  /* not in use yet? (see 'addK') */
+    /* boolean value does not need GC barrier;
+       table has no metatable, so it does not need to invalidate cache */
+    <A HREF="lobject.h.html#setbvalue">setbvalue</A>(o, 1);  /* t[string] = true */
+    <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+  }
+  else {  /* string already present */
+    ts = <A HREF="lobject.h.html#rawtsvalue">rawtsvalue</A>(<A HREF="ltable.h.html#keyfromval">keyfromval</A>(o));  /* re-use value previously stored */
+  }
+  L-&gt;top--;  /* remove string from stack */
+  return ts;
+}
+
+
+/*
+** increment line number and skips newline sequence (any of
+** \n, \r, \n\r, or \r\n)
+*/
+static void <A NAME="inclinenumber"><SPAN CLASS="definition">inclinenumber</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  int old = ls-&gt;current;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="llex.c.html#currIsNewline">currIsNewline</A>(ls));
+  <A HREF="llex.c.html#next">next</A>(ls);  /* skip `\n' or `\r' */
+  if (<A HREF="llex.c.html#currIsNewline">currIsNewline</A>(ls) &amp;&amp; ls-&gt;current != old)
+    <A HREF="llex.c.html#next">next</A>(ls);  /* skip `\n\r' or `\r\n' */
+  if (++ls-&gt;linenumber &gt;= <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>)
+    <A HREF="llex.c.html#lexerror">lexerror</A>(ls, "chunk has too many lines", 0);
+}
+
+
+void <A NAME="luaX_setinput"><SPAN CLASS="definition">luaX_setinput</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lzio.h.html#ZIO">ZIO</A> *z, <A HREF="lobject.h.html#TString">TString</A> *source,
+                    int firstchar) {
+  ls-&gt;decpoint = '.';
+  ls-&gt;L = L;
+  ls-&gt;current = firstchar;
+  ls-&gt;lookahead.token = <A HREF="llex.h.html#TK_EOS">TK_EOS</A>;  /* no look-ahead token */
+  ls-&gt;z = z;
+  ls-&gt;fs = NULL;
+  ls-&gt;linenumber = 1;
+  ls-&gt;lastline = 1;
+  ls-&gt;source = source;
+  ls-&gt;envn = <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, <A HREF="luaconf.h.html#LUA_ENV">LUA_ENV</A>);  /* create env name */
+  <A HREF="lstring.h.html#luaS_fix">luaS_fix</A>(ls-&gt;envn);  /* never collect this name */
+  <A HREF="lzio.h.html#luaZ_resizebuffer">luaZ_resizebuffer</A>(ls-&gt;L, ls-&gt;buff, <A HREF="llimits.h.html#LUA_MINBUFFER">LUA_MINBUFFER</A>);  /* initialize buffer */
+}
+
+
+
+/*
+** =======================================================
+** LEXICAL ANALYZER
+** =======================================================
+*/
+
+
+
+static int <A NAME="check_next"><SPAN CLASS="definition">check_next</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *set) {
+  if (ls-&gt;current == '\0' || !strchr(set, ls-&gt;current))
+    return 0;
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+  return 1;
+}
+
+
+/*
+** change all characters 'from' in buffer to 'to'
+*/
+static void <A NAME="buffreplace"><SPAN CLASS="definition">buffreplace</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, char from, char to) {
+  size_t n = <A HREF="lzio.h.html#luaZ_bufflen">luaZ_bufflen</A>(ls-&gt;buff);
+  char *p = <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(ls-&gt;buff);
+  while (n--)
+    if (p[n] == from) p[n] = to;
+}
+
+
+#if !defined(<A HREF="llex.c.html#getlocaledecpoint">getlocaledecpoint</A>)
+#define <A NAME="getlocaledecpoint"><SPAN CLASS="definition">getlocaledecpoint</SPAN></A>()     (localeconv()-&gt;decimal_point[0])
+#endif
+
+
+#define <A NAME="buff2d"><SPAN CLASS="definition">buff2d</SPAN></A>(b,e)     <A HREF="lobject.c.html#luaO_str2d">luaO_str2d</A>(<A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(b), <A HREF="lzio.h.html#luaZ_bufflen">luaZ_bufflen</A>(b) - 1, e)
+
+/*
+** in case of format error, try to change decimal point separator to
+** the one defined in the current locale and check again
+*/
+static void <A NAME="trydecpoint"><SPAN CLASS="definition">trydecpoint</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo) {
+  char old = ls-&gt;decpoint;
+  ls-&gt;decpoint = <A HREF="llex.c.html#getlocaledecpoint">getlocaledecpoint</A>();
+  <A HREF="llex.c.html#buffreplace">buffreplace</A>(ls, old, ls-&gt;decpoint);  /* try new decimal separator */
+  if (!<A HREF="llex.c.html#buff2d">buff2d</A>(ls-&gt;buff, &amp;seminfo-&gt;r)) {
+    /* format error with correct decimal point: no more options */
+    <A HREF="llex.c.html#buffreplace">buffreplace</A>(ls, ls-&gt;decpoint, '.');  /* undo change (for error message) */
+    <A HREF="llex.c.html#lexerror">lexerror</A>(ls, "malformed number", <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>);
+  }
+}
+
+
+/* <A HREF="luaconf.h.html#LUA_NUMBER">LUA_NUMBER</A> */
+/*
+** this function is quite liberal in what it accepts, as '<A HREF="lobject.c.html#luaO_str2d">luaO_str2d</A>'
+** will reject ill-formed numerals.
+*/
+static void <A NAME="read_numeral"><SPAN CLASS="definition">read_numeral</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo) {
+  const char *expo = "Ee";
+  int first = ls-&gt;current;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lctype.h.html#lisdigit">lisdigit</A>(ls-&gt;current));
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+  if (first == '0' &amp;&amp; <A HREF="llex.c.html#check_next">check_next</A>(ls, "Xx"))  /* hexadecimal? */
+    expo = "Pp";
+  for (;;) {
+    if (<A HREF="llex.c.html#check_next">check_next</A>(ls, expo))  /* exponent part? */
+      <A HREF="llex.c.html#check_next">check_next</A>(ls, "+-");  /* optional exponent sign */
+    if (<A HREF="lctype.h.html#lisxdigit">lisxdigit</A>(ls-&gt;current) || ls-&gt;current == '.')
+      <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+    else  break;
+  }
+  <A HREF="llex.c.html#save">save</A>(ls, '\0');
+  <A HREF="llex.c.html#buffreplace">buffreplace</A>(ls, '.', ls-&gt;decpoint);  /* follow locale for decimal point */
+  if (!<A HREF="llex.c.html#buff2d">buff2d</A>(ls-&gt;buff, &amp;seminfo-&gt;r))  /* format error? */
+    <A HREF="llex.c.html#trydecpoint">trydecpoint</A>(ls, seminfo); /* try to update decimal point separator */
+}
+
+
+/*
+** skip a sequence '[=*[' or ']=*]' and return its number of '='s or
+** -1 if sequence is malformed
+*/
+static int <A NAME="skip_sep"><SPAN CLASS="definition">skip_sep</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  int count = 0;
+  int s = ls-&gt;current;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(s == '[' || s == ']');
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+  while (ls-&gt;current == '=') {
+    <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+    count++;
+  }
+  return (ls-&gt;current == s) ? count : (-count) - 1;
+}
+
+
+static void <A NAME="read_long_string"><SPAN CLASS="definition">read_long_string</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo, int sep) {
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);  /* skip 2nd `[' */
+  if (<A HREF="llex.c.html#currIsNewline">currIsNewline</A>(ls))  /* string starts with a newline? */
+    <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(ls);  /* skip it */
+  for (;;) {
+    switch (ls-&gt;current) {
+      case <A HREF="lzio.h.html#EOZ">EOZ</A>:
+        <A HREF="llex.c.html#lexerror">lexerror</A>(ls, (seminfo) ? "unfinished long string" :
+                                 "unfinished long comment", <A HREF="llex.h.html#TK_EOS">TK_EOS</A>);
+        break;  /* to avoid warnings */
+      case ']': {
+        if (<A HREF="llex.c.html#skip_sep">skip_sep</A>(ls) == sep) {
+          <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);  /* skip 2nd `]' */
+          goto endloop;
+        }
+        break;
+      }
+      case '\n': case '\r': {
+        <A HREF="llex.c.html#save">save</A>(ls, '\n');
+        <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(ls);
+        if (!seminfo) <A HREF="lzio.h.html#luaZ_resetbuffer">luaZ_resetbuffer</A>(ls-&gt;buff);  /* avoid wasting space */
+        break;
+      }
+      default: {
+        if (seminfo) <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+        else <A HREF="llex.c.html#next">next</A>(ls);
+      }
+    }
+  } endloop:
+  if (seminfo)
+    seminfo-&gt;ts = <A HREF="llex.c.html#luaX_newstring">luaX_newstring</A>(ls, <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(ls-&gt;buff) + (2 + sep),
+                                     <A HREF="lzio.h.html#luaZ_bufflen">luaZ_bufflen</A>(ls-&gt;buff) - 2*(2 + sep));
+}
+
+
+static void <A NAME="escerror"><SPAN CLASS="definition">escerror</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int *c, int n, const char *msg) {
+  int i;
+  <A HREF="lzio.h.html#luaZ_resetbuffer">luaZ_resetbuffer</A>(ls-&gt;buff);  /* prepare error message */
+  <A HREF="llex.c.html#save">save</A>(ls, '\\');
+  for (i = 0; i &lt; n &amp;&amp; c[i] != <A HREF="lzio.h.html#EOZ">EOZ</A>; i++)
+    <A HREF="llex.c.html#save">save</A>(ls, c[i]);
+  <A HREF="llex.c.html#lexerror">lexerror</A>(ls, msg, <A HREF="llex.h.html#TK_STRING">TK_STRING</A>);
+}
+
+
+static int <A NAME="readhexaesc"><SPAN CLASS="definition">readhexaesc</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  int c[3], i;  /* keep input for error message */
+  int r = 0;  /* result accumulator */
+  c[0] = 'x';  /* for error message */
+  for (i = 1; i &lt; 3; i++) {  /* read two hexadecimal digits */
+    c[i] = <A HREF="llex.c.html#next">next</A>(ls);
+    if (!<A HREF="lctype.h.html#lisxdigit">lisxdigit</A>(c[i]))
+      <A HREF="llex.c.html#escerror">escerror</A>(ls, c, i + 1, "hexadecimal digit expected");
+    r = (r &lt;&lt; 4) + <A HREF="lobject.c.html#luaO_hexavalue">luaO_hexavalue</A>(c[i]);
+  }
+  return r;
+}
+
+
+static int <A NAME="readdecesc"><SPAN CLASS="definition">readdecesc</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  int c[3], i;
+  int r = 0;  /* result accumulator */
+  for (i = 0; i &lt; 3 &amp;&amp; <A HREF="lctype.h.html#lisdigit">lisdigit</A>(ls-&gt;current); i++) {  /* read up to 3 digits */
+    c[i] = ls-&gt;current;
+    r = 10*r + c[i] - '0';
+    <A HREF="llex.c.html#next">next</A>(ls);
+  }
+  if (r &gt; UCHAR_MAX)
+    <A HREF="llex.c.html#escerror">escerror</A>(ls, c, i, "decimal escape too large");
+  return r;
+}
+
+
+static void <A NAME="read_string"><SPAN CLASS="definition">read_string</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int del, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo) {
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);  /* keep delimiter (for error messages) */
+  while (ls-&gt;current != del) {
+    switch (ls-&gt;current) {
+      case <A HREF="lzio.h.html#EOZ">EOZ</A>:
+        <A HREF="llex.c.html#lexerror">lexerror</A>(ls, "unfinished string", <A HREF="llex.h.html#TK_EOS">TK_EOS</A>);
+        break;  /* to avoid warnings */
+      case '\n':
+      case '\r':
+        <A HREF="llex.c.html#lexerror">lexerror</A>(ls, "unfinished string", <A HREF="llex.h.html#TK_STRING">TK_STRING</A>);
+        break;  /* to avoid warnings */
+      case '\\': {  /* escape sequences */
+        int c;  /* final character to be saved */
+        <A HREF="llex.c.html#next">next</A>(ls);  /* do not <A HREF="llex.c.html#save">save</A> the `\' */
+        switch (ls-&gt;current) {
+          case 'a': c = '\a'; goto read_save;
+          case 'b': c = '\b'; goto read_save;
+          case 'f': c = '\f'; goto read_save;
+          case 'n': c = '\n'; goto read_save;
+          case 'r': c = '\r'; goto read_save;
+          case 't': c = '\t'; goto read_save;
+          case 'v': c = '\v'; goto read_save;
+          case 'x': c = <A HREF="llex.c.html#readhexaesc">readhexaesc</A>(ls); goto read_save;
+          case '\n': case '\r':
+            <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(ls); c = '\n'; goto only_save;
+          case '\\': case '\"': case '\'':
+            c = ls-&gt;current; goto read_save;
+          case <A HREF="lzio.h.html#EOZ">EOZ</A>: goto no_save;  /* will raise an error <A HREF="llex.c.html#next">next</A> loop */
+          case 'z': {  /* zap following span of spaces */
+            <A HREF="llex.c.html#next">next</A>(ls);  /* skip the 'z' */
+            while (<A HREF="lctype.h.html#lisspace">lisspace</A>(ls-&gt;current)) {
+              if (<A HREF="llex.c.html#currIsNewline">currIsNewline</A>(ls)) <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(ls);
+              else <A HREF="llex.c.html#next">next</A>(ls);
+            }
+            goto no_save;
+          }
+          default: {
+            if (!<A HREF="lctype.h.html#lisdigit">lisdigit</A>(ls-&gt;current))
+              <A HREF="llex.c.html#escerror">escerror</A>(ls, &amp;ls-&gt;current, 1, "invalid escape sequence");
+            /* digital escape \ddd */
+            c = <A HREF="llex.c.html#readdecesc">readdecesc</A>(ls);
+            goto only_save;
+          }
+        }
+       read_save: <A HREF="llex.c.html#next">next</A>(ls);  /* read <A HREF="llex.c.html#next">next</A> character */
+       only_save: <A HREF="llex.c.html#save">save</A>(ls, c);  /* <A HREF="llex.c.html#save">save</A> 'c' */
+       no_save: break;
+      }
+      default:
+        <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+    }
+  }
+  <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);  /* skip delimiter */
+  seminfo-&gt;ts = <A HREF="llex.c.html#luaX_newstring">luaX_newstring</A>(ls, <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(ls-&gt;buff) + 1,
+                                   <A HREF="lzio.h.html#luaZ_bufflen">luaZ_bufflen</A>(ls-&gt;buff) - 2);
+}
+
+
+static int <A NAME="llex"><SPAN CLASS="definition">llex</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="llex.h.html#SemInfo">SemInfo</A> *seminfo) {
+  <A HREF="lzio.h.html#luaZ_resetbuffer">luaZ_resetbuffer</A>(ls-&gt;buff);
+  for (;;) {
+    switch (ls-&gt;current) {
+      case '\n': case '\r': {  /* line breaks */
+        <A HREF="llex.c.html#inclinenumber">inclinenumber</A>(ls);
+        break;
+      }
+      case ' ': case '\f': case '\t': case '\v': {  /* spaces */
+        <A HREF="llex.c.html#next">next</A>(ls);
+        break;
+      }
+      case '-': {  /* '-' or '--' (comment) */
+        <A HREF="llex.c.html#next">next</A>(ls);
+        if (ls-&gt;current != '-') return '-';
+        /* else is a comment */
+        <A HREF="llex.c.html#next">next</A>(ls);
+        if (ls-&gt;current == '[') {  /* long comment? */
+          int sep = <A HREF="llex.c.html#skip_sep">skip_sep</A>(ls);
+          <A HREF="lzio.h.html#luaZ_resetbuffer">luaZ_resetbuffer</A>(ls-&gt;buff);  /* `<A HREF="llex.c.html#skip_sep">skip_sep</A>' may dirty the buffer */
+          if (sep &gt;= 0) {
+            <A HREF="llex.c.html#read_long_string">read_long_string</A>(ls, NULL, sep);  /* skip long comment */
+            <A HREF="lzio.h.html#luaZ_resetbuffer">luaZ_resetbuffer</A>(ls-&gt;buff);  /* previous call may dirty the buff. */
+            break;
+          }
+        }
+        /* else short comment */
+        while (!<A HREF="llex.c.html#currIsNewline">currIsNewline</A>(ls) &amp;&amp; ls-&gt;current != <A HREF="lzio.h.html#EOZ">EOZ</A>)
+          <A HREF="llex.c.html#next">next</A>(ls);  /* skip until end of line (or end of file) */
+        break;
+      }
+      case '[': {  /* long string or simply '[' */
+        int sep = <A HREF="llex.c.html#skip_sep">skip_sep</A>(ls);
+        if (sep &gt;= 0) {
+          <A HREF="llex.c.html#read_long_string">read_long_string</A>(ls, seminfo, sep);
+          return <A HREF="llex.h.html#TK_STRING">TK_STRING</A>;
+        }
+        else if (sep == -1) return '[';
+        else <A HREF="llex.c.html#lexerror">lexerror</A>(ls, "invalid long string delimiter", <A HREF="llex.h.html#TK_STRING">TK_STRING</A>);
+      }
+      case '=': {
+        <A HREF="llex.c.html#next">next</A>(ls);
+        if (ls-&gt;current != '=') return '=';
+        else { <A HREF="llex.c.html#next">next</A>(ls); return <A HREF="llex.h.html#TK_EQ">TK_EQ</A>; }
+      }
+      case '&lt;': {
+        <A HREF="llex.c.html#next">next</A>(ls);
+        if (ls-&gt;current != '=') return '&lt;';
+        else { <A HREF="llex.c.html#next">next</A>(ls); return <A HREF="llex.h.html#TK_LE">TK_LE</A>; }
+      }
+      case '&gt;': {
+        <A HREF="llex.c.html#next">next</A>(ls);
+        if (ls-&gt;current != '=') return '&gt;';
+        else { <A HREF="llex.c.html#next">next</A>(ls); return <A HREF="llex.h.html#TK_GE">TK_GE</A>; }
+      }
+      case '~': {
+        <A HREF="llex.c.html#next">next</A>(ls);
+        if (ls-&gt;current != '=') return '~';
+        else { <A HREF="llex.c.html#next">next</A>(ls); return <A HREF="llex.h.html#TK_NE">TK_NE</A>; }
+      }
+      case ':': {
+        <A HREF="llex.c.html#next">next</A>(ls);
+        if (ls-&gt;current != ':') return ':';
+        else { <A HREF="llex.c.html#next">next</A>(ls); return <A HREF="llex.h.html#TK_DBCOLON">TK_DBCOLON</A>; }
+      }
+      case '"': case '\'': {  /* short literal strings */
+        <A HREF="llex.c.html#read_string">read_string</A>(ls, ls-&gt;current, seminfo);
+        return <A HREF="llex.h.html#TK_STRING">TK_STRING</A>;
+      }
+      case '.': {  /* '.', '..', '...', or number */
+        <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+        if (<A HREF="llex.c.html#check_next">check_next</A>(ls, ".")) {
+          if (<A HREF="llex.c.html#check_next">check_next</A>(ls, "."))
+            return <A HREF="llex.h.html#TK_DOTS">TK_DOTS</A>;   /* '...' */
+          else return <A HREF="llex.h.html#TK_CONCAT">TK_CONCAT</A>;   /* '..' */
+        }
+        else if (!<A HREF="lctype.h.html#lisdigit">lisdigit</A>(ls-&gt;current)) return '.';
+        /* else go through */
+      }
+      case '0': case '1': case '2': case '3': case '4':
+      case '5': case '6': case '7': case '8': case '9': {
+        <A HREF="llex.c.html#read_numeral">read_numeral</A>(ls, seminfo);
+        return <A HREF="llex.h.html#TK_NUMBER">TK_NUMBER</A>;
+      }
+      case <A HREF="lzio.h.html#EOZ">EOZ</A>: {
+        return <A HREF="llex.h.html#TK_EOS">TK_EOS</A>;
+      }
+      default: {
+        if (<A HREF="lctype.h.html#lislalpha">lislalpha</A>(ls-&gt;current)) {  /* identifier or reserved word? */
+          <A HREF="lobject.h.html#TString">TString</A> *ts;
+          do {
+            <A HREF="llex.c.html#save_and_next">save_and_next</A>(ls);
+          } while (<A HREF="lctype.h.html#lislalnum">lislalnum</A>(ls-&gt;current));
+          ts = <A HREF="llex.c.html#luaX_newstring">luaX_newstring</A>(ls, <A HREF="lzio.h.html#luaZ_buffer">luaZ_buffer</A>(ls-&gt;buff),
+                                  <A HREF="lzio.h.html#luaZ_bufflen">luaZ_bufflen</A>(ls-&gt;buff));
+          seminfo-&gt;ts = ts;
+          if (<A HREF="lstring.h.html#isreserved">isreserved</A>(ts))  /* reserved word? */
+            return ts-&gt;tsv.extra - 1 + <A HREF="llex.h.html#FIRST_RESERVED">FIRST_RESERVED</A>;
+          else {
+            return <A HREF="llex.h.html#TK_NAME">TK_NAME</A>;
+          }
+        }
+        else {  /* single-char tokens (+ - / ...) */
+          int c = ls-&gt;current;
+          <A HREF="llex.c.html#next">next</A>(ls);
+          return c;
+        }
+      }
+    }
+  }
+}
+
+
+void <A NAME="luaX_next"><SPAN CLASS="definition">luaX_next</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  ls-&gt;lastline = ls-&gt;linenumber;
+  if (ls-&gt;lookahead.token != <A HREF="llex.h.html#TK_EOS">TK_EOS</A>) {  /* is there a look-ahead token? */
+    ls-&gt;t = ls-&gt;lookahead;  /* use this one */
+    ls-&gt;lookahead.token = <A HREF="llex.h.html#TK_EOS">TK_EOS</A>;  /* and discharge it */
+  }
+  else
+    ls-&gt;t.token = <A HREF="llex.c.html#llex">llex</A>(ls, &amp;ls-&gt;t.seminfo);  /* read <A HREF="llex.c.html#next">next</A> token */
+}
+
+
+int <A NAME="luaX_lookahead"><SPAN CLASS="definition">luaX_lookahead</SPAN></A> (<A HREF="llex.h.html#LexState">LexState</A> *ls) {
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ls-&gt;lookahead.token == <A HREF="llex.h.html#TK_EOS">TK_EOS</A>);
+  ls-&gt;lookahead.token = <A HREF="llex.c.html#llex">llex</A>(ls, &amp;ls-&gt;lookahead.seminfo);
+  return ls-&gt;lookahead.token;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

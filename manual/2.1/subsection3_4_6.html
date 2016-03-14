@@ -1,0 +1,53 @@
+<HEAD>
+<TITLE>4.6 Function Definitions</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=subsection3_4_7.html>4.7 Fallbacks</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_5.html>4.5 Expressions</A>
+<H2><A NAME=S0460>4.6 Function Definitions</A></H2>
+<P>
+Functions in Lua can be defined anywhere in the global level of a module.
+The syntax for function definition is:
+<PRE>
+   <I>function</I> ::= <TT><B><B>function</B></B></TT><I> name </I>'(' [<I> parlist1 </I>] ')'<I> block </I><TT><B><B>end</B></B></TT><BR></PRE>
+<P>
+When Lua finds a function definition,
+its body is compiled to intermediate code and stored,
+with type <I>function</I>, into the global variable <TT><B><B>name</B></B></TT>.
+<P>
+Parameters act as local variables,
+initialized with the argument values.
+<PRE>
+   <I>parlist1</I> ::= <I>'name' </I>{ ','<I> name </I>}<BR></PRE>
+<P>
+Results are returned using the <TT><B><B>return</B></B></TT> statement (see Section <A HREF=subsection3_4_4.html#return>4.4.3</A>).
+If control reaches the end of a function without a return instruction,
+the function returns with no results.
+<P>
+There is a special syntax for definition of methods,
+that is, functions which are to be stored in table fields.
+<PRE>
+   <I>function</I> ::= <TT><B><B>function</B></B></TT><I> name </I>':'<I> name </I>'(' [<I> parlist1 </I>] ')'<I> block </I><TT><B><B>end</B></B></TT><BR></PRE>A declaration like
+<TT><B><B><PRE>
+function t:f (...) 
+  ... 
+end</PRE></B></B></TT>
+is equivalent to
+<TT><B><B><PRE>
+function temp (self, ...)
+  ...
+end
+t.f = temp</PRE></B></B></TT>
+that is,
+the function is created with a dummy name and then assigned
+to the field <TT><B><B>f</B></B></TT> of the table <TT><B><B>t</B></B></TT>.
+Moreover, the function gets an extra formal parameter called <TT><B><B>self</B></B></TT>.
+Notice that
+the variable <TT><B><B>t</B></B></TT> must be previously initialized with a table value.
+<P>
+<B> Next:</B> <A HREF=subsection3_4_7.html>4.7 Fallbacks</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_5.html>4.5 Expressions</A>
+
+</BODY>

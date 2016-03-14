@@ -1,0 +1,44 @@
+<HEAD>
+<TITLE>6 Predefined Functions and Libraries</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_6_1.html>6.1 Predefined Functions</A>
+<B>Up:</B> <A HREF=manual.html>Reference Manual of the </A>
+<B> Previous:</B> <A HREF=subsection3_5_6.html>5.6 Locking Lua Objects</A>
+<HR>
+<H1><A NAME=S0600>6 Predefined Functions and Libraries</A></H1>
+<P>
+The set of predefined functions in Lua is small but powerful.
+Most of them provide features that allows some degree of
+reflexivity in the language.
+Many of these features cannot be simulated with the rest of the
+Language nor with the standard API.
+<P>
+The libraries, on the other hand, provide useful routines
+that are implemented directly through the standard API.
+Therefore, they are not necessary to the language,
+and are provided as separated C modules.
+Currently there are three standard libraries:
+<UL><LI> string manipulation;
+<LI> mathematical functions (sin, cos, etc);
+<LI> input and output.
+</UL>
+In order to have access to these libraries,
+the host program must call the functions
+<TT><B>strlib_open</B></TT>, <TT><B>mathlib_open</B></TT>, and <TT><B>iolib_open</B></TT>,
+declared in <TT><B>lualib.h</B></TT>.
+<P>
+<UL> 
+<LI> <A HREF=subsection3_6_1.html#S0610>6.1 Predefined Functions</A>
+<LI> <A HREF=subsection3_6_2.html#S0620>6.2 String Manipulation</A>
+<LI> <A HREF=subsection3_6_3.html#S0630>6.3 Mathematical Functions</A>
+<LI> <A HREF=subsection3_6_4.html#S0640>6.4 I/O Facilities</A>
+</UL>
+<HR>
+<B> Next:</B> <A HREF=subsection3_6_1.html>6.1 Predefined Functions</A>
+<B>Up:</B> <A HREF=manual.html>Reference Manual of the </A>
+<B> Previous:</B> <A HREF=subsection3_5_6.html>5.6 Locking Lua Objects</A>
+<HR>
+
+</BODY>

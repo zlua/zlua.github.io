@@ -1,0 +1,60 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE>5.6 References to Lua Objects</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node20.html">6 Predefined Functions and </A>
+<B>Up:</B> <A HREF="node13.html">5 The Application Program </A>
+<B> Previous:</B> <A HREF="node18.html">5.5 C Functions</A>
+<BR> <HR>
+<H2><A NAME=S560>5.6 References to Lua Objects</A></H2>
+<P>
+As already noted, <TT><B>lua_Object</B></TT>
+s are volatile.
+If the C code needs to keep a <TT><B>lua_Object</B></TT>
+
+outside block boundaries,
+it must create a <I> reference</I> to the object.
+The routines to manipulate references are the following:
+
+
+<B><PRE>int            lua_ref (int lock);
+lua_Object     lua_getref  (int ref);
+void           lua_pushref (int ref);
+void           lua_unref (int ref);
+</PRE></B>
+The function <TT><B>lua_ref</B></TT>
+ creates a reference
+to the object which is on the top of the stack,
+and returns this reference.
+If <TT><B>lock</B></TT>
+ is true, the object is <I> locked</I>:
+that means the object will not be garbage collected.
+Notice that an unlocked reference may be garbage collected.
+Whenever the referenced object is needed,
+a call to <TT><B>lua_getref</B></TT>
+
+returns a handle to it,
+while <TT><B>lua_pushref</B></TT>
+ pushes the object on the stack.
+If the object has been collected,
+<TT><B>lua_getref</B></TT>
+ returns <TT><B>LUA_NOOBJECT</B></TT>
+,
+and <TT><B>lua_pushobject</B></TT>
+ issues an error.
+<P>
+When a reference is no longer needed,
+it can be freed with a call to <TT><B>lua_unref</B></TT>
+.
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node20.html">6 Predefined Functions and </A>
+<B>Up:</B> <A HREF="node13.html">5 The Application Program </A>
+<B> Previous:</B> <A HREF="node18.html">5.5 C Functions</A>
+<BR> <HR>

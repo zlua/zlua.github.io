@@ -1,0 +1,60 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE>4.1 Lexical Conventions</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node6.html">4.2 Coercion</A>
+<B>Up:</B> <A HREF="node4.html">4 The Language</A>
+<B> Previous:</B> <A HREF="node4.html">4 The Language</A>
+<BR> <HR>
+<H2><A NAME=S410>4.1 Lexical Conventions</A></H2>
+ <A NAME=lexical></A>
+<P>
+Lua is a case sensitive language.
+Identifiers can be any string of letters, digits, and underscores,
+not beginning with a digit.
+The following words are reserved, and cannot be used as identifiers:
+
+<B><PRE>         and      do        else      elseif    end
+         function if        local     nil       not
+         or       repeat    return    until     then    while
+</PRE></B>
+<P>
+The following strings denote other tokens:
+<B><PRE>         ~=  &lt;=  &gt;=  &lt;   &gt;   ==  =   ..  +   -   *   /
+         %   (   )   {   }   [   ]   ;   ,   .
+</PRE></B>
+<P>
+Literal strings can be delimited by matching single or double quotes,
+and can contain the C-like escape sequences
+<TT><B>'\n'</B></TT>
+, <TT><B>'\t'</B></TT>
+ and <TT><B>'\r'</B></TT>
+.
+Literal strings can also be delimited by matching <TT><B>[[ ... ]]</B></TT>
+.
+Literals in this last form may run for several lines,
+may contain nested <TT><B>[[ ... ]]</B></TT>
+,
+and do not interpret escape sequences.
+<P>
+Comments start anywhere outside a string with a
+double hyphen (<TT><B>--</B></TT>
+) and run until the end of the line.
+<P>
+Numerical constants may be written with an optional decimal part,
+and an optional decimal exponent.
+Examples of valid numerical constants are:
+<B><PRE>       4     4.0     0.4     4.57e-3     0.3e12
+</PRE></B>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node6.html">4.2 Coercion</A>
+<B>Up:</B> <A HREF="node4.html">4 The Language</A>
+<B> Previous:</B> <A HREF="node4.html">4 The Language</A>
+<BR> <HR>

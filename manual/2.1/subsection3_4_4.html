@@ -1,0 +1,100 @@
+<HEAD>
+<TITLE>4.4 Statements</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=subsection3_4_5.html>4.5 Expressions</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_3.html>4.3 Adjustment</A>
+<H2><A NAME=S0440>4.4 Statements</A></H2>
+<P>
+Lua supports an almost conventional set of statements.
+The conventional commands include
+assignment, control structures and procedure calls.
+Non-conventional commands include table constructors,
+explained in Section <A HREF=subsection3_4_5.html#tableconstructor>4.5.7</A>,
+and local variable declarations.
+<P>
+<H3><A NAME=S0441>4.4.1 Blocks</A></H3>
+<P>
+A block is a list of statements, executed sequentially.
+Any statement can be optionally followed by a semicolon.
+<PRE>
+   <I>block</I> ::= {<I> stat sc </I>} [<I> ret sc </I>]<BR>   <I>sc</I> ::= [ ';' ]<BR></PRE>For syntactic reasons, a return statement can only be written
+as the last statement of a block.
+This restriction also avoids some ``statement not reached'' errors.
+<P>
+<H3><A NAME=S0442>4.4.2 Assignment</A></H3>
+ <A NAME=assignment></A>
+The language allows multiple assignment.
+Therefore, the syntax defines a list of variables on the left side,
+and a list of expressions on the right side.
+Both lists have their elements separated by commas.
+<PRE>
+   <I>stat</I> ::= <I>varlist1 </I>'='<I> explist1</I><BR>   <I>varlist1</I> ::= <I>var </I>{ ','<I> var </I>}<BR></PRE>This statement first evaluates all values on the right side
+and eventual indices on the left side,
+and then makes the assignments.
+Therefore, it can be used to exchange two values, as in
+<TT><B><B><PRE>
+   x, y = y, x</PRE></B></B></TT>
+Before the assignment, the list of values is <I>adjusted</I> to
+the length of the list of variables; see Section <A HREF=subsection3_4_3.html#adjust>4.3</A>.
+<P>
+<PRE>
+   <I>var</I> ::= <I>name</I><BR></PRE>A single name can denote a global or a local variable,
+or a formal parameter.
+<PRE>
+   <I>var</I> ::= <I>var </I>'['<I> exp1 </I>']'<BR></PRE>Square brackets are used to index a table.
+If <TT><B><B>var</B></B></TT> results in a table value,
+the field indexed by the expression value gets the assigned value.
+Otherwise, the fallback <I>settable</I> is called,
+with three parameters: the value of <TT><B><B>var</B></B></TT>,
+the value of expression, and the value being assigned to it;
+see Section <A HREF=subsection3_4_7.html#fallback>4.7</A>.
+<PRE>
+   <I>var</I> ::= <I>var </I>'.'<I> name</I><BR></PRE>The syntax <TT><B><B>var.NAME</B></B></TT> is just syntactic sugar for
+<TT><B><B>var["NAME"]</B></B></TT>.
+<P>
+<H3><A NAME=S0443>4.4.3 Control Structures</A></H3>
+<P>
+The condition expression of a control structure can return any value.
+All values different from <B>nil</B> are considered true,
+while <B>nil</B> is considered false.
+<TT><B><B>if</B></B></TT>'s, <TT><B><B>while</B></B></TT>'s and <TT><B><B>repeat</B></B></TT>'s have the usual meaning.
+<P>
+<PRE>
+   <I>stat</I> ::= <TT><B><B>while</B></B></TT><I> exp1 </I><TT><B><B>do</B></B></TT><I> block </I><TT><B><B>end</B></B></TT><I> 
+          </I>| <TT><B><B>repeat</B></B></TT><I> block </I><TT><B><B>until</B></B></TT><I> exp1 
+          </I>| <TT><B><B>if</B></B></TT><I> exp1 </I><TT><B><B>then</B></B></TT><I> block </I>{<I> elseif </I>} [ <TT><B><B>else</B></B></TT><I> block </I>] <TT><B><B>end</B></B></TT><BR>   <I>elseif</I> ::= <TT><B><B>elseif</B></B></TT><I> exp1 </I><TT><B><B>then</B></B></TT><I> block</I><BR></PRE>
+<P>
+A <TT><B><B>return</B></B></TT> is used to return values from a function. <A NAME=return></A>
+Because a function may return more than one value,
+the syntax for a return statement is:
+<PRE>
+   <I>ret</I> ::= <TT><B><B>return</B></B></TT><I> explist</I><BR></PRE>
+<P>
+<H3><A NAME=S0444>4.4.4 Expressions as Statements</A></H3>
+ <A NAME=statexp></A>
+All expressions with possible side-effects can be
+executed as statements.
+These include function calls and table constructors:
+<PRE>
+   <I>stat</I> ::= <I>functioncall</I><BR>   <I>stat</I> ::= <I>tableconstructor</I><BR></PRE>Eventual returned values are thrown away.
+Function calls are explained in Section <A HREF=subsection3_4_5.html#functioncall>4.5.8</A>;
+constructors are the subject of Section <A HREF=subsection3_4_5.html#tableconstructor>4.5.7</A>.
+<P>
+<H3><A NAME=S0445>4.4.5 Local Declarations</A></H3>
+ <A NAME=localvar></A>
+Local variables can be declared anywhere inside a block.
+Their scope begins after the declaration and lasts until the
+end of the block.
+The declaration may include an initial assignment:
+<PRE>
+   <I>stat</I> ::= <TT><B><B>local</B></B></TT><I> declist </I>[<I> init </I>]<BR>   <I>declist</I> ::= <I>name </I>{ ','<I> name </I>}<BR>   <I>init</I> ::= '='<I> explist1</I><BR></PRE>If there is an initial assignment, it has the same semantics
+of a multiple assignment.
+Otherwise, all variables are initialized with <B>nil</B>.
+<P>
+<B> Next:</B> <A HREF=subsection3_4_5.html>4.5 Expressions</A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_3.html>4.3 Adjustment</A>
+
+</BODY>

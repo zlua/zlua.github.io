@@ -1,0 +1,158 @@
+<HTML>
+<HEAD>
+<TITLE>Lua: technical note 6</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+</HEAD>
+
+<BODY>
+
+<HR>
+<H1>
+<A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua" BORDER=0></A>
+Technical Note 6
+</H1>
+
+<H2>Weak references: implementation and use in Lua</H2>
+by <A HREF="mailto:john@neggie.net">John Belmonte</A>
+
+<H2>Overview</H2>
+In computer languages such as Lua that employ garbage collection, a reference to an object is said to be <I>weak</I> if it does not prevent collection of the object.  Weak references are useful for determining when an object has been collected and for caching objects without impeding their collection.
+<P>
+Although weak references are available in the Lua C API, there is no standard support in the Lua language itself.  This note proposes an interface for weak references in Lua, describes an implementation, and also presents some practical examples of their use: safe destructor events for table objects and object caching.
+<P>
+<H2>Interface</H2>
+Here is a synopsis of the proposed interface:
+<PRE>
+    -- creation
+    ref = weakref(obj)
+    -- dereference
+    obj = ref()
+</PRE>
+That is, a new global function named "weakref" is used to create a weak reference to an object.  Weak references can be dereferenced using the function call operator.  A dereference returning nil means that the object has been garbage collected.  Since nil has this special meaning weak references to the nil object itself are not allowed.
+<P>
+<H2>Implementation</H2>
+The Lua C API provides an interface for referencing Lua objects.  Weak references are directly supported by way of lua_ref()'s lock flag: a zero value permits the object to be garbage collected.
+<P>
+Our weakref function needs to call lua_ref() and return an object that holds the resulting reference id.  Dereferences, implemented with a function call tag method on the reference object, simply call lua_getref().  Finally it's necessary to release the reference when the reference object itself is collected, so a garbage collection (gc) tag method is used to call lua_unref().
+<P>
+The userdata type is the natural choice for the reference object since it is the only type that provides a gc event.  Furthermore, as only a single integer is required, the state can be stored as the userdata pointer itself which eliminates a dynamic memory allocation.
+<P>
+The source code of this implementation is provided as a patch to the official Lua 4.0 distribution and is available <A HREF="http://lua-users.org/files/wiki_insecure/power_patches/4.0/weakrefs.patch">here</A>.  It is applied with the patch utility as follows:
+<P>
+<PRE>
+    cd <I>&lt;lua distrubution directory&gt;</I>
+    patch -p1 < weakrefs.patch
+</PRE>
+The patch includes a new addition to the test directory "weakref.lua" which shows a trivial example of the extension.
+<P>
+It is proposed that this implementation be added to Lua's "baselib" standard library for several reasons:  weak references are of general usefulness; the implementation is simple and already supported by the C API; and since only one new Lua function is required it would be overkill to create a separate library for its purpose.
+<P>
+<H2>Safe Object Destructors</H2>
+In a language with garbage collection the most common need for destructors-- freeing other objects owned by the object being destructed-- is eliminated.  As a result Lua programmers seldom miss the lack of gc events for (table) objects.  The reason such an event is not supported is mainly to keep the garbage collector simple.  If gc events were allowed, the collector would have to handle the case of a destructor making a fresh reference to the object being collected.
+<P>
+However there are cases when an object owns some system resource that is not automatically freed such as file handles, graphic buffers, etc.  A somewhat tedious solution is to implement such objects from C with the userdata type, which does have a gc event.  Weak references provide an elegant alternative to this, allowing safe garbage collection events for table objects from the comfort of Lua.
+<P>
+The implementation uses a table containing weak reference/ destructor function pairs.  When a reference's object is collected the corresponding destructor function is called.  These destructors are safe in that they do not have access to the object being destroyed.  Any information required by the destructor (such as resource handles) must be accessible independently from the object.  This is fairly light work for Lua thanks to first class function objects.
+<P>
+A small interface is required to manage the table, consisting of a function to bind destructor functions to objects and a function to check for collected objects.  Here's an implementation in Lua:
+<P>
+<PRE>
+    ------------------------------------------
+    -- Destructor manager
+
+    local destructor_table = { }
+
+    function RegisterDestructor(obj, destructor)
+        %destructor_table[weakref(obj)] = destructor
+    end
+
+    function CheckDestructors()
+        local delete_list = { }
+        for objref, destructor in %destructor_table do
+            if not objref() then
+                destructor()
+                tinsert(delete_list, objref)
+            end
+        end
+        for i = 1, getn(delete_list) do
+            %destructor_table[delete_list[i]] = nil
+        end
+    end
+</PRE>
+Instead of calling CheckDestructors() manually at some interval, the natural thing to do is chain it to Lua's garbage collection cycle.  The Lua virtual machine supports this by calling the gc tag method for the nil type at the end of a cycle.
+<P>
+As an example of safe destructor use, consider an object used for logging program messages to a file.  When the object is garbage collected we would like the log file to be closed.  (This example is trivial because file handles are closed when a program terminates.  However the method is easily applied to other types of resources.)
+<P>
+<PRE>
+    ------------------------------------------
+    -- example object using safe destructor
+
+    function make_logobj(filename)
+        local id = openfile(filename, "w")
+        assert(id)
+
+        local obj =
+        {
+            file = id,
+
+            write = function(self, message)
+                write(self.file, message)
+            end,
+        }
+
+        local destructor = function()
+            closefile(%id)
+        end
+
+        RegisterDestructor(obj, destructor)
+        return obj
+    end
+</PRE>
+<H2>Object Caching</H2>
+Consider a web server that dynamically generates web pages from a database such as a mailing list or program source code.  In this kind of application it is common to cache generated pages in memory to improve performance.  However if the caching were implemented by simply storing page objects in a table, they would never be collected and memory usage would grow unchecked.
+<P>
+One remedy would be to cache only the most recently accessed <I>n</I> pages, but by failing to take the data size into account this will not make good use of available memory.  An improvement would be to cache the most recently accessed <I>x</I> kilobytes of generated data.  Besides the added program complexity, here the issue that arises is finding a suitable value for <I>x</I>.  This is similar to an issue faced by garbage collectors: how often and after how much memory use should a cycle occur?
+<P>
+By using weak references for caching, program complexity is kept low while leaving the memory use issue up to the garbage collector.  Instead of storing generated page objects, the cache table consists of weak references to those objects.  When a garbage collection cycle occurs page objects not currently in use will be collected.
+<P>
+Here is an implementation assuming a function GeneratePage() that makes a page object given its "name".  The function CleanCache() is needed for removing table entries for collected objects, which again should be chained to Lua's gc cycle.
+<P>
+<PRE>
+    ------------------------------------------
+    -- Page cache
+
+    local cache_table = { }
+
+    function GetPage(name)
+        local ref = %cache_table[name]
+        local obj = ref and ref()
+        if not obj then
+            obj = GeneratePage(name)
+            %cache_table[name] = weakref(obj)
+        end
+        return obj
+    end
+
+    function CleanCache()
+        local delete_list = { }
+        for name, ref in %cache_table do
+            if not ref() then
+                tinsert(delete_list, name)
+            end
+        end
+        for i = 1, getn(delete_list) do
+            %cache_table[delete_list[i]] = nil
+        end
+    end
+</PRE>
+<H2>Acknowledgements</H2>
+The author would like to thank Anthony Carrico for discussions on weak references and garbage collection, Roberto Ierusalimschy for kindly pointing out the obvious (that the C API supports weak references), and also NanaOn-Sha, Co. Ltd. and Sony Computer Entertainment, Inc. for permission to share the source code presented here.<P>
+
+<HR>
+<SMALL>
+Last update:
+Wed Jun 16 10:43:27 BRT 2004
+</SMALL>
+
+</BODY>
+</HTML>

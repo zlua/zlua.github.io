@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lstring.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstring.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstring.c,v 2.8.1.1 2007/12/27 13:02:25 roberto Exp $
+** String table (keeps all strings handled by Lua)
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;string.h&gt;
+
+#define <A NAME="lstring_c"><SPAN CLASS="definition">lstring_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+
+
+
+void <A NAME="luaS_resize"><SPAN CLASS="definition">luaS_resize</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int newsize) {
+  <A HREF="lstate.h.html#GCObject">GCObject</A> **newhash;
+  <A HREF="lstate.h.html#stringtable">stringtable</A> *tb;
+  int i;
+  if (<A HREF="lstate.h.html#G">G</A>(L)-&gt;gcstate == <A HREF="lgc.h.html#GCSsweepstring">GCSsweepstring</A>)
+    return;  /* cannot resize during GC traverse */
+  newhash = <A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L, newsize, <A HREF="lstate.h.html#GCObject">GCObject</A> *);
+  tb = &amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;strt;
+  for (i=0; i&lt;newsize; i++) newhash[i] = NULL;
+  /* rehash */
+  for (i=0; i&lt;tb-&gt;size; i++) {
+    <A HREF="lstate.h.html#GCObject">GCObject</A> *p = tb-&gt;hash[i];
+    while (p) {  /* for each node in the list */
+      <A HREF="lstate.h.html#GCObject">GCObject</A> *next = p-&gt;gch.next;  /* save next */
+      unsigned int h = <A HREF="lstate.h.html#gco2ts">gco2ts</A>(p)-&gt;hash;
+      int h1 = <A HREF="lobject.h.html#lmod">lmod</A>(h, newsize);  /* new position */
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="llimits.h.html#cast_int">cast_int</A>(h%newsize) == <A HREF="lobject.h.html#lmod">lmod</A>(h, newsize));
+      p-&gt;gch.next = newhash[h1];  /* chain it */
+      newhash[h1] = p;
+      p = next;
+    }
+  }
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, tb-&gt;hash, tb-&gt;size, <A HREF="lobject.h.html#TString">TString</A> *);
+  tb-&gt;size = newsize;
+  tb-&gt;hash = newhash;
+}
+
+
+static <A HREF="lobject.h.html#TString">TString</A> *<A NAME="newlstr"><SPAN CLASS="definition">newlstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l,
+                                       unsigned int h) {
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+  <A HREF="lstate.h.html#stringtable">stringtable</A> *tb;
+  if (l+1 &gt; (<A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A> - sizeof(<A HREF="lobject.h.html#TString">TString</A>))/sizeof(char))
+    <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>(L);
+  ts = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#TString">TString</A> *, <A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L, (l+1)*sizeof(char)+sizeof(<A HREF="lobject.h.html#TString">TString</A>)));
+  ts-&gt;tsv.len = l;
+  ts-&gt;tsv.hash = h;
+  ts-&gt;tsv.marked = <A HREF="lgc.h.html#luaC_white">luaC_white</A>(<A HREF="lstate.h.html#G">G</A>(L));
+  ts-&gt;tsv.tt = <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>;
+  ts-&gt;tsv.reserved = 0;
+  memcpy(ts+1, str, l*sizeof(char));
+  ((char *)(ts+1))[l] = '\0';  /* ending 0 */
+  tb = &amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;strt;
+  h = <A HREF="lobject.h.html#lmod">lmod</A>(h, tb-&gt;size);
+  ts-&gt;tsv.next = tb-&gt;hash[h];  /* chain new entry */
+  tb-&gt;hash[h] = <A HREF="lstate.h.html#obj2gco">obj2gco</A>(ts);
+  tb-&gt;nuse++;
+  if (tb-&gt;nuse &gt; <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_int32">lu_int32</A>, tb-&gt;size) &amp;&amp; tb-&gt;size &lt;= <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>/2)
+    <A HREF="lstring.c.html#luaS_resize">luaS_resize</A>(L, tb-&gt;size*2);  /* too crowded */
+  return ts;
+}
+
+
+<A HREF="lobject.h.html#TString">TString</A> *<A NAME="luaS_newlstr"><SPAN CLASS="definition">luaS_newlstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l) {
+  <A HREF="lstate.h.html#GCObject">GCObject</A> *o;
+  unsigned int h = <A HREF="llimits.h.html#cast">cast</A>(unsigned int, l);  /* seed */
+  size_t step = (l&gt;&gt;5)+1;  /* if string is too long, don't hash all its chars */
+  size_t l1;
+  for (l1=l; l1&gt;=step; l1-=step)  /* compute hash */
+    h = h ^ ((h&lt;&lt;5)+(h&gt;&gt;2)+<A HREF="llimits.h.html#cast">cast</A>(unsigned char, str[l1-1]));
+  for (o = <A HREF="lstate.h.html#G">G</A>(L)-&gt;strt.hash[<A HREF="lobject.h.html#lmod">lmod</A>(h, <A HREF="lstate.h.html#G">G</A>(L)-&gt;strt.size)];
+       o != NULL;
+       o = o-&gt;gch.next) {
+    <A HREF="lobject.h.html#TString">TString</A> *ts = <A HREF="lstate.h.html#rawgco2ts">rawgco2ts</A>(o);
+    if (ts-&gt;tsv.len == l &amp;&amp; (memcmp(str, <A HREF="lobject.h.html#getstr">getstr</A>(ts), l) == 0)) {
+      /* string may be dead */
+      if (<A HREF="lgc.h.html#isdead">isdead</A>(<A HREF="lstate.h.html#G">G</A>(L), o)) <A HREF="lgc.h.html#changewhite">changewhite</A>(o);
+      return ts;
+    }
+  }
+  return <A HREF="lstring.c.html#newlstr">newlstr</A>(L, str, l, h);  /* not found */
+}
+
+
+<A HREF="lobject.h.html#Udata">Udata</A> *<A NAME="luaS_newudata"><SPAN CLASS="definition">luaS_newudata</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t s, <A HREF="lobject.h.html#Table">Table</A> *e) {
+  <A HREF="lobject.h.html#Udata">Udata</A> *u;
+  if (s &gt; <A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A> - sizeof(<A HREF="lobject.h.html#Udata">Udata</A>))
+    <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>(L);
+  u = <A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#Udata">Udata</A> *, <A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L, s + sizeof(<A HREF="lobject.h.html#Udata">Udata</A>)));
+  u-&gt;uv.marked = <A HREF="lgc.h.html#luaC_white">luaC_white</A>(<A HREF="lstate.h.html#G">G</A>(L));  /* is not finalized */
+  u-&gt;uv.tt = <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>;
+  u-&gt;uv.len = s;
+  u-&gt;uv.metatable = NULL;
+  u-&gt;uv.env = e;
+  /* chain it on udata list (after <A HREF="lua.c.html#main">main</A> thread) */
+  u-&gt;uv.next = <A HREF="lstate.h.html#G">G</A>(L)-&gt;mainthread-&gt;next;
+  <A HREF="lstate.h.html#G">G</A>(L)-&gt;mainthread-&gt;next = <A HREF="lstate.h.html#obj2gco">obj2gco</A>(u);
+  return u;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

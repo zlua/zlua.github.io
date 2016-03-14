@@ -1,0 +1,501 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - ldebug.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldebug.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldebug.c,v 1.50 2000/10/30 12:38:50 roberto Exp $
+** Debug Interface
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdlib.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lapi.h.html">lapi.h</A>"
+#include "<A HREF="lcode.h.html">lcode.h</A>"
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+#include "<A HREF="luadebug.h.html">luadebug.h</A>"
+
+
+
+static const char *<A HREF="ldebug.c.html#getfuncname">getfuncname</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> f, const char **name);
+
+
+static void <A NAME="setnormalized"><SPAN CLASS="definition">setnormalized</SPAN></A> (<A HREF="lobject.h.html#TObject">TObject</A> *d, const <A HREF="lobject.h.html#TObject">TObject</A> *s) {
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(s) == <A HREF="lobject.h.html#LUA_TMARK">LUA_TMARK</A>) {
+    <A HREF="lobject.h.html#clvalue">clvalue</A>(d) = <A HREF="lobject.h.html#infovalue">infovalue</A>(s)-&gt;func;
+    <A HREF="lobject.h.html#ttype">ttype</A>(d) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+  }
+  else *d = *s;
+}
+
+
+static int <A NAME="isLmark"><SPAN CLASS="definition">isLmark</SPAN></A> (<A HREF="lstate.h.html#StkId">StkId</A> o) {
+  return (o &amp;&amp; <A HREF="lobject.h.html#ttype">ttype</A>(o) == <A HREF="lobject.h.html#LUA_TMARK">LUA_TMARK</A> &amp;&amp; !<A HREF="lobject.h.html#infovalue">infovalue</A>(o)-&gt;func-&gt;isC);
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> <A NAME="lua_setcallhook"><SPAN CLASS="definition">lua_setcallhook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> func) {
+  <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> oldhook = L-&gt;callhook;
+  L-&gt;callhook = func;
+  return oldhook;
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> <A NAME="lua_setlinehook"><SPAN CLASS="definition">lua_setlinehook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> func) {
+  <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> oldhook = L-&gt;linehook;
+  L-&gt;linehook = func;
+  return oldhook;
+}
+
+
+static <A HREF="lstate.h.html#StkId">StkId</A> <A NAME="aux_stackedfunction"><SPAN CLASS="definition">aux_stackedfunction</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int level, <A HREF="lstate.h.html#StkId">StkId</A> top) {
+  int i;
+  for (i = (top-1) - L-&gt;stack; i&gt;=0; i--) {
+    if (<A HREF="lobject.h.html#is_T_MARK">is_T_MARK</A>(L-&gt;stack[i].<A HREF="lobject.h.html#ttype">ttype</A>)) {
+      if (level == 0)
+        return L-&gt;stack+i;
+      level--;
+    }
+  }
+  return NULL;
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A NAME="lua_getstack"><SPAN CLASS="definition">lua_getstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int level, <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar) {
+  <A HREF="lstate.h.html#StkId">StkId</A> f = <A HREF="ldebug.c.html#aux_stackedfunction">aux_stackedfunction</A>(L, level, L-&gt;top);
+  if (f == NULL) return 0;  /* there is no such level */
+  else {
+    ar-&gt;_func = f;
+    return 1;
+  }
+}
+
+
+static int <A NAME="nups"><SPAN CLASS="definition">nups</SPAN></A> (<A HREF="lstate.h.html#StkId">StkId</A> f) {
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(f)) {
+    case <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>:
+      return <A HREF="lobject.h.html#clvalue">clvalue</A>(f)-&gt;nupvalues;
+    case <A HREF="lobject.h.html#LUA_TMARK">LUA_TMARK</A>:
+      return <A HREF="lobject.h.html#infovalue">infovalue</A>(f)-&gt;func-&gt;nupvalues;
+    default:
+      return 0;
+  }
+}
+
+
+int <A NAME="luaG_getline"><SPAN CLASS="definition">luaG_getline</SPAN></A> (int *lineinfo, int pc, int refline, int *prefi) {
+  int refi;
+  if (lineinfo == NULL || pc == -1)
+    return -1;  /* no line info or function is not active */
+  refi = prefi ? *prefi : 0;
+  if (lineinfo[refi] &lt; 0)
+    refline += -lineinfo[refi++]; 
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(lineinfo[refi] &gt;= 0, "invalid line info");
+  while (lineinfo[refi] &gt; pc) {
+    refline--;
+    refi--;
+    if (lineinfo[refi] &lt; 0)
+      refline -= -lineinfo[refi--]; 
+    <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(lineinfo[refi] &gt;= 0, "invalid line info");
+  }
+  for (;;) {
+    int nextline = refline + 1;
+    int nextref = refi + 1;
+    if (lineinfo[nextref] &lt; 0)
+      nextline += -lineinfo[nextref++]; 
+    <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(lineinfo[nextref] &gt;= 0, "invalid line info");
+    if (lineinfo[nextref] &gt; pc)
+      break;
+    refline = nextline;
+    refi = nextref;
+  }
+  if (prefi) *prefi = refi;
+  return refline;
+}
+
+
+static int <A NAME="currentpc"><SPAN CLASS="definition">currentpc</SPAN></A> (<A HREF="lstate.h.html#StkId">StkId</A> f) {
+  <A HREF="lobject.h.html#CallInfo">CallInfo</A> *ci = <A HREF="lobject.h.html#infovalue">infovalue</A>(f);
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="ldebug.c.html#isLmark">isLmark</A>(f), "function has no pc");
+  if (ci-&gt;pc)
+    return (*ci-&gt;pc - ci-&gt;func-&gt;f.l-&gt;code) - 1;
+  else
+    return -1;  /* function is not active */
+}
+
+
+static int <A NAME="currentline"><SPAN CLASS="definition">currentline</SPAN></A> (<A HREF="lstate.h.html#StkId">StkId</A> f) {
+  if (!<A HREF="ldebug.c.html#isLmark">isLmark</A>(f))
+    return -1;  /* only active lua functions have current-line information */
+  else {
+    <A HREF="lobject.h.html#CallInfo">CallInfo</A> *ci = <A HREF="lobject.h.html#infovalue">infovalue</A>(f);
+    int *lineinfo = ci-&gt;func-&gt;f.l-&gt;lineinfo;
+    return <A HREF="ldebug.c.html#luaG_getline">luaG_getline</A>(lineinfo, <A HREF="ldebug.c.html#currentpc">currentpc</A>(f), 1, NULL);
+  }
+}
+
+
+
+static <A HREF="lobject.h.html#Proto">Proto</A> *<A NAME="getluaproto"><SPAN CLASS="definition">getluaproto</SPAN></A> (<A HREF="lstate.h.html#StkId">StkId</A> f) {
+  return (<A HREF="ldebug.c.html#isLmark">isLmark</A>(f) ?  <A HREF="lobject.h.html#infovalue">infovalue</A>(f)-&gt;func-&gt;f.l : NULL);
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_getlocal"><SPAN CLASS="definition">lua_getlocal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar, int n) {
+  const char *name;
+  <A HREF="lstate.h.html#StkId">StkId</A> f = ar-&gt;_func;
+  <A HREF="lobject.h.html#Proto">Proto</A> *fp = <A HREF="ldebug.c.html#getluaproto">getluaproto</A>(f);
+  if (!fp) return NULL;  /* `f' is not a Lua function? */
+  name = <A HREF="lfunc.c.html#luaF_getlocalname">luaF_getlocalname</A>(fp, n, <A HREF="ldebug.c.html#currentpc">currentpc</A>(f));
+  if (!name) return NULL;
+  <A HREF="lapi.c.html#luaA_pushobject">luaA_pushobject</A>(L, (f+1)+(n-1));  /* push value */
+  return name;
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> const char *<A NAME="lua_setlocal"><SPAN CLASS="definition">lua_setlocal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar, int n) {
+  const char *name;
+  <A HREF="lstate.h.html#StkId">StkId</A> f = ar-&gt;_func;
+  <A HREF="lobject.h.html#Proto">Proto</A> *fp = <A HREF="ldebug.c.html#getluaproto">getluaproto</A>(f);
+  L-&gt;top--;  /* pop new value */
+  if (!fp) return NULL;  /* `f' is not a Lua function? */
+  name = <A HREF="lfunc.c.html#luaF_getlocalname">luaF_getlocalname</A>(fp, n, <A HREF="ldebug.c.html#currentpc">currentpc</A>(f));
+  if (!name || name[0] == '(') return NULL;  /* `(' starts private locals */
+  *((f+1)+(n-1)) = *L-&gt;top;
+  return name;
+}
+
+
+static void <A NAME="infoLproto"><SPAN CLASS="definition">infoLproto</SPAN></A> (<A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar, <A HREF="lobject.h.html#Proto">Proto</A> *f) {
+  ar-&gt;source = f-&gt;source-&gt;str;
+  ar-&gt;linedefined = f-&gt;lineDefined;
+  ar-&gt;what = "Lua";
+}
+
+
+static void <A NAME="funcinfo"><SPAN CLASS="definition">funcinfo</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar, <A HREF="lstate.h.html#StkId">StkId</A> func) {
+  <A HREF="lobject.h.html#Closure">Closure</A> *cl = NULL;
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(func)) {
+    case <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>:
+      cl = <A HREF="lobject.h.html#clvalue">clvalue</A>(func);
+      break;
+    case <A HREF="lobject.h.html#LUA_TMARK">LUA_TMARK</A>:
+      cl = <A HREF="lobject.h.html#infovalue">infovalue</A>(func)-&gt;func;
+      break;
+    default:
+      <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "value for `<A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>' is not a function");
+  }
+  if (cl-&gt;isC) {
+    ar-&gt;source = "=C";
+    ar-&gt;linedefined = -1;
+    ar-&gt;what = "C";
+  }
+  else
+    <A HREF="ldebug.c.html#infoLproto">infoLproto</A>(ar, cl-&gt;f.l);
+  <A HREF="lobject.c.html#luaO_chunkid">luaO_chunkid</A>(ar-&gt;short_src, ar-&gt;source, sizeof(ar-&gt;short_src));
+  if (ar-&gt;linedefined == 0)
+    ar-&gt;what = "<A HREF="lua.c.html#main">main</A>";
+}
+
+
+static const char *<A NAME="travtagmethods"><SPAN CLASS="definition">travtagmethods</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *o) {
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(o) == <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>) {
+    int e;
+    for (e=0; e&lt;<A HREF="ltm.h.html#TM_N">TM_N</A>; e++) {
+      int t;
+      for (t=0; t&lt;=L-&gt;last_tag; t++)
+        if (<A HREF="lobject.h.html#clvalue">clvalue</A>(o) == <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, t, e))
+          return <A HREF="ltm.c.html#luaT_eventname">luaT_eventname</A>[e];
+    }
+  }
+  return NULL;
+}
+
+
+static const char *<A NAME="travglobals"><SPAN CLASS="definition">travglobals</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *o) {
+  <A HREF="lobject.h.html#Hash">Hash</A> *g = L-&gt;gt;
+  int i;
+  for (i=0; i&lt;g-&gt;size; i++) {
+    if (<A HREF="lobject.c.html#luaO_equalObj">luaO_equalObj</A>(o, <A HREF="ltable.h.html#val">val</A>(<A HREF="ltable.h.html#node">node</A>(g, i))) &amp;&amp;
+        <A HREF="lobject.h.html#ttype">ttype</A>(<A HREF="ltable.h.html#key">key</A>(<A HREF="ltable.h.html#node">node</A>(g, i))) == <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>) 
+      return <A HREF="lobject.h.html#tsvalue">tsvalue</A>(<A HREF="ltable.h.html#key">key</A>(<A HREF="ltable.h.html#node">node</A>(g, i)))-&gt;str;
+  }
+  return NULL;
+}
+
+
+static void <A NAME="getname"><SPAN CLASS="definition">getname</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> f, <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar) {
+  <A HREF="lobject.h.html#TObject">TObject</A> o;
+  <A HREF="ldebug.c.html#setnormalized">setnormalized</A>(&amp;o, f);
+  /* try to find a name for given function */
+  if ((ar-&gt;name = <A HREF="ldebug.c.html#travglobals">travglobals</A>(L, &amp;o)) != NULL)
+    ar-&gt;namewhat = "global";
+  /* not found: try tag methods */
+  else if ((ar-&gt;name = <A HREF="ldebug.c.html#travtagmethods">travtagmethods</A>(L, &amp;o)) != NULL)
+    ar-&gt;namewhat = "tag-method";
+  else ar-&gt;namewhat = "";  /* not found at all */
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A NAME="lua_getinfo"><SPAN CLASS="definition">lua_getinfo</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *what, <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar) {
+  <A HREF="lstate.h.html#StkId">StkId</A> func;
+  int isactive = (*what != '&gt;');
+  if (isactive)
+    func = ar-&gt;_func;
+  else {
+    what++;  /* skip the '&gt;' */
+    func = L-&gt;top - 1;
+  }
+  for (; *what; what++) {
+    switch (*what) {
+      case 'S': {
+        <A HREF="ldebug.c.html#funcinfo">funcinfo</A>(L, ar, func);
+        break;
+      }
+      case 'l': {
+        ar-&gt;<A HREF="ldebug.c.html#currentline">currentline</A> = <A HREF="ldebug.c.html#currentline">currentline</A>(func);
+        break;
+      }
+      case 'u': {
+        ar-&gt;<A HREF="ldebug.c.html#nups">nups</A> = <A HREF="ldebug.c.html#nups">nups</A>(func);
+        break;
+      }
+      case 'n': {
+        ar-&gt;namewhat = (isactive) ? <A HREF="ldebug.c.html#getfuncname">getfuncname</A>(L, func, &amp;ar-&gt;name) : NULL;
+        if (ar-&gt;namewhat == NULL)
+          <A HREF="ldebug.c.html#getname">getname</A>(L, func, ar);
+        break;
+      }
+      case 'f': {
+        <A HREF="ldebug.c.html#setnormalized">setnormalized</A>(L-&gt;top, func);
+        <A HREF="ldo.h.html#incr_top">incr_top</A>;  /* push function */
+        break;
+      }
+      default: return 0;  /* invalid option */
+    }
+  }
+  if (!isactive) L-&gt;top--;  /* pop function */
+  return 1;
+}
+
+
+/*
+** {======================================================
+** Symbolic Execution
+** =======================================================
+*/
+
+
+static int <A NAME="pushpc"><SPAN CLASS="definition">pushpc</SPAN></A> (int *stack, int pc, int top, int n) {
+  while (n--)
+    stack[top++] = pc-1;
+  return top;
+}
+
+
+static <A HREF="llimits.h.html#Instruction">Instruction</A> <A NAME="luaG_symbexec"><SPAN CLASS="definition">luaG_symbexec</SPAN></A> (const <A HREF="lobject.h.html#Proto">Proto</A> *pt, int lastpc, int stackpos) {
+  int stack[<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>];  /* stores last instruction that changed a stack entry */
+  const <A HREF="llimits.h.html#Instruction">Instruction</A> *code = pt-&gt;code;
+  int top = pt-&gt;numparams;
+  int pc = 0;
+  if (pt-&gt;is_vararg)  /* varargs? */
+    top++;  /* `arg' */
+  while (pc &lt; lastpc) {
+    const <A HREF="llimits.h.html#Instruction">Instruction</A> i = code[pc++];
+    <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(0 &lt;= top &amp;&amp; top &lt;= pt-&gt;maxstacksize, "wrong stack");
+    switch (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i)) {
+      case <A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A>: {
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(top &gt;= <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i), "wrong stack");
+        top = <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_TAILCALL">OP_TAILCALL</A>: {
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(top &gt;= <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i), "wrong stack");
+        top = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>: {
+        int nresults = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        if (nresults == <A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>) nresults = 1;
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(top &gt;= <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i), "wrong stack");
+        top = <A HREF="ldebug.c.html#pushpc">pushpc</A>(stack, pc, <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i), nresults);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHNIL">OP_PUSHNIL</A>: {
+        top = <A HREF="ldebug.c.html#pushpc">pushpc</A>(stack, pc, top, <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_POP">OP_POP</A>: {
+        top -= <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETTABLE">OP_SETTABLE</A>:
+      case <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>: {
+        top -= <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETMAP">OP_SETMAP</A>: {
+        top -= 2*<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CONCAT">OP_CONCAT</A>: {
+        top -= <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i);
+        stack[top++] = pc-1;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A>: {
+        top -= <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        stack[top++] = pc-1;
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMPONT">OP_JMPONT</A>:
+      case <A HREF="lopcodes.h.html#OP_JMPONF">OP_JMPONF</A>: {
+        int newpc = pc + <A HREF="lopcodes.h.html#GETARG_S">GETARG_S</A>(i);
+        /* jump is forward and do not skip `lastpc'? */
+        if (pc &lt; newpc &amp;&amp; newpc &lt;= lastpc) {
+          stack[top-1] = pc-1;  /* value comes from `and'/`or' */
+          pc = newpc;  /* do the jump */
+        }
+        else
+          top--;  /* do not jump; pop value */
+        break;
+      }
+      default: {
+        <A HREF="lopcodes.h.html#OpCode">OpCode</A> op = <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i);
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lcode.c.html#luaK_opproperties">luaK_opproperties</A>[op].push != <A HREF="lcode.h.html#VD">VD</A>,
+                   "invalid opcode for default");
+        top -= <A HREF="lcode.c.html#luaK_opproperties">luaK_opproperties</A>[op].pop;
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(top &gt;= 0, "wrong stack");
+        top = <A HREF="ldebug.c.html#pushpc">pushpc</A>(stack, pc, top, <A HREF="lcode.c.html#luaK_opproperties">luaK_opproperties</A>[op].push);
+      }
+    }
+  }
+  return code[stack[stackpos]];
+}
+
+
+static const char *<A NAME="getobjname"><SPAN CLASS="definition">getobjname</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> obj, const char **name) {
+  <A HREF="lstate.h.html#StkId">StkId</A> func = <A HREF="ldebug.c.html#aux_stackedfunction">aux_stackedfunction</A>(L, 0, obj);
+  if (!<A HREF="ldebug.c.html#isLmark">isLmark</A>(func))
+    return NULL;  /* not an active Lua function */
+  else {
+    <A HREF="lobject.h.html#Proto">Proto</A> *p = <A HREF="lobject.h.html#infovalue">infovalue</A>(func)-&gt;func-&gt;f.l;
+    int pc = <A HREF="ldebug.c.html#currentpc">currentpc</A>(func);
+    int stackpos = obj - (func+1);  /* func+1 == function base */
+    <A HREF="llimits.h.html#Instruction">Instruction</A> i = <A HREF="ldebug.c.html#luaG_symbexec">luaG_symbexec</A>(p, pc, stackpos);
+    <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(pc != -1, "function must be active");
+    switch (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i)) {
+      case <A HREF="lopcodes.h.html#OP_GETGLOBAL">OP_GETGLOBAL</A>: {
+        *name = p-&gt;kstr[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)]-&gt;str;
+        return "global";
+      }
+      case <A HREF="lopcodes.h.html#OP_GETLOCAL">OP_GETLOCAL</A>: {
+        *name = <A HREF="lfunc.c.html#luaF_getlocalname">luaF_getlocalname</A>(p, <A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)+1, pc);
+        <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(*name, "local must exist");
+        return "local";
+      }
+      case <A HREF="lopcodes.h.html#OP_PUSHSELF">OP_PUSHSELF</A>:
+      case <A HREF="lopcodes.h.html#OP_GETDOTTED">OP_GETDOTTED</A>: {
+        *name = p-&gt;kstr[<A HREF="lopcodes.h.html#GETARG_U">GETARG_U</A>(i)]-&gt;str;
+        return "field";
+      }
+      default:
+        return NULL;  /* no useful name found */
+    }
+  }
+}
+
+
+static const char *<A NAME="getfuncname"><SPAN CLASS="definition">getfuncname</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> f, const char **name) {
+  <A HREF="lstate.h.html#StkId">StkId</A> func = <A HREF="ldebug.c.html#aux_stackedfunction">aux_stackedfunction</A>(L, 0, f);  /* calling function */
+  if (!<A HREF="ldebug.c.html#isLmark">isLmark</A>(func))
+    return NULL;  /* not an active Lua function */
+  else {
+    <A HREF="lobject.h.html#Proto">Proto</A> *p = <A HREF="lobject.h.html#infovalue">infovalue</A>(func)-&gt;func-&gt;f.l;
+    int pc = <A HREF="ldebug.c.html#currentpc">currentpc</A>(func);
+    <A HREF="llimits.h.html#Instruction">Instruction</A> i;
+    if (pc == -1) return NULL;  /* function is not activated */
+    i = p-&gt;code[pc];
+    switch (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i)) {
+      case <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>: case <A HREF="lopcodes.h.html#OP_TAILCALL">OP_TAILCALL</A>:
+        return <A HREF="ldebug.c.html#getobjname">getobjname</A>(L, (func+1)+<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i), name);
+      default:
+        return NULL;  /* no useful name found */
+    }
+  }
+}
+
+
+/* }====================================================== */
+
+
+void <A NAME="luaG_typeerror"><SPAN CLASS="definition">luaG_typeerror</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> o, const char *op) {
+  const char *name;
+  const char *kind = <A HREF="ldebug.c.html#getobjname">getobjname</A>(L, o, &amp;name);
+  const char *t = <A HREF="lobject.h.html#luaO_typename">luaO_typename</A>(o);
+  if (kind)
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "attempt to %.30s %.20s `%.40s' (a %.10s value)",
+                op, kind, name, t);
+  else
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "attempt to %.30s a %.10s value", op, t);
+}
+
+
+void <A NAME="luaG_binerror"><SPAN CLASS="definition">luaG_binerror</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> p1, int t, const char *op) {
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(p1) == t) p1++;
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lobject.h.html#ttype">ttype</A>(p1) != t, "must be an error");
+  <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A>(L, p1, op);
+}
+
+
+void <A NAME="luaG_ordererror"><SPAN CLASS="definition">luaG_ordererror</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> top) {
+  const char *t1 = <A HREF="lobject.h.html#luaO_typename">luaO_typename</A>(top-2);
+  const char *t2 = <A HREF="lobject.h.html#luaO_typename">luaO_typename</A>(top-1);
+  if (t1[2] == t2[2])
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "attempt to compare two %.10s values", t1);
+  else
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "attempt to compare %.10s with %.10s", t1, t2);
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

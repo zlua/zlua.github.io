@@ -1,0 +1,322 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lobject.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lobject.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lobject.c,v 2.58.1.1 2013/04/12 18:48:47 roberto Exp $
+** Some generic functions over Lua objects
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define <A NAME="lobject_c"><SPAN CLASS="definition">lobject_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lctype.h.html">lctype.h</A>"
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+
+
+
+<A HREF="luaconf.h.html#LUAI_DDEF">LUAI_DDEF</A> const <A HREF="lobject.h.html#TValue">TValue</A> <A NAME="luaO_nilobject_"><SPAN CLASS="definition">luaO_nilobject_</SPAN></A> = {<A HREF="lobject.h.html#NILCONSTANT">NILCONSTANT</A>};
+
+
+/*
+** converts an integer to a "floating point byte", represented as
+** (eeeeexxx), where the real value is (1xxx) * 2^(eeeee - 1) if
+** eeeee != 0 and (xxx) otherwise.
+*/
+int <A NAME="luaO_int2fb"><SPAN CLASS="definition">luaO_int2fb</SPAN></A> (unsigned int x) {
+  int e = 0;  /* exponent */
+  if (x &lt; 8) return x;
+  while (x &gt;= 0x10) {
+    x = (x+1) &gt;&gt; 1;
+    e++;
+  }
+  return ((e+1) &lt;&lt; 3) | (<A HREF="llimits.h.html#cast_int">cast_int</A>(x) - 8);
+}
+
+
+/* converts back */
+int <A NAME="luaO_fb2int"><SPAN CLASS="definition">luaO_fb2int</SPAN></A> (int x) {
+  int e = (x &gt;&gt; 3) &amp; 0x1f;
+  if (e == 0) return x;
+  else return ((x &amp; 7) + 8) &lt;&lt; (e - 1);
+}
+
+
+int <A NAME="luaO_ceillog2"><SPAN CLASS="definition">luaO_ceillog2</SPAN></A> (unsigned int x) {
+  static const <A HREF="llimits.h.html#lu_byte">lu_byte</A> log_2[256] = {
+    0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8
+  };
+  int l = 0;
+  x--;
+  while (x &gt;= 256) { l += 8; x &gt;&gt;= 8; }
+  return l + log_2[x];
+}
+
+
+<A HREF="lua.h.html#lua_Number">lua_Number</A> <A NAME="luaO_arith"><SPAN CLASS="definition">luaO_arith</SPAN></A> (int op, <A HREF="lua.h.html#lua_Number">lua_Number</A> v1, <A HREF="lua.h.html#lua_Number">lua_Number</A> v2) {
+  switch (op) {
+    case <A HREF="lua.h.html#LUA_OPADD">LUA_OPADD</A>: return <A HREF="luaconf.h.html#luai_numadd">luai_numadd</A>(NULL, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPSUB">LUA_OPSUB</A>: return <A HREF="luaconf.h.html#luai_numsub">luai_numsub</A>(NULL, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPMUL">LUA_OPMUL</A>: return <A HREF="luaconf.h.html#luai_nummul">luai_nummul</A>(NULL, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPDIV">LUA_OPDIV</A>: return <A HREF="luaconf.h.html#luai_numdiv">luai_numdiv</A>(NULL, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPMOD">LUA_OPMOD</A>: return <A HREF="luaconf.h.html#luai_nummod">luai_nummod</A>(NULL, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPPOW">LUA_OPPOW</A>: return <A HREF="luaconf.h.html#luai_numpow">luai_numpow</A>(NULL, v1, v2);
+    case <A HREF="lua.h.html#LUA_OPUNM">LUA_OPUNM</A>: return <A HREF="luaconf.h.html#luai_numunm">luai_numunm</A>(NULL, v1);
+    default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0); return 0;
+  }
+}
+
+
+int <A NAME="luaO_hexavalue"><SPAN CLASS="definition">luaO_hexavalue</SPAN></A> (int c) {
+  if (<A HREF="lctype.h.html#lisdigit">lisdigit</A>(c)) return c - '0';
+  else return <A HREF="lctype.h.html#ltolower">ltolower</A>(c) - 'a' + 10;
+}
+
+
+#if !defined(<A HREF="lobject.c.html#lua_strx2number">lua_strx2number</A>)
+
+#include &lt;math.h&gt;
+
+
+static int <A NAME="isneg"><SPAN CLASS="definition">isneg</SPAN></A> (const char **s) {
+  if (**s == '-') { (*s)++; return 1; }
+  else if (**s == '+') (*s)++;
+  return 0;
+}
+
+
+static <A HREF="lua.h.html#lua_Number">lua_Number</A> <A NAME="readhexa"><SPAN CLASS="definition">readhexa</SPAN></A> (const char **s, <A HREF="lua.h.html#lua_Number">lua_Number</A> r, int *count) {
+  for (; <A HREF="lctype.h.html#lisxdigit">lisxdigit</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(**s)); (*s)++) {  /* read integer part */
+    r = (r * <A HREF="llimits.h.html#cast_num">cast_num</A>(16.0)) + <A HREF="llimits.h.html#cast_num">cast_num</A>(<A HREF="lobject.c.html#luaO_hexavalue">luaO_hexavalue</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(**s)));
+    (*count)++;
+  }
+  return r;
+}
+
+
+/*
+** convert an hexadecimal numeric string to a number, following
+** C99 specification for 'strtod'
+*/
+static <A HREF="lua.h.html#lua_Number">lua_Number</A> <A NAME="lua_strx2number"><SPAN CLASS="definition">lua_strx2number</SPAN></A> (const char *s, char **endptr) {
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> r = 0.0;
+  int e = 0, i = 0;
+  int neg = 0;  /* 1 if number is negative */
+  *endptr = <A HREF="llimits.h.html#cast">cast</A>(char *, s);  /* nothing is valid yet */
+  while (<A HREF="lctype.h.html#lisspace">lisspace</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s))) s++;  /* skip initial spaces */
+  neg = <A HREF="lobject.c.html#isneg">isneg</A>(&amp;s);  /* check signal */
+  if (!(*s == '0' &amp;&amp; (*(s + 1) == 'x' || *(s + 1) == 'X')))  /* check '0x' */
+    return 0.0;  /* invalid format (no '0x') */
+  s += 2;  /* skip '0x' */
+  r = <A HREF="lobject.c.html#readhexa">readhexa</A>(&amp;s, r, &amp;i);  /* read integer part */
+  if (*s == '.') {
+    s++;  /* skip dot */
+    r = <A HREF="lobject.c.html#readhexa">readhexa</A>(&amp;s, r, &amp;e);  /* read fractional part */
+  }
+  if (i == 0 &amp;&amp; e == 0)
+    return 0.0;  /* invalid format (no digit) */
+  e *= -4;  /* each fractional digit divides value by 2^-4 */
+  *endptr = <A HREF="llimits.h.html#cast">cast</A>(char *, s);  /* valid up to here */
+  if (*s == 'p' || *s == 'P') {  /* exponent part? */
+    int exp1 = 0;
+    int neg1;
+    s++;  /* skip 'p' */
+    neg1 = <A HREF="lobject.c.html#isneg">isneg</A>(&amp;s);  /* signal */
+    if (!<A HREF="lctype.h.html#lisdigit">lisdigit</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s)))
+      goto ret;  /* must have at least one digit */
+    while (<A HREF="lctype.h.html#lisdigit">lisdigit</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*s)))  /* read exponent */
+      exp1 = exp1 * 10 + *(s++) - '0';
+    if (neg1) exp1 = -exp1;
+    e += exp1;
+  }
+  *endptr = <A HREF="llimits.h.html#cast">cast</A>(char *, s);  /* valid up to here */
+ ret:
+  if (neg) r = -r;
+  return <A HREF="luaconf.h.html#l_mathop">l_mathop</A>(ldexp)(r, e);
+}
+
+#endif
+
+
+int <A NAME="luaO_str2d"><SPAN CLASS="definition">luaO_str2d</SPAN></A> (const char *s, size_t len, <A HREF="lua.h.html#lua_Number">lua_Number</A> *result) {
+  char *endptr;
+  if (strpbrk(s, "nN"))  /* reject 'inf' and 'nan' */
+    return 0;
+  else if (strpbrk(s, "xX"))  /* hexa? */
+    *result = <A HREF="lobject.c.html#lua_strx2number">lua_strx2number</A>(s, &amp;endptr);
+  else
+    *result = <A HREF="luaconf.h.html#lua_str2number">lua_str2number</A>(s, &amp;endptr);
+  if (endptr == s) return 0;  /* nothing recognized */
+  while (<A HREF="lctype.h.html#lisspace">lisspace</A>(<A HREF="llimits.h.html#cast_uchar">cast_uchar</A>(*endptr))) endptr++;
+  return (endptr == s + len);  /* OK if no trailing characters */
+}
+
+
+
+static void <A NAME="pushstr"><SPAN CLASS="definition">pushstr</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str, size_t l) {
+  <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top++, <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, str, l));
+}
+
+
+/* this function handles only `%d', `%c', %f, %p, and `%s' formats */
+const char *<A NAME="luaO_pushvfstring"><SPAN CLASS="definition">luaO_pushvfstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, va_list argp) {
+  int n = 0;
+  for (;;) {
+    const char *e = strchr(fmt, '%');
+    if (e == NULL) break;
+    <A HREF="ldo.h.html#luaD_checkstack">luaD_checkstack</A>(L, 2);  /* fmt + item */
+    <A HREF="lobject.c.html#pushstr">pushstr</A>(L, fmt, e - fmt);
+    switch (*(e+1)) {
+      case 's': {
+        const char *s = va_arg(argp, char *);
+        if (s == NULL) s = "(null)";
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, s, strlen(s));
+        break;
+      }
+      case 'c': {
+        char buff;
+        buff = <A HREF="llimits.h.html#cast">cast</A>(char, va_arg(argp, int));
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, &amp;buff, 1);
+        break;
+      }
+      case 'd': {
+        <A HREF="lobject.h.html#setnvalue">setnvalue</A>(L-&gt;top++, <A HREF="llimits.h.html#cast_num">cast_num</A>(va_arg(argp, int)));
+        break;
+      }
+      case 'f': {
+        <A HREF="lobject.h.html#setnvalue">setnvalue</A>(L-&gt;top++, <A HREF="llimits.h.html#cast_num">cast_num</A>(va_arg(argp, <A HREF="llimits.h.html#l_uacNumber">l_uacNumber</A>)));
+        break;
+      }
+      case 'p': {
+        char buff[4*sizeof(void *) + 8]; /* should be enough space for a `%p' */
+        int l = sprintf(buff, "%p", va_arg(argp, void *));
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, buff, l);
+        break;
+      }
+      case '%': {
+        <A HREF="lobject.c.html#pushstr">pushstr</A>(L, "%", 1);
+        break;
+      }
+      default: {
+        <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L,
+            "invalid option " <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("%%%c") " to " <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("<A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>"),
+            *(e + 1));
+      }
+    }
+    n += 2;
+    fmt = e+2;
+  }
+  <A HREF="ldo.h.html#luaD_checkstack">luaD_checkstack</A>(L, 1);
+  <A HREF="lobject.c.html#pushstr">pushstr</A>(L, fmt, strlen(fmt));
+  if (n &gt; 0) <A HREF="lvm.c.html#luaV_concat">luaV_concat</A>(L, n + 1);
+  return <A HREF="lobject.h.html#svalue">svalue</A>(L-&gt;top - 1);
+}
+
+
+const char *<A NAME="luaO_pushfstring"><SPAN CLASS="definition">luaO_pushfstring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...) {
+  const char *msg;
+  va_list argp;
+  va_start(argp, fmt);
+  msg = <A HREF="lobject.c.html#luaO_pushvfstring">luaO_pushvfstring</A>(L, fmt, argp);
+  va_end(argp);
+  return msg;
+}
+
+
+/* number of chars of a literal string without the ending \0 */
+#define <A NAME="LL"><SPAN CLASS="definition">LL</SPAN></A>(x)   (sizeof(x)/sizeof(char) - 1)
+
+#define <A NAME="RETS"><SPAN CLASS="definition">RETS</SPAN></A>    "..."
+#define <A NAME="PRE"><SPAN CLASS="definition">PRE</SPAN></A>     "[string \""
+#define <A NAME="POS"><SPAN CLASS="definition">POS</SPAN></A>     "\"]"
+
+#define <A NAME="addstr"><SPAN CLASS="definition">addstr</SPAN></A>(a,b,l)   ( memcpy(a,b,(l) * sizeof(char)), a += (l) )
+
+void <A NAME="luaO_chunkid"><SPAN CLASS="definition">luaO_chunkid</SPAN></A> (char *out, const char *source, size_t bufflen) {
+  size_t l = strlen(source);
+  if (*source == '=') {  /* 'literal' source */
+    if (l &lt;= bufflen)  /* small enough? */
+      memcpy(out, source + 1, l * sizeof(char));
+    else {  /* truncate it */
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, source + 1, bufflen - 1);
+      *out = '\0';
+    }
+  }
+  else if (*source == '@') {  /* file name */
+    if (l &lt;= bufflen)  /* small enough? */
+      memcpy(out, source + 1, l * sizeof(char));
+    else {  /* add '...' before rest of name */
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, <A HREF="lobject.c.html#RETS">RETS</A>, <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#RETS">RETS</A>));
+      bufflen -= <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#RETS">RETS</A>);
+      memcpy(out, source + 1 + l - bufflen, bufflen * sizeof(char));
+    }
+  }
+  else {  /* string; format as [string "source"] */
+    const char *nl = strchr(source, '\n');  /* find first new line (if any) */
+    <A HREF="lobject.c.html#addstr">addstr</A>(out, <A HREF="lobject.c.html#PRE">PRE</A>, <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#PRE">PRE</A>));  /* add prefix */
+    bufflen -= <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#PRE">PRE</A> <A HREF="lobject.c.html#RETS">RETS</A> <A HREF="lobject.c.html#POS">POS</A>) + 1;  /* save space for prefix+suffix+'\0' */
+    if (l &lt; bufflen &amp;&amp; nl == NULL) {  /* small one-line source? */
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, source, l);  /* keep it */
+    }
+    else {
+      if (nl != NULL) l = nl - source;  /* stop at first newline */
+      if (l &gt; bufflen) l = bufflen;
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, source, l);
+      <A HREF="lobject.c.html#addstr">addstr</A>(out, <A HREF="lobject.c.html#RETS">RETS</A>, <A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#RETS">RETS</A>));
+    }
+    memcpy(out, <A HREF="lobject.c.html#POS">POS</A>, (<A HREF="lobject.c.html#LL">LL</A>(<A HREF="lobject.c.html#POS">POS</A>) + 1) * sizeof(char));
+  }
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

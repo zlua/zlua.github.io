@@ -1,0 +1,29 @@
+<HEAD>
+<TITLE>7.6 Calling Lua Functions from C</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=sectionstar3_8.html> Acknowledgments</A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=subsection3_7_5.html>7.5 A CFunction</A>
+<HR>
+<H2><A NAME=S0760>7.6 Calling Lua Functions from C</A></H2>
+ <A NAME=exLuacall></A>
+<P>
+This example illustrates how a C function can call the Lua function
+<TT><B>remove_blanks</B></TT> presented in Section <A HREF=subsection3_7_2.html#exstring>7.2</A>.
+<TT><B><PRE>
+void remove_blanks (char *s)
+{
+  lua_pushstring(s);  /* prepare parameter */
+  lua_call(&quot;remove_blanks&quot;);  /* call Lua function */
+  strcpy(s, lua_getstring(lua_getresult(1)));  /* copy result back to 's' */
+}</PRE></B></TT>
+<P>
+<HR>
+<B> Next:</B> <A HREF=sectionstar3_8.html> Acknowledgments</A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=subsection3_7_5.html>7.5 A CFunction</A>
+<HR>
+
+</BODY>

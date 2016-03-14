@@ -1,0 +1,68 @@
+<HEAD>
+<TITLE>7.3 Persistence</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=subsection3_7_4.html>7.4 Inheritance</A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=subsection3_7_2.html>7.2 Manipulating Strings</A>
+<HR>
+<H2><A NAME=S0730>7.3 Persistence</A></H2>
+<P>
+Because of its reflexive facilities,
+persistence in Lua can be achieved within the language.
+This section shows some ways to store and retrieve values in Lua,
+using a text file written in the language itself as the storage media.
+<P>
+To store a single value with a name,
+the following code is enough:
+<TT><B><PRE>
+function store (name, value)
+  write('\n' .. name .. '=')
+  write_value(value)
+end</PRE></B></TT>
+<TT><B><PRE>
+function write_value (value)
+  local t = type(value)
+      if t == 'nil'    then write('nil')
+  elseif t == 'number' then write(value)
+  elseif t == 'string' then write('[[' .. value .. ']]')
+  end
+end</PRE></B></TT>
+In order to restore this value, a <TT><B>lua_dofile</B></TT> suffices.
+<P>
+Storing tables is a little more complex.
+Assuming that the table is a tree,
+and all indices are identifiers
+(that is, the tables are being used as records),
+its value can be written directly with table constructors.
+First, the function <TT><B>write_value</B></TT> is changed to
+<TT><B><PRE>
+function write_value (value)
+  local t = type(value)
+      if t == 'nil'    then write('nil')
+  elseif t == 'number' then write(value)
+  elseif t == 'string' then write('&quot;' .. value .. '&quot;')
+  elseif t == 'table'  then write_record(value)
+  end
+end</PRE></B></TT>
+The function <TT><B>write_record</B></TT> is:
+<TT><B><PRE>
+function write_record(t)
+  local i, v = next(t, nil)
+  write('{')  -- starts constructor
+  while i do
+    store(i, v)
+    write(', ')
+    i, v = next(t, i)
+  end
+  write('}')  -- closes constructor
+end</PRE></B></TT>
+<P>
+<HR>
+<B> Next:</B> <A HREF=subsection3_7_4.html>7.4 Inheritance</A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=subsection3_7_2.html>7.2 Manipulating Strings</A>
+<HR>
+
+</BODY>

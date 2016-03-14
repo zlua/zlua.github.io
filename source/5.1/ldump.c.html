@@ -1,0 +1,199 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - ldump.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldump.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldump.c,v 2.8.1.1 2007/12/27 13:02:25 roberto Exp $
+** save precompiled Lua chunks
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;stddef.h&gt;
+
+#define <A NAME="ldump_c"><SPAN CLASS="definition">ldump_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+
+typedef struct {
+ <A HREF="lstate.h.html#lua_State">lua_State</A>* L;
+ <A HREF="lua.h.html#lua_Writer">lua_Writer</A> writer;
+ void* data;
+ int strip;
+ int status;
+} <A NAME="DumpState"><SPAN CLASS="definition">DumpState</SPAN></A>;
+
+#define <A NAME="DumpMem"><SPAN CLASS="definition">DumpMem</SPAN></A>(b,n,size,D)     <A HREF="ldump.c.html#DumpBlock">DumpBlock</A>(b,(n)*(size),D)
+#define <A NAME="DumpVar"><SPAN CLASS="definition">DumpVar</SPAN></A>(x,D)            <A HREF="ldump.c.html#DumpMem">DumpMem</A>(&amp;x,1,sizeof(x),D)
+
+static void <A NAME="DumpBlock"><SPAN CLASS="definition">DumpBlock</SPAN></A>(const void* b, size_t size, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ if (D-&gt;status==0)
+ {
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(D-&gt;L);
+  D-&gt;status=(*D-&gt;writer)(D-&gt;L,b,size,D-&gt;data);
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(D-&gt;L);
+ }
+}
+
+static void <A NAME="DumpChar"><SPAN CLASS="definition">DumpChar</SPAN></A>(int y, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ char x=(char)y;
+ <A HREF="ldump.c.html#DumpVar">DumpVar</A>(x,D);
+}
+
+static void <A NAME="DumpInt"><SPAN CLASS="definition">DumpInt</SPAN></A>(int x, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ <A HREF="ldump.c.html#DumpVar">DumpVar</A>(x,D);
+}
+
+static void <A NAME="DumpNumber"><SPAN CLASS="definition">DumpNumber</SPAN></A>(<A HREF="lua.h.html#lua_Number">lua_Number</A> x, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ <A HREF="ldump.c.html#DumpVar">DumpVar</A>(x,D);
+}
+
+static void <A NAME="DumpVector"><SPAN CLASS="definition">DumpVector</SPAN></A>(const void* b, int n, size_t size, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ <A HREF="ldump.c.html#DumpInt">DumpInt</A>(n,D);
+ <A HREF="ldump.c.html#DumpMem">DumpMem</A>(b,n,size,D);
+}
+
+static void <A NAME="DumpString"><SPAN CLASS="definition">DumpString</SPAN></A>(const <A HREF="lobject.h.html#TString">TString</A>* s, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ if (s==NULL || <A HREF="lobject.h.html#getstr">getstr</A>(s)==NULL)
+ {
+  size_t size=0;
+  <A HREF="ldump.c.html#DumpVar">DumpVar</A>(size,D);
+ }
+ else
+ {
+  size_t size=s-&gt;tsv.len+1;             /* include trailing '\0' */
+  <A HREF="ldump.c.html#DumpVar">DumpVar</A>(size,D);
+  <A HREF="ldump.c.html#DumpBlock">DumpBlock</A>(<A HREF="lobject.h.html#getstr">getstr</A>(s),size,D);
+ }
+}
+
+#define <A NAME="DumpCode"><SPAN CLASS="definition">DumpCode</SPAN></A>(f,D)    <A HREF="ldump.c.html#DumpVector">DumpVector</A>(f-&gt;code,f-&gt;sizecode,sizeof(<A HREF="llimits.h.html#Instruction">Instruction</A>),D)
+
+static void <A HREF="ldump.c.html#DumpFunction">DumpFunction</A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f, const <A HREF="lobject.h.html#TString">TString</A>* p, <A HREF="ldump.c.html#DumpState">DumpState</A>* D);
+
+static void <A NAME="DumpConstants"><SPAN CLASS="definition">DumpConstants</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ int i,n=f-&gt;sizek;
+ <A HREF="ldump.c.html#DumpInt">DumpInt</A>(n,D);
+ for (i=0; i&lt;n; i++)
+ {
+  const <A HREF="lobject.h.html#TValue">TValue</A>* o=&amp;f-&gt;k[i];
+  <A HREF="ldump.c.html#DumpChar">DumpChar</A>(<A HREF="lobject.h.html#ttype">ttype</A>(o),D);
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(o))
+  {
+   case <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>:
+        break;
+   case <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>:
+        <A HREF="ldump.c.html#DumpChar">DumpChar</A>(<A HREF="lobject.h.html#bvalue">bvalue</A>(o),D);
+        break;
+   case <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>:
+        <A HREF="ldump.c.html#DumpNumber">DumpNumber</A>(<A HREF="lobject.h.html#nvalue">nvalue</A>(o),D);
+        break;
+   case <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>:
+        <A HREF="ldump.c.html#DumpString">DumpString</A>(<A HREF="lobject.h.html#rawtsvalue">rawtsvalue</A>(o),D);
+        break;
+   default:
+        <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0);                  /* cannot happen */
+        break;
+  }
+ }
+ n=f-&gt;sizep;
+ <A HREF="ldump.c.html#DumpInt">DumpInt</A>(n,D);
+ for (i=0; i&lt;n; i++) <A HREF="ldump.c.html#DumpFunction">DumpFunction</A>(f-&gt;p[i],f-&gt;source,D);
+}
+
+static void <A NAME="DumpDebug"><SPAN CLASS="definition">DumpDebug</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ int i,n;
+ n= (D-&gt;strip) ? 0 : f-&gt;sizelineinfo;
+ <A HREF="ldump.c.html#DumpVector">DumpVector</A>(f-&gt;lineinfo,n,sizeof(int),D);
+ n= (D-&gt;strip) ? 0 : f-&gt;sizelocvars;
+ <A HREF="ldump.c.html#DumpInt">DumpInt</A>(n,D);
+ for (i=0; i&lt;n; i++)
+ {
+  <A HREF="ldump.c.html#DumpString">DumpString</A>(f-&gt;locvars[i].varname,D);
+  <A HREF="ldump.c.html#DumpInt">DumpInt</A>(f-&gt;locvars[i].startpc,D);
+  <A HREF="ldump.c.html#DumpInt">DumpInt</A>(f-&gt;locvars[i].endpc,D);
+ }
+ n= (D-&gt;strip) ? 0 : f-&gt;sizeupvalues;
+ <A HREF="ldump.c.html#DumpInt">DumpInt</A>(n,D);
+ for (i=0; i&lt;n; i++) <A HREF="ldump.c.html#DumpString">DumpString</A>(f-&gt;upvalues[i],D);
+}
+
+static void <A NAME="DumpFunction"><SPAN CLASS="definition">DumpFunction</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f, const <A HREF="lobject.h.html#TString">TString</A>* p, <A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ <A HREF="ldump.c.html#DumpString">DumpString</A>((f-&gt;source==p || D-&gt;strip) ? NULL : f-&gt;source,D);
+ <A HREF="ldump.c.html#DumpInt">DumpInt</A>(f-&gt;linedefined,D);
+ <A HREF="ldump.c.html#DumpInt">DumpInt</A>(f-&gt;lastlinedefined,D);
+ <A HREF="ldump.c.html#DumpChar">DumpChar</A>(f-&gt;nups,D);
+ <A HREF="ldump.c.html#DumpChar">DumpChar</A>(f-&gt;numparams,D);
+ <A HREF="ldump.c.html#DumpChar">DumpChar</A>(f-&gt;is_vararg,D);
+ <A HREF="ldump.c.html#DumpChar">DumpChar</A>(f-&gt;maxstacksize,D);
+ <A HREF="ldump.c.html#DumpCode">DumpCode</A>(f,D);
+ <A HREF="ldump.c.html#DumpConstants">DumpConstants</A>(f,D);
+ <A HREF="ldump.c.html#DumpDebug">DumpDebug</A>(f,D);
+}
+
+static void <A NAME="DumpHeader"><SPAN CLASS="definition">DumpHeader</SPAN></A>(<A HREF="ldump.c.html#DumpState">DumpState</A>* D)
+{
+ char h[<A HREF="lundump.h.html#LUAC_HEADERSIZE">LUAC_HEADERSIZE</A>];
+ <A HREF="lundump.c.html#luaU_header">luaU_header</A>(h);
+ <A HREF="ldump.c.html#DumpBlock">DumpBlock</A>(h,<A HREF="lundump.h.html#LUAC_HEADERSIZE">LUAC_HEADERSIZE</A>,D);
+}
+
+/*
+** dump Lua function as precompiled chunk
+*/
+int <A NAME="luaU_dump"><SPAN CLASS="definition">luaU_dump</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A>* L, const <A HREF="lobject.h.html#Proto">Proto</A>* f, <A HREF="lua.h.html#lua_Writer">lua_Writer</A> w, void* data, int strip)
+{
+ <A HREF="ldump.c.html#DumpState">DumpState</A> D;
+ D.L=L;
+ D.writer=w;
+ D.data=data;
+ D.strip=strip;
+ D.status=0;
+ <A HREF="ldump.c.html#DumpHeader">DumpHeader</A>(&amp;D);
+ <A HREF="ldump.c.html#DumpFunction">DumpFunction</A>(f,NULL,&amp;D);
+ return D.status;
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

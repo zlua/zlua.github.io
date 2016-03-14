@@ -1,0 +1,208 @@
+<HTML>
+<HEAD>
+<TITLE>Lua: technical note 11</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+</HEAD>
+
+<BODY bgColor=#ffffff>
+
+<HR>
+<H1><A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua" BORDER=0></A>
+Technical Note 11
+</H1>
+
+<H2>Require revisited: Import</H2>
+by <A href="http://members.chello.nl/~w.couwenberg">Wim Couwenberg</A>
+
+<p><i>This LTN depends on &quot;loadfile,&quot; introduced in Lua 5.0</i>
+ 
+<H2>Abstract</H2>
+<p>Lua 4.1 introduced the &quot;require&quot; function that loads and runs a file unless it already loaded. Lua 5.0 offers require as a built-in function in its base lib.  The require command together with LTN 7 &quot;Modules &amp; packages&quot; offers a basis for simple module support in Lua. This technical note proposes an improved version of require, dubbed &quot;import.&quot; The proposed import scheme avoids direct access to the globals, corrects a globals related security loophole and handles cyclic module dependencies gracefully.
+
+<H2>The problem</H2>
+The module approach of LTN 7 proposes that a package should publish its public interface (wrapped in a table) in the <i>globals table</i>. This has the following drawbacks:
+
+<ul>
+<li>The global name used by the package might already hold data (a name clash.)
+<li>Users of the package must know to which global name the package assigns its interface.
+<li>Metamethods set on the globals table might interfere with the loading of a module.
+</ul>
+
+The current implementation of require has also some shortcomings:
+
+<ul>
+<li>Require relies on the LTN 7 system of global public interfaces as described above and provides no further package management.
+<li>The require call in Lua 5.0 passes <i>its own</i> table of globals on to the required package, thereby offering the package a severe security loophole. Because require is a built-in C function, a &quot;setglobals&quot; call does not apply to require to prevent this.
+<li>If modules require each other (i.e. are cyclically dependendent) then a require call will recurse indefinitely, resulting in a stack overflow.
+</ul>
+
+<H2>The solution</H2>
+The proposed import scheme addresses the problems posed by <i>global package names</i>, <i>globals security loopholes</i> and <i>cyclic dependencies</i>. Import can be completely implemented in vanilla Lua 5. The main points:
+
+<ul>
+<li>A package returns a &quot;package install&quot; function (PIF) that is in turn called by import.
+<li>A table is passed to the PIF into which the package's public interface should be inserted. This table is then returned as the result of the import call. A package should no longer install a global interface.
+<li>The package name and the full package path are passed as the second and third parameter to the PIF.
+<li>Import imposes its <i>caller's</i> globals on the imported package. 
+<li>Import will report an error if a package is used before it is fully imported. This <i>could</i> happen during import of cyclic dependent packages. (A package is &quot;used&quot; if its public interface is accessed.) Packages can be cyclically dependendent <i>without</i> using each other during import. In this case import will succeed without error. (An example is given in section <b>Explanation</b> below.)
+</ul>
+
+<p>The import function could be implemented with the following Lua 5.0 code.
+
+<blockquote>
+<pre>
+local imported = {}
+
+local function package_stub(name)
+  local stub = {}
+  local stub_meta = {
+    __index = function(_, index)
+      error(string.format("member `%s' is accessed before package `%s' is fully imported", index, name))
+    end,
+    __newindex = function(_, index, _)
+      error(string.format("member `%s' is assigned a value before package `%s' is fully imported", index, name))
+    end,
+  }
+  setmetatable(stub, stub_meta)
+  return stub
+end
+
+local function locate(name)
+  local path = LUA_PATH
+  if type(path) ~= "string" then
+    path = os.getenv "LUA_PATH" or "./?.lua"
+  end
+  for path in string.gfind(path, "[^;]+") do
+    path = string.gsub(path, "?", name)
+    local chunk = loadfile(path)
+    if chunk then return chunk, path end
+  end
+  return nil, path
+end
+
+function import(name)
+  local package = imported[name]
+  if package then return package end
+  local chunk, path = locate(name)
+  if not chunk then
+    error(string.format("could not locate package `%s' in `%s'", name, path))
+  end
+  package = package_stub(name)
+  imported[name] = package
+  setglobals(chunk, getglobals(2))
+  chunk = chunk()
+  setmetatable(package, nil)
+  if type(chunk) == "function" then
+    chunk(package, name, path)
+  end
+  return package
+end
+</pre>
+</blockquote>
+
+<p>Typical use of import is as follows:
+
+<blockquote><pre>
+-- import the complex package
+local complex = import "complex"
+
+-- complex now holds the public interface
+local x = 5 + 3*complex.I
+</pre></blockquote>
+
+<p>A package should be structured as follows:
+
+<blockquote><pre>
+-- first import all other required packages.
+local a = import "a"
+local b = import "b"
+
+-- then define the package install function.
+-- the PIF more or less contains the code of a
+-- LTN 7 package.
+local function pif(Public, path)
+
+local Private = {}
+
+function Public.fun()
+  -- public function
+end
+
+-- etc.
+end
+
+-- return the package install function
+return pif
+</pre></blockquote>
+
+<H2>Explanation</H2>
+Setting a &quot;package stub&quot; just before the package is loaded must trap any access to the stub (invoked by a nested import.) In order for this to work, additional imports should be placed in the <i>global scope</i> of each package involved, typically as the first calls. Note that the stub (stripped from its access restrictions) will later hold the package's public interface. In particular it is safe to refer to an imported interface (e.g. through upvalues) even in cyclic dependencies, as long as the interface is not actually accessed.
+
+<p>Import is almost backward compatible with require. Import will however not define the _REQUIREDNAME global during loading. An &quot;old style&quot; package that does not return a PIF will still be loaded and run but import returns an empty public interface. This will not impact old style code because require has no return values.
+
+<p>Here is an example of two packages mutually importing each other. Because neither one actually uses the other during import, this will not be a problem.
+
+<p>Package &quot;<code>a.lua</code>&quot;:
+
+<blockquote><pre>
+local b = import "b"
+
+local function pif(pub, name, path)
+
+function pub.show()
+  -- use a message from package b
+  print("in " .. name .. ": " .. b.message)
+end
+
+pub.message = "this is package " .. name .. " at " .. path
+
+end
+
+return pif
+</pre></blockquote>
+
+<p>Package &quot;<code>b.lua</code>&quot;:
+
+<blockquote><pre>
+local a = import "a"
+
+local function pif(pub, name, path)
+
+function pub.show()
+  -- use a message from package a
+  print("in " .. name .. ": " .. a.message)
+end
+
+pub.message = "this is package " .. name .. " at " .. path
+
+end
+
+return pif
+</pre></blockquote>
+
+<p>And some code importing and running both:
+
+<blockquote><pre>
+local a = import "a"
+local b = import "b"
+
+a.show() -- prints "in a: this is package b at ./b.lua"
+b.show() -- prints "in b: this is package a at ./a.lua"
+</pre></blockquote>
+
+<H2>Weaknesses</H2>
+The import function assumes that the packages it imports are &quot;well-behaved.&quot; A package can of course still access and update the globals so care should be taken. Proper structuring of a package (import calls in its global scope, return a PIF, etc.) is not enforced.
+<P>
+
+<H2>Conclusion</H2>
+The require function has proved itself to be very useful. The proposed import scheme builds on this success. It provides more controlled package visibility and supports cyclic dependencies whenever possible. The import functionality is lightweight and can be completely defined in vanilla Lua 5.
+<P>
+
+<HR>
+<SMALL>
+Last update:
+Wed Feb 19 09:25:05 EST 2003
+</SMALL>
+
+</BODY>
+</HTML>

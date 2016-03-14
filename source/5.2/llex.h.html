@@ -1,0 +1,113 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - llex.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+llex.h
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: llex.h,v 1.72.1.1 2013/04/12 18:48:47 roberto Exp $
+** Lexical Analyzer
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="llex.h.html#llex_h">llex_h</A>
+#define <A NAME="llex_h"><SPAN CLASS="definition">llex_h</SPAN></A>
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+#define <A NAME="FIRST_RESERVED"><SPAN CLASS="definition">FIRST_RESERVED</SPAN></A>  257
+
+
+
+/*
+* WARNING: if you change the order of this enumeration,
+* grep "ORDER <A HREF="llex.h.html#RESERVED">RESERVED</A>"
+*/
+enum <A NAME="RESERVED"><SPAN CLASS="definition">RESERVED</SPAN></A> {
+  /* terminal symbols denoted by reserved words */
+  <A NAME="TK_AND"><SPAN CLASS="definition">TK_AND</SPAN></A> = <A HREF="llex.h.html#FIRST_RESERVED">FIRST_RESERVED</A>, <A NAME="TK_BREAK"><SPAN CLASS="definition">TK_BREAK</SPAN></A>,
+  <A NAME="TK_DO"><SPAN CLASS="definition">TK_DO</SPAN></A>, <A NAME="TK_ELSE"><SPAN CLASS="definition">TK_ELSE</SPAN></A>, <A NAME="TK_ELSEIF"><SPAN CLASS="definition">TK_ELSEIF</SPAN></A>, <A NAME="TK_END"><SPAN CLASS="definition">TK_END</SPAN></A>, <A NAME="TK_FALSE"><SPAN CLASS="definition">TK_FALSE</SPAN></A>, <A NAME="TK_FOR"><SPAN CLASS="definition">TK_FOR</SPAN></A>, <A NAME="TK_FUNCTION"><SPAN CLASS="definition">TK_FUNCTION</SPAN></A>,
+  <A NAME="TK_GOTO"><SPAN CLASS="definition">TK_GOTO</SPAN></A>, <A NAME="TK_IF"><SPAN CLASS="definition">TK_IF</SPAN></A>, <A NAME="TK_IN"><SPAN CLASS="definition">TK_IN</SPAN></A>, <A NAME="TK_LOCAL"><SPAN CLASS="definition">TK_LOCAL</SPAN></A>, <A NAME="TK_NIL"><SPAN CLASS="definition">TK_NIL</SPAN></A>, <A NAME="TK_NOT"><SPAN CLASS="definition">TK_NOT</SPAN></A>, <A NAME="TK_OR"><SPAN CLASS="definition">TK_OR</SPAN></A>, <A NAME="TK_REPEAT"><SPAN CLASS="definition">TK_REPEAT</SPAN></A>,
+  <A NAME="TK_RETURN"><SPAN CLASS="definition">TK_RETURN</SPAN></A>, <A NAME="TK_THEN"><SPAN CLASS="definition">TK_THEN</SPAN></A>, <A NAME="TK_TRUE"><SPAN CLASS="definition">TK_TRUE</SPAN></A>, <A NAME="TK_UNTIL"><SPAN CLASS="definition">TK_UNTIL</SPAN></A>, <A NAME="TK_WHILE"><SPAN CLASS="definition">TK_WHILE</SPAN></A>,
+  /* other terminal symbols */
+  <A NAME="TK_CONCAT"><SPAN CLASS="definition">TK_CONCAT</SPAN></A>, <A NAME="TK_DOTS"><SPAN CLASS="definition">TK_DOTS</SPAN></A>, <A NAME="TK_EQ"><SPAN CLASS="definition">TK_EQ</SPAN></A>, <A NAME="TK_GE"><SPAN CLASS="definition">TK_GE</SPAN></A>, <A NAME="TK_LE"><SPAN CLASS="definition">TK_LE</SPAN></A>, <A NAME="TK_NE"><SPAN CLASS="definition">TK_NE</SPAN></A>, <A NAME="TK_DBCOLON"><SPAN CLASS="definition">TK_DBCOLON</SPAN></A>, <A NAME="TK_EOS"><SPAN CLASS="definition">TK_EOS</SPAN></A>,
+  <A NAME="TK_NUMBER"><SPAN CLASS="definition">TK_NUMBER</SPAN></A>, <A NAME="TK_NAME"><SPAN CLASS="definition">TK_NAME</SPAN></A>, <A NAME="TK_STRING"><SPAN CLASS="definition">TK_STRING</SPAN></A>
+};
+
+/* number of reserved words */
+#define <A NAME="NUM_RESERVED"><SPAN CLASS="definition">NUM_RESERVED</SPAN></A>    (<A HREF="llimits.h.html#cast">cast</A>(int, <A HREF="llex.h.html#TK_WHILE">TK_WHILE</A>-<A HREF="llex.h.html#FIRST_RESERVED">FIRST_RESERVED</A>+1))
+
+
+typedef union {
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> r;
+  <A HREF="lobject.h.html#TString">TString</A> *ts;
+} <A NAME="SemInfo"><SPAN CLASS="definition">SemInfo</SPAN></A>;  /* semantics information */
+
+
+typedef struct <A NAME="Token"><SPAN CLASS="definition">Token</SPAN></A> {
+  int token;
+  <A HREF="llex.h.html#SemInfo">SemInfo</A> seminfo;
+} <A HREF="llex.h.html#Token">Token</A>;
+
+
+/* state of the lexer plus state of the parser when shared by all
+   functions */
+typedef struct <A NAME="LexState"><SPAN CLASS="definition">LexState</SPAN></A> {
+  int current;  /* current character (charint) */
+  int linenumber;  /* input line counter */
+  int lastline;  /* line of last token `consumed' */
+  <A HREF="llex.h.html#Token">Token</A> t;  /* current token */
+  <A HREF="llex.h.html#Token">Token</A> lookahead;  /* look ahead token */
+  struct <A HREF="lparser.h.html#FuncState">FuncState</A> *fs;  /* current function (parser) */
+  struct <A HREF="lstate.h.html#lua_State">lua_State</A> *L;
+  <A HREF="lzio.h.html#ZIO">ZIO</A> *z;  /* input stream */
+  <A HREF="lzio.h.html#Mbuffer">Mbuffer</A> *buff;  /* buffer for tokens */
+  struct <A HREF="lparser.h.html#Dyndata">Dyndata</A> *dyd;  /* dynamic structures used by the parser */
+  <A HREF="lobject.h.html#TString">TString</A> *source;  /* current source name */
+  <A HREF="lobject.h.html#TString">TString</A> *envn;  /* environment variable name */
+  char decpoint;  /* locale decimal point */
+} <A HREF="llex.h.html#LexState">LexState</A>;
+
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="llex.c.html#luaX_init">luaX_init</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="llex.c.html#luaX_setinput">luaX_setinput</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="llex.h.html#LexState">LexState</A> *ls, <A HREF="lzio.h.html#ZIO">ZIO</A> *z,
+                              <A HREF="lobject.h.html#TString">TString</A> *source, int firstchar);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#TString">TString</A> *<A HREF="llex.c.html#luaX_newstring">luaX_newstring</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *str, size_t l);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="llex.c.html#luaX_next">luaX_next</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="llex.c.html#luaX_lookahead">luaX_lookahead</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="llimits.h.html#l_noret">l_noret</A> <A HREF="llex.c.html#luaX_syntaxerror">luaX_syntaxerror</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, const char *s);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const char *<A HREF="llex.c.html#luaX_token2str">luaX_token2str</A> (<A HREF="llex.h.html#LexState">LexState</A> *ls, int token);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

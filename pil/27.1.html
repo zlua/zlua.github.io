@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>Programming in Lua : 27.1</title>
+<link rel="stylesheet" type="text/css" href="pil.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</head>
+<body>
+<p class="warning">
+<A HREF="contents.html"><IMG TITLE="Programming in Lua (first edition)" SRC="capa.jpg" ALT="" ALIGN="left"></A>This first edition was written for Lua 5.0. While still largely relevant for later versions, there are some differences.<BR>The third edition targets Lua 5.2 and is available at <A HREF="http://www.amazon.com/exec/obidos/ASIN/859037985X/theprogrammil3-20">Amazon</A> and other bookstores.<BR>By buying the book, you also help to <A HREF="../donations.html">support the Lua project</A>.
+</p>
+<table width="100%" class="nav">
+<tr>
+<td width="10%" align="left"><a href="27.html"><img src="left.png" alt="Previous"></a></td>
+<td width="80%" align="center"><a href="contents.html">
+<font color="gray">Programming in </font><font color="blue"> Lua</font>
+</a></td>
+<td width="10%" align="right"><a href="27.2.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+<tr>
+<td width="10%" align="left"></td>
+<td width="80%" align="center"><a href="contents.html#P4">Part IV. The C API</a>
+<span class="spacer"></span>
+<a href="contents.html#27">Chapter 27. Techniques for Writing C Functions</a></td>
+<td width="10%" align="right"></td></tr>
+</table>
+<hr>
+<h2>27.1 &ndash; Array Manipulation</h2>
+
+<p>"Array", in Lua, is just a name for a table used in a specific way.
+We can manipulate arrays using the same functions
+we use to manipulate tables,
+namely <code>lua_settable</code> and <code>lua_gettable</code>.
+However, contrary to the general philosophy of Lua,
+<em>economy and simplicity</em>,
+the API provides special functions for array manipulation.
+The reason for that is performance:
+Frequently we have an array access operation
+inside the inner loop of an algorithm (e.g., sorting),
+so that any performance gain in this operation
+can have a big impact on the overall performance of the function.
+
+<p>The functions that the API provides for array manipulation are
+<pre>
+    void lua_rawgeti (lua_State *L, int index, int key);
+    void lua_rawseti (lua_State *L, int index, int key);
+</pre>
+The description of <code>lua_rawgeti</code> and <code>lua_rawseti</code>
+is a little confusing,
+as it involves two indices:
+<code>index</code> refers to where the table is in the stack;
+<code>key</code> refers to where the element is in the table.
+The call <code>lua_rawgeti(L, t, key)</code> is equivalent to the sequence
+<pre>
+    lua_pushnumber(L, key);
+    lua_rawget(L, t);
+</pre>
+when <code>t</code> is positive
+(otherwise, you must compensate for the new item in the stack).
+The call <code>lua_rawseti(L, t, key)</code> (again for <code>t</code> positive)
+is equivalent to
+<pre>
+    lua_pushnumber(L, key);
+    lua_insert(L, -2);  /* put `key' below previous value */
+    lua_rawset(L, t);
+</pre>
+Note that both functions use raw operations.
+They are faster and, anyway,
+tables used as arrays seldom use metamethods.
+
+<p>As a concrete example of the use of these functions,
+we could rewrite the loop body
+from our previous <code>l_dir</code> function from
+<pre>
+        lua_pushnumber(L, i++);  /* key */
+        lua_pushstring(L, entry->d_name);  /* value */
+        lua_settable(L, -3);
+</pre>
+to
+<pre>
+        lua_pushstring(L, entry->d_name);  /* value */
+        lua_rawseti(L, -2, i++);  /* set table at key `i' */
+</pre>
+
+<p>As a more complete example,
+the following code implements the map function:
+It applies a given function to all elements of an array,
+replacing each element by the result of the call.
+<pre>
+    int l_map (lua_State *L) {
+      int i, n;
+    
+      /* 1st argument must be a table (t) */
+      luaL_checktype(L, 1, LUA_TTABLE);
+    
+      /* 2nd argument must be a function (f) */
+      luaL_checktype(L, 2, LUA_TFUNCTION);
+    
+      n = luaL_getn(L, 1);  /* get size of table */
+    
+      for (i=1; i&lt;=n; i++) {
+        lua_pushvalue(L, 2);   /* push f */
+        lua_rawgeti(L, 1, i);  /* push t[i] */
+        lua_call(L, 1, 1);     /* call f(t[i]) */
+        lua_rawseti(L, 1, i);  /* t[i] = result */
+      }
+    
+      return 0;  /* no results */
+    }
+</pre>
+This example introduces three new functions.
+The <code>luaL_checktype</code> function (from <code>lauxlib.h</code>)
+ensures that a given argument has a given type;
+otherwise, it raises an error.
+The <code>luaL_getn</code> function gets the size
+of the array at the given index
+(<code>table.getn</code> calls <code>luaL_getn</code> to do its job).
+The <code>lua_call</code> function does an unprotected call.
+It is similar to <code>lua_pcall</code>,
+but in case of errors it throws the error,
+instead of returning an error code.
+When you are writing the main code in an application,
+you should not use <code>lua_call</code>,
+because you want to catch any errors.
+When you are writing functions, however,
+it is usually a good idea to use <code>lua_call</code>;
+if there is an error,
+just leave it to someone that cares about it.
+
+<hr>
+<table width="100%" class="nav">
+<tr>
+<td width="90%" align="left">
+<small>
+  Copyright &copy; 2003&ndash;2004 Roberto Ierusalimschy.  All rights reserved.
+</small>
+</td>
+<td width="10%" align="right"><a href="27.2.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+</table>
+
+
+</body></html>
+

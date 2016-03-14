@@ -1,0 +1,217 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua: test suites</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../ftp.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+<STYLE TYPE="text/css">
+pre, code, tt {
+	font-size: 12pt ;
+}
+
+.name {
+	width: 10em ;
+}
+</STYLE>
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua"></A>
+Test suites
+</H1>
+
+<P>
+For a reasonable test of your Lua installation,
+download the test suite for your release of Lua
+and follow the instructions below
+to run
+<A HREF="#basic">basic</A>,
+<A HREF="#complete">complete</A>,
+and
+<A HREF="#internal">internal</A>
+tests.
+
+<P>
+The tests for Lua 5.2.2 work for all later releases of Lua 5.2.
+
+<P>
+<TABLE>
+<TR>
+<TH>filename</TH>
+<TH>date</TH>
+<TH CLASS="size">size</TH>
+<TH>checksums</TH>
+</TR>
+
+<TR>
+<TD CLASS="name"><A HREF="lua-5.3.2-tests.tar.gz">lua-5.3.2-tests.tar.gz</A></TD>
+<TD CLASS="date">2015-11-25</TD>
+<TD CLASS="size">101342</TD>
+<TD CLASS="sum">md5: a2b7ab1b8ff82a0145376e233ef30a4a<BR>sha1: 87ecda2bd47366d5e79b41fe676aa31e44ff6ce1</TD>
+</TR>
+
+<TR>
+<TD CLASS="name"><A HREF="lua-5.3.1-tests.tar.gz">lua-5.3.1-tests.tar.gz</A></TD>
+<TD CLASS="date">2015-06-10</TD>
+<TD CLASS="size">99638</TD>
+<TD CLASS="sum">md5: f4e0d83cb658980126464ad92b299b43<BR>sha1: 922acc4d1cdcea2275eeeff9c2ef5555d19a4ae9</TD>
+</TR>
+
+<TR>
+<TD CLASS="name"><A HREF="lua-5.3.0-tests.tar.gz">lua-5.3.0-tests.tar.gz</A></TD>
+<TD CLASS="date">2015-01-05</TD>
+<TD CLASS="size">96995</TD>
+<TD CLASS="sum">md5: fc0192f21894475da586fe63e3c17d50<BR>sha1: 8fd633ab67edf5e824c2afc62f318de245fce268</TD>
+</TR>
+
+<TR>
+<TD CLASS="name"><A HREF="lua-5.2.2-tests.tar.gz">lua-5.2.2-tests.tar.gz</A></TD>
+<TD CLASS="date">2013-03-07</TD>
+<TD CLASS="size">76629</TD>
+<TD CLASS="sum">md5: a3dabd30e5a364c87191b0c1e6f64178<BR>sha1: 89abce5ab3080783dec9785c8fe5da6d4896de05</TD>
+</TR>
+
+<TR>
+<TD CLASS="name"><A HREF="lua-5.2.1-tests.tar.gz">lua-5.2.1-tests.tar.gz</A></TD>
+<TD CLASS="date">2012-07-02</TD>
+<TD CLASS="size">76093</TD>
+<TD CLASS="sum">md5: c30210b7d1c500611bae852f32442fbc<BR>sha1: 034c32751985c74a7422cb40b8aeef0033786932</TD>
+</TR>
+
+<TR>
+<TD CLASS="name"><A HREF="lua-5.2.0-tests.tar.gz">lua-5.2.0-tests.tar.gz</A></TD>
+<TD CLASS="date">2011-12-12</TD>
+<TD CLASS="size">75065</TD>
+<TD CLASS="sum">md5: a0b3f66d820352b4502a27cf8488ab73<BR>sha1: 9940d9c75fa44b7698e34a63fc314e885e49f55b</TD>
+</TR>
+
+<TR>
+<TD CLASS="name"><A HREF="lua5.1-tests.tar.gz">lua5.1-tests.tar.gz</A></TD>
+<TD CLASS="date">2016-01-18</TD>
+<TD CLASS="size">55127</TD>
+<TD CLASS="sum">md5: b376d315ada7bd9d379ec820d6cc27ed<BR>sha1: aeddc9f901555c08a5209f077e5413c2ae4b8947</TD>
+</TR>
+
+</TABLE>
+
+<H2><A NAME="basic">Basic tests</A></H2>
+<P>
+Open the test suite somewhere.
+You'll see a directory named <TT>lua-x.y.z-tests</TT>
+containing several .lua files and a few subdirectories.
+
+<P>
+To run some basic tests,
+go to this directory and run the following command:
+<PRE>
+    <EM>path/</EM>lua -e"_U=true" all.lua
+</PRE>
+Make sure you run the exact release of Lua that you wish to test.
+If you're in doubt, run <TT>lua -v</TT> and check the output.
+If the release numbers do not match, you'll have to provide an explicit path.
+
+<P>
+The tests will print lots of different messages,
+but no assertion should ever fail.
+If the test goes all its way to the end,
+printing a "<TT>final OK</TT>" message,
+then all went well.
+
+<P>
+Note that, by its very nature, Lua is heavily dependent on the underlying
+standard C libraries. Sometimes the test suite fails because these
+underlying C libraries do not follow the ANSI standard.
+There is not much we can do about it.
+
+<H2><A NAME="complete">Complete tests</A></H2>
+<P>
+The test suite uses some variables to control the execution
+of some tests.
+By defining the global variable <CODE>_U</CODE>
+(e.g., with the option <CODE>-e"_U=true"</CODE> in the command line
+as done for the <A HREF="#basic">basic tests</A> above),
+the suite skip tests that are not fully portable
+and that consume too much memory.
+This option also suppresses messages for tests not performed.
+The basic tests
+should work without
+problems in any system with Lua compiled without changes.
+
+<P>
+The complete test suite (that is, without the <code>_U</code> option)
+tries to test every corner of the language, its libraries,
+and the C&nbsp;API, even corners that are system dependent.
+Unlike Lua itself, these tests do not aim at portability, small footprint,
+or easy of use.
+Their main goal is to try to crash Lua.
+They are not intended for general use.
+You are welcome to use them,
+but expect to get your hands dirty.
+
+<P>
+To run the complete suite,
+first make sure that your test directory has subdirectories
+<code>libs/</code> and <code>libs/P1/</code>,
+then go to subdirectory <code>libs/</code> and
+build the C&nbsp;libraries there using the makefile provided
+(or its equivalent in your system).
+Now you may try to run the full test suite,
+by running the following command at the top-level test directory:
+<PRE>
+    <EM>path/</EM>lua all.lua
+</PRE>
+Again, make sure you run the correct release of Lua.
+
+<P>
+Do not worry if it does not work the first time you try.
+(That is why there is the <CODE>_U</CODE> option after all.)
+You may need to adjust small details for your system.
+Among others, here is a list of things that may go wrong:
+<UL>
+<LI> small bugs in your system's C&nbsp;library;
+<LI> file names returned by <CODE>tmpnam</CODE> cannot be opened or cannot be
+opened in write mode;
+<LI> names in C&nbsp;libraries need a "_" prefix
+(only for function <code>package.loadlib</code>;
+see test <code>attrib.lua</code>);
+<LI> unconventional syntax for the command processor in <CODE>os.execute</CODE>.
+</UL>
+
+<H2><A NAME="internal">Internal tests</A></H2>
+<P>
+For even harder tests,
+the test suite uses a special library, <em>testC</em>,
+that gives access to several internal structures in Lua.
+This library is only available when Lua is compiled in debug mode,
+as described below.
+
+<P>
+If you want to run these internal tests,
+copy <code>ltests.c</code> and <code>ltests.h</code>
+from the <code>ltests</code> directory
+to the directory with the source Lua files,
+and recompile Lua with the option <code>-DLUA_USER_H='"ltests.h"'</code>
+(or its equivalent to define
+<code>LUA_USER_H</code> as the string <code>"ltests.h"</code>,
+including the quotes).
+This option adds the testC library
+and enables several other internal tests as well.
+After the recompilation, run the tests as before.
+Again, expect to get your hands dirty.
+
+<P>
+Good luck!
+
+<P CLASS="footer">
+Last update:
+Mon Jan 18 14:08:01 BRST 2016
+</P>
+<!--
+Last change: fixed Lua 5.1 tests
+-->
+
+</BODY>
+</HTML>

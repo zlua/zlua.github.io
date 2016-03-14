@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lobject.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lobject.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lobject.c,v 1.55 2000/10/20 16:36:32 roberto Exp $
+** Some generic functions over Lua objects
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;ctype.h&gt;
+#include &lt;stdarg.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+
+const <A HREF="lobject.h.html#TObject">TObject</A> <A NAME="luaO_nilobject"><SPAN CLASS="definition">luaO_nilobject</SPAN></A> = {<A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>, {NULL}};
+
+
+const char *const <A NAME="luaO_typenames"><SPAN CLASS="definition">luaO_typenames</SPAN></A>[] = {
+  "userdata", "nil", "number", "string", "table", "function"
+};
+
+
+
+/*
+** returns smaller power of 2 larger than `n' (minimum is <A HREF="llimits.h.html#MINPOWER2">MINPOWER2</A>) 
+*/
+<A HREF="llimits.h.html#lint32">lint32</A> <A NAME="luaO_power2"><SPAN CLASS="definition">luaO_power2</SPAN></A> (<A HREF="llimits.h.html#lint32">lint32</A> n) {
+  <A HREF="llimits.h.html#lint32">lint32</A> p = <A HREF="llimits.h.html#MINPOWER2">MINPOWER2</A>;
+  while (p&lt;=n) p&lt;&lt;=1;
+  return p;
+}
+
+
+int <A NAME="luaO_equalObj"><SPAN CLASS="definition">luaO_equalObj</SPAN></A> (const <A HREF="lobject.h.html#TObject">TObject</A> *t1, const <A HREF="lobject.h.html#TObject">TObject</A> *t2) {
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(t1) != <A HREF="lobject.h.html#ttype">ttype</A>(t2)) return 0;
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(t1)) {
+    case <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>:
+      return <A HREF="lobject.h.html#nvalue">nvalue</A>(t1) == <A HREF="lobject.h.html#nvalue">nvalue</A>(t2);
+    case <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>: case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>:
+      return <A HREF="lobject.h.html#tsvalue">tsvalue</A>(t1) == <A HREF="lobject.h.html#tsvalue">tsvalue</A>(t2);
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: 
+      return <A HREF="lobject.h.html#hvalue">hvalue</A>(t1) == <A HREF="lobject.h.html#hvalue">hvalue</A>(t2);
+    case <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>:
+      return <A HREF="lobject.h.html#clvalue">clvalue</A>(t1) == <A HREF="lobject.h.html#clvalue">clvalue</A>(t2);
+    default:
+      <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lobject.h.html#ttype">ttype</A>(t1) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>, "invalid type");
+      return 1; /* <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A> */
+  }
+}
+
+
+char *<A NAME="luaO_openspace"><SPAN CLASS="definition">luaO_openspace</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t n) {
+  if (n &gt; L-&gt;Mbuffsize) {
+    <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, L-&gt;Mbuffer, n, char);
+    L-&gt;nblocks += (n - L-&gt;Mbuffsize)*sizeof(char);
+    L-&gt;Mbuffsize = n;
+  }
+  return L-&gt;Mbuffer;
+}
+
+
+int <A NAME="luaO_str2d"><SPAN CLASS="definition">luaO_str2d</SPAN></A> (const char *s, <A HREF="llimits.h.html#Number">Number</A> *result) {  /* LUA_NUMBER */
+  char *endptr;
+  <A HREF="llimits.h.html#Number">Number</A> res = <A HREF="llimits.h.html#lua_str2number">lua_str2number</A>(s, &amp;endptr);
+  if (endptr == s) return 0;  /* no conversion */
+  while (isspace((unsigned char)*endptr)) endptr++;
+  if (*endptr != '\0') return 0;  /* invalid trailing characters? */
+  *result = res;
+  return 1;
+}
+
+
+/* maximum length of a string format for `<A HREF="lobject.c.html#luaO_verror">luaO_verror</A>' */
+#define <A NAME="MAX_VERROR"><SPAN CLASS="definition">MAX_VERROR</SPAN></A>      280
+
+/* this function needs to handle only '%d' and '%.XXs' formats */
+void <A NAME="luaO_verror"><SPAN CLASS="definition">luaO_verror</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...) {
+  va_list argp;
+  char buff[<A HREF="lobject.c.html#MAX_VERROR">MAX_VERROR</A>];  /* to hold formatted message */
+  va_start(argp, fmt);
+  vsprintf(buff, fmt, argp);
+  va_end(argp);
+  <A HREF="ldo.c.html#lua_error">lua_error</A>(L, buff);
+}
+
+
+void <A NAME="luaO_chunkid"><SPAN CLASS="definition">luaO_chunkid</SPAN></A> (char *out, const char *source, int bufflen) {
+  if (*source == '=') {
+    strncpy(out, source+1, bufflen);  /* remove first char */
+    out[bufflen-1] = '\0';  /* ensures null termination */
+  }
+  else {
+    if (*source == '@') {
+      int l;
+      source++;  /* skip the `@' */
+      bufflen -= sizeof("file `...%s'");
+      l = strlen(source);
+      if (l&gt;bufflen) {
+        source += (l-bufflen);  /* get last part of file name */
+        sprintf(out, "file `...%.99s'", source);
+      }
+      else
+        sprintf(out, "file `%.99s'", source);
+    }
+    else {
+      int len = strcspn(source, "\n");  /* stop at first newline */
+      bufflen -= sizeof("string \"%.*s...\"");
+      if (len &gt; bufflen) len = bufflen;
+      if (source[len] != '\0') {  /* must truncate? */
+        strcpy(out, "string \"");
+        out += strlen(out);
+        strncpy(out, source, len);
+        strcpy(out+len, "...\"");
+      }
+      else
+        sprintf(out, "string \"%.99s\"", source);
+    }
+  }
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

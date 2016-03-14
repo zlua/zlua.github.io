@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0 Reference Manual - contents</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../index.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT=""></A>
+Lua 5.0 Reference Manual
+</H1>
+
+<P>
+The reference manual is the official definition of the Lua language.
+<BR>
+For a complete introduction to Lua programming, see the book
+<A HREF="../../pil/">Programming in Lua</A>.
+
+<DIV CLASS="menubar">
+<A HREF="manual.html">start</A>
+&middot;
+<A HREF="#contents">contents</A>
+&middot;
+<A HREF="#index">index</A>
+&middot;
+<A HREF="../../ftp/refman-5.0.ps.gz">ps</A>
+&middot;
+<A HREF="../../ftp/refman-5.0.pdf">pdf</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<P>
+<SMALL>
+Copyright &copy; 2003&ndash;2006 Tecgraf, PUC-Rio.
+Freely available under the terms of the
+<A HREF="../../license.html">Lua license</A>.
+</SMALL>
+
+<H2><A NAME="contents">Contents</A></H2>
+<UL CLASS="contents menubar">
+<LI><A HREF="manual.html">1 &ndash; Introduction</A>
+<P>
+<LI><A HREF="manual.html#2">2 &ndash; The Language</A>
+<UL>
+<LI><A HREF="manual.html#2.1">2.1 &ndash; Lexical Conventions</A>
+<LI><A HREF="manual.html#2.2">2.2 &ndash; Values and Types</A>
+<UL>
+<LI><A HREF="manual.html#2.2.1">2.2.1 &ndash; Coercion</A>
+</UL>
+<LI><A HREF="manual.html#2.3">2.3 &ndash; Variables</A>
+<LI><A HREF="manual.html#2.4">2.4 &ndash; Statements</A>
+<UL>
+<LI><A HREF="manual.html#2.4.1">2.4.1 &ndash; Chunks</A>
+<LI><A HREF="manual.html#2.4.2">2.4.2 &ndash; Blocks</A>
+<LI><A HREF="manual.html#2.4.3">2.4.3 &ndash; Assignment</A>
+<LI><A HREF="manual.html#2.4.4">2.4.4 &ndash; Control Structures</A>
+<LI><A HREF="manual.html#2.4.5">2.4.5 &ndash; For Statement</A>
+<LI><A HREF="manual.html#2.4.6">2.4.6 &ndash; Function Calls as Statements</A>
+<LI><A HREF="manual.html#2.4.7">2.4.7 &ndash; Local Declarations</A>
+</UL>
+<LI><A HREF="manual.html#2.5">2.5 &ndash; Expressions</A>
+<UL>
+<LI><A HREF="manual.html#2.5.1">2.5.1 &ndash; Arithmetic Operators</A>
+<LI><A HREF="manual.html#2.5.2">2.5.2 &ndash; Relational Operators</A>
+<LI><A HREF="manual.html#2.5.3">2.5.3 &ndash; Logical Operators</A>
+<LI><A HREF="manual.html#2.5.4">2.5.4 &ndash; Concatenation</A>
+<LI><A HREF="manual.html#2.5.5">2.5.5 &ndash; Precedence</A>
+<LI><A HREF="manual.html#2.5.6">2.5.6 &ndash; Table Constructors</A>
+<LI><A HREF="manual.html#2.5.7">2.5.7 &ndash; Function Calls</A>
+<LI><A HREF="manual.html#2.5.8">2.5.8 &ndash; Function Definitions</A>
+</UL>
+</UL>
+<UL>
+<LI><A HREF="manual.html#2.6">2.6 &ndash; Visibility Rules</A>
+<LI><A HREF="manual.html#2.7">2.7 &ndash; Error Handling</A>
+<LI><A HREF="manual.html#2.8">2.8 &ndash; Metatables</A>
+<LI><A HREF="manual.html#2.9">2.9 &ndash; Garbage Collection</A>
+<UL>
+<LI><A HREF="manual.html#2.9.1">2.9.1 &ndash; Garbage-Collection Metamethods</A>
+<LI><A HREF="manual.html#2.9.2">2.9.2 &ndash; Weak Tables</A>
+</UL>
+<LI><A HREF="manual.html#2.10">2.10 &ndash; Coroutines</A>
+</UL>
+<P>
+<LI><A HREF="manual.html#3">3 &ndash; The Application Program Interface</A>
+<UL>
+<LI><A HREF="manual.html#3.1">3.1 &ndash; States</A>
+<LI><A HREF="manual.html#3.2">3.2 &ndash; The Stack and Indices</A>
+<LI><A HREF="manual.html#3.3">3.3 &ndash; Stack Manipulation</A>
+<LI><A HREF="manual.html#3.4">3.4 &ndash; Querying the Stack</A>
+<LI><A HREF="manual.html#3.5">3.5 &ndash; Getting Values from the Stack</A>
+<LI><A HREF="manual.html#3.6">3.6 &ndash; Pushing Values onto the Stack</A>
+<LI><A HREF="manual.html#3.7">3.7 &ndash; Controlling Garbage Collection</A>
+<LI><A HREF="manual.html#3.8">3.8 &ndash; Userdata</A>
+<LI><A HREF="manual.html#3.9">3.9 &ndash; Metatables</A>
+<LI><A HREF="manual.html#3.10">3.10 &ndash; Loading Lua Chunks</A>
+<LI><A HREF="manual.html#3.11">3.11 &ndash; Manipulating Tables</A>
+<LI><A HREF="manual.html#3.12">3.12 &ndash; Manipulating Environments</A>
+<LI><A HREF="manual.html#3.13">3.13 &ndash; Using Tables as Arrays</A>
+<LI><A HREF="manual.html#3.14">3.14 &ndash; Calling Functions</A>
+<LI><A HREF="manual.html#3.15">3.15 &ndash; Protected Calls</A>
+<LI><A HREF="manual.html#3.16">3.16 &ndash; Defining C Functions</A>
+<LI><A HREF="manual.html#3.17">3.17 &ndash; Defining C Closures</A>
+<LI><A HREF="manual.html#3.18">3.18 &ndash; Registry</A>
+<LI><A HREF="manual.html#3.19">3.19 &ndash; Error Handling in C</A>
+<LI><A HREF="manual.html#3.20">3.20 &ndash; Threads</A>
+</UL>
+<P>
+<LI><A HREF="manual.html#4">4 &ndash; The Debug Interface</A>
+<UL>
+<LI><A HREF="manual.html#4.1">4.1 &ndash; Stack and Function Information</A>
+<LI><A HREF="manual.html#4.2">4.2 &ndash; Manipulating Local Variables and Upvalues</A>
+<LI><A HREF="manual.html#4.3">4.3 &ndash; Hooks</A>
+</UL>
+<P>
+<LI><A HREF="manual.html#5">5 &ndash; Standard Libraries</A>
+<UL>
+<LI><A HREF="manual.html#5.1">5.1 &ndash; Basic Functions</A>
+<LI><A HREF="manual.html#5.2">5.2 &ndash; Coroutine Manipulation</A>
+<LI><A HREF="manual.html#5.3">5.3 &ndash; String Manipulation</A>
+<LI><A HREF="manual.html#5.4">5.4 &ndash; Table Manipulation</A>
+<LI><A HREF="manual.html#5.5">5.5 &ndash; Mathematical Functions</A>
+<LI><A HREF="manual.html#5.6">5.6 &ndash; Input and Output Facilities</A>
+<LI><A HREF="manual.html#5.7">5.7 &ndash; Operating System Facilities</A>
+<LI><A HREF="manual.html#5.8">5.8 &ndash; The Reflexive Debug Interface</A>
+</UL>
+<P>
+<LI><A HREF="manual.html#6">6 &ndash; Lua Stand-alone</A>
+<P>
+<LI><A HREF="manual.html#BNF">The Complete Syntax of Lua</A>
+</UL>
+
+<P CLASS="footer">
+Last update:
+Fri Apr  3 01:24:33 BRT 2015
+</P>
+<!--
+Last change: minor edit (css)
+-->
+
+</BODY>
+</HTML>

@@ -1,0 +1,60 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE>2 Environment and Chunks</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node3.html">3 Types</A>
+<B>Up:</B> <A HREF="manual.html">Reference Manual of the </A>
+<B> Previous:</B> <A HREF="node1.html">1 Introduction</A>
+<BR> <HR>
+<H1><A NAME=S200>2 Environment and Chunks</A></H1>
+<P>
+All statements in Lua are executed in a <I> global environment</I>.
+This environment, which keeps all global variables and functions,
+is initialized at the beginning of the embedding program and
+persists until its end.
+<P>
+The global environment can be manipulated by Lua code or
+by the embedding program,
+which can read and write global variables
+using functions in the library that implements Lua.
+<P>
+Global variables do not need declaration.
+Any variable is assumed to be global unless explicitly declared local
+(see local declarations, Section <A HREF="node8.html#localvar">4.4.5</A>).
+Before the first assignment, the value of a global variable is <B> nil</B> .
+<P>
+The unit of execution of Lua is called a <I> chunk</I>.
+The syntax for chunks is:
+<A HREF="footnode.html#624">*</A>
+<B><PRE>
+
+chunkstatement  function
+</PRE></B>
+
+A chunk may contain statements and function definitions,
+and may be in a file or in a string inside the host program.
+When a chunk is executed, first all its functions and statements are compiled,
+then the statements are executed in sequential order.
+All modifications a chunk effects on the global environment persist
+after its end.
+Those include modifications to global variables and definitions
+of new functions
+<A HREF="footnode.html#542">*</A>.
+<P>
+Chunks may be pre-compiled; see program <TT><B> luac</B></TT> for details.
+Ascii files with chunk code and their binary pre-compiled forms
+are interchangeable.
+Lua automatically detects the file type and acts accordingly.
+
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node3.html">3 Types</A>
+<B>Up:</B> <A HREF="manual.html">Reference Manual of the </A>
+<B> Previous:</B> <A HREF="node1.html">1 Introduction</A>
+<BR> <HR>

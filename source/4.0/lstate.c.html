@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lstate.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lstate.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lstate.c,v 1.48 2000/10/30 16:29:59 roberto Exp $
+** Global State
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdio.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="llex.h.html">llex.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+
+
+#ifdef LUA_DEBUG
+static <A HREF="lstate.h.html#lua_State">lua_State</A> *<A NAME="lua_state"><SPAN CLASS="definition">lua_state</SPAN></A> = NULL;
+void luaB_opentests (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+#endif
+
+
+/*
+** built-in implementation for ERRORMESSAGE. In a "correct" environment
+** ERRORMESSAGE should have an external definition, and so this function
+** would not be used.
+*/
+static int <A NAME="errormessage"><SPAN CLASS="definition">errormessage</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *s = <A HREF="lapi.c.html#lua_tostring">lua_tostring</A>(L, 1);
+  if (s == NULL) s = "(no message)";
+  fprintf(stderr, "error: %s\n", s);
+  return 0;
+}
+
+
+/*
+** open parts that may cause memory-allocation errors
+*/
+static void <A NAME="f_luaopen"><SPAN CLASS="definition">f_luaopen</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  int stacksize = *(int *)ud;
+  if (stacksize == 0)
+    stacksize = <A HREF="llimits.h.html#DEFAULT_STACK_SIZE">DEFAULT_STACK_SIZE</A>;
+  else
+    stacksize += <A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>;
+  L-&gt;gt = <A HREF="ltable.c.html#luaH_new">luaH_new</A>(L, 10);  /* table of globals */
+  <A HREF="ldo.c.html#luaD_init">luaD_init</A>(L, stacksize);
+  <A HREF="lstring.c.html#luaS_init">luaS_init</A>(L);
+  <A HREF="stubs.c.html#luaX_init">luaX_init</A>(L);
+  <A HREF="ltm.c.html#luaT_init">luaT_init</A>(L);
+  <A HREF="lapi.c.html#lua_newtable">lua_newtable</A>(L);
+  <A HREF="lapi.c.html#lua_ref">lua_ref</A>(L, 1);  /* create registry */
+  <A HREF="lua.h.html#lua_register">lua_register</A>(L, <A HREF="lua.h.html#LUA_ERRORMESSAGE">LUA_ERRORMESSAGE</A>, <A HREF="lstate.c.html#errormessage">errormessage</A>);
+#ifdef LUA_DEBUG
+  luaB_opentests(L);
+  if (<A HREF="lstate.c.html#lua_state">lua_state</A> == NULL) <A HREF="lstate.c.html#lua_state">lua_state</A> = L;  /* keep first state to be opened */
+#endif
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) == 0, "wrong API stack");
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> <A HREF="lstate.h.html#lua_State">lua_State</A> *<A NAME="lua_open"><SPAN CLASS="definition">lua_open</SPAN></A> (int stacksize) {
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L = <A HREF="lmem.h.html#luaM_new">luaM_new</A>(NULL, <A HREF="lstate.h.html#lua_State">lua_State</A>);
+  if (L == NULL) return NULL;  /* memory allocation error */
+  L-&gt;stack = NULL;
+  L-&gt;strt.size = L-&gt;udt.size = 0;
+  L-&gt;strt.nuse = L-&gt;udt.nuse = 0;
+  L-&gt;strt.hash = NULL;
+  L-&gt;udt.hash = NULL;
+  L-&gt;Mbuffer = NULL;
+  L-&gt;Mbuffsize = 0;
+  L-&gt;rootproto = NULL;
+  L-&gt;rootcl = NULL;
+  L-&gt;roottable = NULL;
+  L-&gt;TMtable = NULL;
+  L-&gt;last_tag = -1;
+  L-&gt;refArray = NULL;
+  L-&gt;refSize = 0;
+  L-&gt;refFree = <A HREF="lstate.h.html#NONEXT">NONEXT</A>;
+  L-&gt;nblocks = sizeof(<A HREF="lstate.h.html#lua_State">lua_State</A>);
+  L-&gt;GCthreshold = <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>;  /* to avoid GC during pre-definitions */
+  L-&gt;callhook = NULL;
+  L-&gt;linehook = NULL;
+  L-&gt;allowhooks = 1;
+  L-&gt;errorJmp = NULL;
+  if (<A HREF="ldo.c.html#luaD_runprotected">luaD_runprotected</A>(L, <A HREF="lstate.c.html#f_luaopen">f_luaopen</A>, &amp;stacksize) != 0) {
+    /* memory allocation error: free partial state */
+    <A HREF="lstate.c.html#lua_close">lua_close</A>(L);
+    return NULL;
+  }
+  L-&gt;GCthreshold = 2*L-&gt;nblocks;
+  return L;
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> void <A NAME="lua_close"><SPAN CLASS="definition">lua_close</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L != <A HREF="lstate.c.html#lua_state">lua_state</A> || <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L) == 0, "garbage in C stack");
+  <A HREF="lgc.c.html#luaC_collect">luaC_collect</A>(L, 1);  /* collect all elements */
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L-&gt;rootproto == NULL, "list should be empty");
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L-&gt;rootcl == NULL, "list should be empty");
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L-&gt;roottable == NULL, "list should be empty");
+  <A HREF="lstring.c.html#luaS_freeall">luaS_freeall</A>(L);
+  if (L-&gt;stack)
+    L-&gt;nblocks -= (L-&gt;stack_last - L-&gt;stack + 1)*sizeof(<A HREF="lobject.h.html#TObject">TObject</A>);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, L-&gt;stack);
+  L-&gt;nblocks -= (L-&gt;last_tag+1)*sizeof(struct <A HREF="ltm.h.html#TM">TM</A>);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, L-&gt;TMtable);
+  L-&gt;nblocks -= (L-&gt;refSize)*sizeof(struct <A HREF="lstate.h.html#Ref">Ref</A>);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, L-&gt;refArray);
+  L-&gt;nblocks -= (L-&gt;Mbuffsize)*sizeof(char);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, L-&gt;Mbuffer);
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L-&gt;nblocks == sizeof(<A HREF="lstate.h.html#lua_State">lua_State</A>), "wrong count for nblocks");
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, L);
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L != <A HREF="lstate.c.html#lua_state">lua_state</A> || <A HREF="lmem.c.html#memdebug_numblocks">memdebug_numblocks</A> == 0, "memory leak!");
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L != <A HREF="lstate.c.html#lua_state">lua_state</A> || <A HREF="lmem.c.html#memdebug_total">memdebug_total</A> == 0,"memory leak!");
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,816 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lvm.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lvm.c
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lvm.c,v 1.284c 2003/04/03 13:35:34 roberto Exp $
+** Lua virtual machine
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdarg.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+/* needed only when `<A HREF="lvm.c.html#lua_number2str">lua_number2str</A>' uses `sprintf' */
+#include &lt;stdio.h&gt;
+
+#define <A NAME="lvm_c"><SPAN CLASS="definition">lvm_c</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+
+
+
+/* function to convert a <A HREF="lua.h.html#lua_Number">lua_Number</A> to a string */
+#ifndef <A HREF="lvm.c.html#lua_number2str">lua_number2str</A>
+#define <A NAME="lua_number2str"><SPAN CLASS="definition">lua_number2str</SPAN></A>(s,n)     sprintf((s), <A HREF="lua.h.html#LUA_NUMBER_FMT">LUA_NUMBER_FMT</A>, (n))
+#endif
+
+
+/* limit for table tag-method chains (to avoid loops) */
+#define <A NAME="MAXTAGLOOP"><SPAN CLASS="definition">MAXTAGLOOP</SPAN></A>      100
+
+
+const <A HREF="lobject.h.html#TObject">TObject</A> *<A NAME="luaV_tonumber"><SPAN CLASS="definition">luaV_tonumber</SPAN></A> (const <A HREF="lobject.h.html#TObject">TObject</A> *obj, <A HREF="lobject.h.html#TObject">TObject</A> *n) {
+  <A HREF="lua.h.html#lua_Number">lua_Number</A> num;
+  if (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(obj)) return obj;
+  if (<A HREF="lobject.h.html#ttisstring">ttisstring</A>(obj) &amp;&amp; <A HREF="lobject.c.html#luaO_str2d">luaO_str2d</A>(<A HREF="lobject.h.html#svalue">svalue</A>(obj), &amp;num)) {
+    <A HREF="lobject.h.html#setnvalue">setnvalue</A>(n, num);
+    return n;
+  }
+  else
+    return NULL;
+}
+
+
+int <A NAME="luaV_tostring"><SPAN CLASS="definition">luaV_tostring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> obj) {
+  if (!<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(obj))
+    return 0;
+  else {
+    char s[32];  /* 16 digits, sign, point and \0  (+ some extra...) */
+    <A HREF="lvm.c.html#lua_number2str">lua_number2str</A>(s, <A HREF="lobject.h.html#nvalue">nvalue</A>(obj));
+    <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(obj, <A HREF="lstring.h.html#luaS_new">luaS_new</A>(L, s));
+    return 1;
+  }
+}
+
+
+static void <A NAME="traceexec"><SPAN CLASS="definition">traceexec</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> mask = L-&gt;hookmask;
+  if (mask &amp; <A HREF="lua.h.html#LUA_MASKCOUNT">LUA_MASKCOUNT</A>) {  /* instruction-hook set? */
+    if (L-&gt;hookcount == 0) {
+      <A HREF="ldebug.h.html#resethookcount">resethookcount</A>(L);
+      <A HREF="ldo.c.html#luaD_callhook">luaD_callhook</A>(L, <A HREF="lua.h.html#LUA_HOOKCOUNT">LUA_HOOKCOUNT</A>, -1);
+      return;
+    }
+  }
+  if (mask &amp; <A HREF="lua.h.html#LUA_MASKLINE">LUA_MASKLINE</A>) {
+    <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci;
+    <A HREF="lobject.h.html#Proto">Proto</A> *p = <A HREF="lstate.h.html#ci_func">ci_func</A>(ci)-&gt;l.p;
+    int newline = <A HREF="ldebug.h.html#getline">getline</A>(p, <A HREF="ldebug.h.html#pcRel">pcRel</A>(*ci-&gt;u.l.pc, p));
+    if (!L-&gt;hookinit) {
+      <A HREF="ldebug.c.html#luaG_inithooks">luaG_inithooks</A>(L);
+      return;
+    }
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ci-&gt;state &amp; <A HREF="lstate.h.html#CI_HASFRAME">CI_HASFRAME</A>);
+    if (<A HREF="ldebug.h.html#pcRel">pcRel</A>(*ci-&gt;u.l.pc, p) == 0)  /* tracing may be starting now? */
+      ci-&gt;u.l.savedpc = *ci-&gt;u.l.pc;  /* initialize `savedpc' */
+    /* calls linehook when enters a new line or jumps back (loop) */
+    if (*ci-&gt;u.l.pc &lt;= ci-&gt;u.l.savedpc ||
+        newline != <A HREF="ldebug.h.html#getline">getline</A>(p, <A HREF="ldebug.h.html#pcRel">pcRel</A>(ci-&gt;u.l.savedpc, p))) {
+      <A HREF="ldo.c.html#luaD_callhook">luaD_callhook</A>(L, <A HREF="lua.h.html#LUA_HOOKLINE">LUA_HOOKLINE</A>, newline);
+      ci = L-&gt;ci;  /* previous call may reallocate `ci' */
+    }
+    ci-&gt;u.l.savedpc = *ci-&gt;u.l.pc;
+  }
+}
+
+
+static void <A NAME="callTMres"><SPAN CLASS="definition">callTMres</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *f,
+                       const <A HREF="lobject.h.html#TObject">TObject</A> *p1, const <A HREF="lobject.h.html#TObject">TObject</A> *p2) {
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L-&gt;top, f);  /* push function */
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L-&gt;top+1, p1);  /* 1st argument */
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L-&gt;top+2, p2);  /* 2nd argument */
+  <A HREF="ldo.h.html#luaD_checkstack">luaD_checkstack</A>(L, 3);  /* cannot check before (could invalidate p1, p2) */
+  L-&gt;top += 3;
+  <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, L-&gt;top - 3, 1);
+  L-&gt;top--;  /* result will be in L-&gt;top */
+}
+
+
+
+static void <A NAME="callTM"><SPAN CLASS="definition">callTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *f,
+                    const <A HREF="lobject.h.html#TObject">TObject</A> *p1, const <A HREF="lobject.h.html#TObject">TObject</A> *p2, const <A HREF="lobject.h.html#TObject">TObject</A> *p3) {
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L-&gt;top, f);  /* push function */
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L-&gt;top+1, p1);  /* 1st argument */
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L-&gt;top+2, p2);  /* 2nd argument */
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L-&gt;top+3, p3);  /* 3th argument */
+  <A HREF="ldo.h.html#luaD_checkstack">luaD_checkstack</A>(L, 4);  /* cannot check before (could invalidate p1...p3) */
+  L-&gt;top += 4;
+  <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, L-&gt;top - 4, 0);
+}
+
+
+static const <A HREF="lobject.h.html#TObject">TObject</A> *<A NAME="luaV_index"><SPAN CLASS="definition">luaV_index</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *t,
+                                  <A HREF="lobject.h.html#TObject">TObject</A> *key, int loop) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm = <A HREF="ltm.h.html#fasttm">fasttm</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(t)-&gt;metatable, <A HREF="ltm.h.html#TM_INDEX">TM_INDEX</A>);
+  if (tm == NULL) return &amp;<A HREF="lobject.c.html#luaO_nilobject">luaO_nilobject</A>;  /* no TM */
+  if (<A HREF="lobject.h.html#ttisfunction">ttisfunction</A>(tm)) {
+    <A HREF="lvm.c.html#callTMres">callTMres</A>(L, tm, t, key);
+    return L-&gt;top;
+  }
+  else return <A HREF="lvm.c.html#luaV_gettable">luaV_gettable</A>(L, tm, key, loop);
+}
+
+static const <A HREF="lobject.h.html#TObject">TObject</A> *<A NAME="luaV_getnotable"><SPAN CLASS="definition">luaV_getnotable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *t,
+                                       <A HREF="lobject.h.html#TObject">TObject</A> *key, int loop) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm = <A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A>(L, t, <A HREF="ltm.h.html#TM_INDEX">TM_INDEX</A>);
+  if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(tm))
+    <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A>(L, t, "index");
+  if (<A HREF="lobject.h.html#ttisfunction">ttisfunction</A>(tm)) {
+    <A HREF="lvm.c.html#callTMres">callTMres</A>(L, tm, t, key);
+    return L-&gt;top;
+  }
+  else return <A HREF="lvm.c.html#luaV_gettable">luaV_gettable</A>(L, tm, key, loop);
+}
+
+
+/*
+** Function to index a table.
+** Receives the table at `t' and the key at `key'.
+** leaves the result at `res'.
+*/
+const <A HREF="lobject.h.html#TObject">TObject</A> *<A NAME="luaV_gettable"><SPAN CLASS="definition">luaV_gettable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *t, <A HREF="lobject.h.html#TObject">TObject</A> *key,
+                              int loop) {
+  if (loop &gt; <A HREF="lvm.c.html#MAXTAGLOOP">MAXTAGLOOP</A>)
+    <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "loop in gettable");
+  if (<A HREF="lobject.h.html#ttistable">ttistable</A>(t)) {  /* `t' is a table? */
+    <A HREF="lobject.h.html#Table">Table</A> *h = <A HREF="lobject.h.html#hvalue">hvalue</A>(t);
+    const <A HREF="lobject.h.html#TObject">TObject</A> *v = <A HREF="ltable.c.html#luaH_get">luaH_get</A>(h, key);  /* do a primitive get */
+    if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(v)) return v;
+    else return <A HREF="lvm.c.html#luaV_index">luaV_index</A>(L, t, key, loop+1);
+  }
+  else return <A HREF="lvm.c.html#luaV_getnotable">luaV_getnotable</A>(L, t, key, loop+1);
+}
+
+
+/*
+** Receives table at `t', key at `key' and value at `val'.
+*/
+void <A NAME="luaV_settable"><SPAN CLASS="definition">luaV_settable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *t, <A HREF="lobject.h.html#TObject">TObject</A> *key, <A HREF="lobject.h.html#StkId">StkId</A> val) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm;
+  int loop = 0;
+  do {
+    if (<A HREF="lobject.h.html#ttistable">ttistable</A>(t)) {  /* `t' is a table? */
+      <A HREF="lobject.h.html#Table">Table</A> *h = <A HREF="lobject.h.html#hvalue">hvalue</A>(t);
+      <A HREF="lobject.h.html#TObject">TObject</A> *oldval = <A HREF="ltable.c.html#luaH_set">luaH_set</A>(L, h, key); /* do a primitive set */
+      if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(oldval) ||  /* result is no nil? */
+          (tm = <A HREF="ltm.h.html#fasttm">fasttm</A>(L, h-&gt;metatable, <A HREF="ltm.h.html#TM_NEWINDEX">TM_NEWINDEX</A>)) == NULL) { /* or no TM? */
+        <A HREF="lobject.h.html#setobj2t">setobj2t</A>(oldval, val);  /* write barrier */
+        return;
+      }
+      /* else will try the tag method */
+    }
+    else if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(tm = <A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A>(L, t, <A HREF="ltm.h.html#TM_NEWINDEX">TM_NEWINDEX</A>)))
+      <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A>(L, t, "index");
+    if (<A HREF="lobject.h.html#ttisfunction">ttisfunction</A>(tm)) {
+      <A HREF="lvm.c.html#callTM">callTM</A>(L, tm, t, key, val);
+      return;
+    }
+    t = tm;  /* else repeat with `tm' */ 
+  } while (++loop &lt;= <A HREF="lvm.c.html#MAXTAGLOOP">MAXTAGLOOP</A>);
+  <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "loop in settable");
+}
+
+
+static int <A NAME="call_binTM"><SPAN CLASS="definition">call_binTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *p1, const <A HREF="lobject.h.html#TObject">TObject</A> *p2,
+                       <A HREF="lobject.h.html#StkId">StkId</A> res, <A HREF="ltm.h.html#TMS">TMS</A> event) {
+  ptrdiff_t result = <A HREF="ldo.h.html#savestack">savestack</A>(L, res);
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm = <A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A>(L, p1, event);  /* try first operand */
+  if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(tm))
+    tm = <A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A>(L, p2, event);  /* try second operand */
+  if (!<A HREF="lobject.h.html#ttisfunction">ttisfunction</A>(tm)) return 0;
+  <A HREF="lvm.c.html#callTMres">callTMres</A>(L, tm, p1, p2);
+  res = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, result);  /* previous call may change stack */
+  <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(res, L-&gt;top);
+  return 1;
+}
+
+
+static const <A HREF="lobject.h.html#TObject">TObject</A> *<A NAME="get_compTM"><SPAN CLASS="definition">get_compTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *mt1, <A HREF="lobject.h.html#Table">Table</A> *mt2,
+                                  <A HREF="ltm.h.html#TMS">TMS</A> event) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm1 = <A HREF="ltm.h.html#fasttm">fasttm</A>(L, mt1, event);
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm2;
+  if (tm1 == NULL) return NULL;  /* no metamethod */
+  if (mt1 == mt2) return tm1;  /* same metatables =&gt; same metamethods */
+  tm2 = <A HREF="ltm.h.html#fasttm">fasttm</A>(L, mt2, event);
+  if (tm2 == NULL) return NULL;  /* no metamethod */
+  if (<A HREF="lobject.c.html#luaO_rawequalObj">luaO_rawequalObj</A>(tm1, tm2))  /* same metamethods? */
+    return tm1;
+  return NULL;
+}
+
+
+static int <A NAME="call_orderTM"><SPAN CLASS="definition">call_orderTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *p1, const <A HREF="lobject.h.html#TObject">TObject</A> *p2,
+                         <A HREF="ltm.h.html#TMS">TMS</A> event) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm1 = <A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A>(L, p1, event);
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm2;
+  if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(tm1)) return -1;  /* no metamethod? */
+  tm2 = <A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A>(L, p2, event);
+  if (!<A HREF="lobject.c.html#luaO_rawequalObj">luaO_rawequalObj</A>(tm1, tm2))  /* different metamethods? */
+    return -1;
+  <A HREF="lvm.c.html#callTMres">callTMres</A>(L, tm1, p1, p2);
+  return !<A HREF="lobject.h.html#l_isfalse">l_isfalse</A>(L-&gt;top);
+}
+
+
+static int <A NAME="luaV_strcmp"><SPAN CLASS="definition">luaV_strcmp</SPAN></A> (const <A HREF="lobject.h.html#TString">TString</A> *ls, const <A HREF="lobject.h.html#TString">TString</A> *rs) {
+  const char *l = <A HREF="lobject.h.html#getstr">getstr</A>(ls);
+  size_t ll = ls-&gt;tsv.len;
+  const char *r = <A HREF="lobject.h.html#getstr">getstr</A>(rs);
+  size_t lr = rs-&gt;tsv.len;
+  for (;;) {
+    int temp = strcoll(l, r);
+    if (temp != 0) return temp;
+    else {  /* strings are equal up to a `\0' */
+      size_t len = strlen(l);  /* index of first `\0' in both strings */
+      if (len == lr)  /* r is finished? */
+        return (len == ll) ? 0 : 1;
+      else if (len == ll)  /* l is finished? */
+        return -1;  /* l is smaller than r (because r is not finished) */
+      /* both strings longer than `len'; go on comparing (after the `\0') */
+      len++;
+      l += len; ll -= len; r += len; lr -= len;
+    }
+  }
+}
+
+
+int <A NAME="luaV_lessthan"><SPAN CLASS="definition">luaV_lessthan</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *l, const <A HREF="lobject.h.html#TObject">TObject</A> *r) {
+  int res;
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(l) != <A HREF="lobject.h.html#ttype">ttype</A>(r))
+    return <A HREF="ldebug.c.html#luaG_ordererror">luaG_ordererror</A>(L, l, r);
+  else if (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(l))
+    return <A HREF="lobject.h.html#nvalue">nvalue</A>(l) &lt; <A HREF="lobject.h.html#nvalue">nvalue</A>(r);
+  else if (<A HREF="lobject.h.html#ttisstring">ttisstring</A>(l))
+    return <A HREF="lvm.c.html#luaV_strcmp">luaV_strcmp</A>(<A HREF="lobject.h.html#tsvalue">tsvalue</A>(l), <A HREF="lobject.h.html#tsvalue">tsvalue</A>(r)) &lt; 0;
+  else if ((res = <A HREF="lvm.c.html#call_orderTM">call_orderTM</A>(L, l, r, <A HREF="ltm.h.html#TM_LT">TM_LT</A>)) != -1)
+    return res;
+  return <A HREF="ldebug.c.html#luaG_ordererror">luaG_ordererror</A>(L, l, r);
+}
+
+
+static int <A NAME="luaV_lessequal"><SPAN CLASS="definition">luaV_lessequal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *l, const <A HREF="lobject.h.html#TObject">TObject</A> *r) {
+  int res;
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(l) != <A HREF="lobject.h.html#ttype">ttype</A>(r))
+    return <A HREF="ldebug.c.html#luaG_ordererror">luaG_ordererror</A>(L, l, r);
+  else if (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(l))
+    return <A HREF="lobject.h.html#nvalue">nvalue</A>(l) &lt;= <A HREF="lobject.h.html#nvalue">nvalue</A>(r);
+  else if (<A HREF="lobject.h.html#ttisstring">ttisstring</A>(l))
+    return <A HREF="lvm.c.html#luaV_strcmp">luaV_strcmp</A>(<A HREF="lobject.h.html#tsvalue">tsvalue</A>(l), <A HREF="lobject.h.html#tsvalue">tsvalue</A>(r)) &lt;= 0;
+  else if ((res = <A HREF="lvm.c.html#call_orderTM">call_orderTM</A>(L, l, r, <A HREF="ltm.h.html#TM_LE">TM_LE</A>)) != -1)  /* first try `le' */
+    return res;
+  else if ((res = <A HREF="lvm.c.html#call_orderTM">call_orderTM</A>(L, r, l, <A HREF="ltm.h.html#TM_LT">TM_LT</A>)) != -1)  /* else try `lt' */
+    return !res;
+  return <A HREF="ldebug.c.html#luaG_ordererror">luaG_ordererror</A>(L, l, r);
+}
+
+
+int <A NAME="luaV_equalval"><SPAN CLASS="definition">luaV_equalval</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *t1, const <A HREF="lobject.h.html#TObject">TObject</A> *t2) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *tm;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#ttype">ttype</A>(t1) == <A HREF="lobject.h.html#ttype">ttype</A>(t2));
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(t1)) {
+    case <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>: return 1;
+    case <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>: return <A HREF="lobject.h.html#nvalue">nvalue</A>(t1) == <A HREF="lobject.h.html#nvalue">nvalue</A>(t2);
+    case <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>: return <A HREF="lobject.h.html#bvalue">bvalue</A>(t1) == <A HREF="lobject.h.html#bvalue">bvalue</A>(t2);  /* true must be 1 !! */
+    case <A HREF="lua.h.html#LUA_TLIGHTUSERDATA">LUA_TLIGHTUSERDATA</A>: return <A HREF="lobject.h.html#pvalue">pvalue</A>(t1) == <A HREF="lobject.h.html#pvalue">pvalue</A>(t2);
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>: {
+      if (<A HREF="lobject.h.html#uvalue">uvalue</A>(t1) == <A HREF="lobject.h.html#uvalue">uvalue</A>(t2)) return 1;
+      tm = <A HREF="lvm.c.html#get_compTM">get_compTM</A>(L, <A HREF="lobject.h.html#uvalue">uvalue</A>(t1)-&gt;uv.metatable, <A HREF="lobject.h.html#uvalue">uvalue</A>(t2)-&gt;uv.metatable,
+                         <A HREF="ltm.h.html#TM_EQ">TM_EQ</A>);
+      break;  /* will try TM */
+    }
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>: {
+      if (<A HREF="lobject.h.html#hvalue">hvalue</A>(t1) == <A HREF="lobject.h.html#hvalue">hvalue</A>(t2)) return 1;
+      tm = <A HREF="lvm.c.html#get_compTM">get_compTM</A>(L, <A HREF="lobject.h.html#hvalue">hvalue</A>(t1)-&gt;metatable, <A HREF="lobject.h.html#hvalue">hvalue</A>(t2)-&gt;metatable, <A HREF="ltm.h.html#TM_EQ">TM_EQ</A>);
+      break;  /* will try TM */
+    }
+    default: return <A HREF="lobject.h.html#gcvalue">gcvalue</A>(t1) == <A HREF="lobject.h.html#gcvalue">gcvalue</A>(t2);
+  }
+  if (tm == NULL) return 0;  /* no TM? */
+  <A HREF="lvm.c.html#callTMres">callTMres</A>(L, tm, t1, t2);  /* call TM */
+  return !<A HREF="lobject.h.html#l_isfalse">l_isfalse</A>(L-&gt;top);
+}
+
+
+void <A NAME="luaV_concat"><SPAN CLASS="definition">luaV_concat</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int total, int last) {
+  do {
+    <A HREF="lobject.h.html#StkId">StkId</A> top = L-&gt;base + last + 1;
+    int n = 2;  /* number of elements handled in this pass (at least 2) */
+    if (!<A HREF="lvm.h.html#tostring">tostring</A>(L, top-2) || !<A HREF="lvm.h.html#tostring">tostring</A>(L, top-1)) {
+      if (!<A HREF="lvm.c.html#call_binTM">call_binTM</A>(L, top-2, top-1, top-2, <A HREF="ltm.h.html#TM_CONCAT">TM_CONCAT</A>))
+        <A HREF="ldebug.c.html#luaG_concaterror">luaG_concaterror</A>(L, top-2, top-1);
+    } else if (<A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-1)-&gt;tsv.len &gt; 0) {  /* if len=0, do nothing */
+      /* at least two string values; get as many as possible */
+      size_t tl = <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-1)-&gt;tsv.len;
+      char *buffer;
+      int i;
+      /* collect total length */
+      for (n = 1; n &lt; total &amp;&amp; <A HREF="lvm.h.html#tostring">tostring</A>(L, top-n-1); n++) {
+        size_t l = <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-n-1)-&gt;tsv.len;
+        if (l &gt;= <A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A> - tl) <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "string length overflow");
+        tl += l;
+      }
+      buffer = <A HREF="lzio.c.html#luaZ_openspace">luaZ_openspace</A>(L, &amp;<A HREF="lstate.h.html#G">G</A>(L)-&gt;buff, tl);
+      tl = 0;
+      for (i=n; i&gt;0; i--) {  /* concat all strings */
+        size_t l = <A HREF="lobject.h.html#tsvalue">tsvalue</A>(top-i)-&gt;tsv.len;
+        memcpy(buffer+tl, <A HREF="lobject.h.html#svalue">svalue</A>(top-i), l);
+        tl += l;
+      }
+      <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(top-n, <A HREF="lstring.c.html#luaS_newlstr">luaS_newlstr</A>(L, buffer, tl));
+    }
+    total -= n-1;  /* got `n' strings to create 1 new */
+    last -= n-1;
+  } while (total &gt; 1);  /* repeat until only 1 result left */
+}
+
+
+static void <A NAME="Arith"><SPAN CLASS="definition">Arith</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> ra,
+                   const <A HREF="lobject.h.html#TObject">TObject</A> *rb, const <A HREF="lobject.h.html#TObject">TObject</A> *rc, <A HREF="ltm.h.html#TMS">TMS</A> op) {
+  <A HREF="lobject.h.html#TObject">TObject</A> tempb, tempc;
+  const <A HREF="lobject.h.html#TObject">TObject</A> *b, *c;
+  if ((b = <A HREF="lvm.c.html#luaV_tonumber">luaV_tonumber</A>(rb, &amp;tempb)) != NULL &amp;&amp;
+      (c = <A HREF="lvm.c.html#luaV_tonumber">luaV_tonumber</A>(rc, &amp;tempc)) != NULL) {
+    switch (op) {
+      case <A HREF="ltm.h.html#TM_ADD">TM_ADD</A>: <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, <A HREF="lobject.h.html#nvalue">nvalue</A>(b) + <A HREF="lobject.h.html#nvalue">nvalue</A>(c)); break;
+      case <A HREF="ltm.h.html#TM_SUB">TM_SUB</A>: <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, <A HREF="lobject.h.html#nvalue">nvalue</A>(b) - <A HREF="lobject.h.html#nvalue">nvalue</A>(c)); break;
+      case <A HREF="ltm.h.html#TM_MUL">TM_MUL</A>: <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, <A HREF="lobject.h.html#nvalue">nvalue</A>(b) * <A HREF="lobject.h.html#nvalue">nvalue</A>(c)); break;
+      case <A HREF="ltm.h.html#TM_DIV">TM_DIV</A>: <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, <A HREF="lobject.h.html#nvalue">nvalue</A>(b) / <A HREF="lobject.h.html#nvalue">nvalue</A>(c)); break;
+      case <A HREF="ltm.h.html#TM_POW">TM_POW</A>: {
+        const <A HREF="lobject.h.html#TObject">TObject</A> *f = <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(<A HREF="lstate.h.html#gt">gt</A>(L)), <A HREF="lstate.h.html#G">G</A>(L)-&gt;tmname[<A HREF="ltm.h.html#TM_POW">TM_POW</A>]);
+        ptrdiff_t res = <A HREF="ldo.h.html#savestack">savestack</A>(L, ra);
+        if (!<A HREF="lobject.h.html#ttisfunction">ttisfunction</A>(f))
+          <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "`__pow' (`^' operator) is not a function");
+        <A HREF="lvm.c.html#callTMres">callTMres</A>(L, f, b, c);
+        ra = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, res);  /* previous call may change stack */
+        <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(ra, L-&gt;top);
+        break;
+      }
+      default: <A HREF="llimits.h.html#lua_assert">lua_assert</A>(0); break;
+    }
+  }
+  else if (!<A HREF="lvm.c.html#call_binTM">call_binTM</A>(L, rb, rc, ra, op))
+    <A HREF="ldebug.c.html#luaG_aritherror">luaG_aritherror</A>(L, rb, rc);
+}
+
+
+
+/*
+** some macros for common tasks in `<A HREF="lvm.c.html#luaV_execute">luaV_execute</A>'
+*/
+
+#define <A NAME="runtime_check"><SPAN CLASS="definition">runtime_check</SPAN></A>(L, c)     { if (!(c)) return 0; }
+
+#define <A NAME="RA"><SPAN CLASS="definition">RA</SPAN></A>(i)   (base+<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i))
+/* to be used after possible stack reallocation */
+#define <A NAME="XRA"><SPAN CLASS="definition">XRA</SPAN></A>(i)  (L-&gt;base+<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i))
+#define <A NAME="RB"><SPAN CLASS="definition">RB</SPAN></A>(i)   (base+<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i))
+#define <A NAME="RKB"><SPAN CLASS="definition">RKB</SPAN></A>(i)  ((<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i) &lt; <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>) ? <A HREF="lvm.c.html#RB">RB</A>(i) : k+<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i)-<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>)
+#define <A NAME="RC"><SPAN CLASS="definition">RC</SPAN></A>(i)   (base+<A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i))
+#define <A NAME="RKC"><SPAN CLASS="definition">RKC</SPAN></A>(i)  ((<A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i) &lt; <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>) ? <A HREF="lvm.c.html#RC">RC</A>(i) : k+<A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i)-<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>)
+#define <A NAME="KBx"><SPAN CLASS="definition">KBx</SPAN></A>(i)  (k+<A HREF="lopcodes.h.html#GETARG_Bx">GETARG_Bx</A>(i))
+
+
+#define <A NAME="dojump"><SPAN CLASS="definition">dojump</SPAN></A>(pc, i)   ((pc) += (i))
+
+
+<A HREF="lobject.h.html#StkId">StkId</A> <A NAME="luaV_execute"><SPAN CLASS="definition">luaV_execute</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#LClosure">LClosure</A> *cl;
+  <A HREF="lobject.h.html#TObject">TObject</A> *k;
+  const <A HREF="llimits.h.html#Instruction">Instruction</A> *pc;
+ callentry:  /* entry point when calling new functions */
+  if (L-&gt;hookmask &amp; <A HREF="lua.h.html#LUA_MASKCALL">LUA_MASKCALL</A>) {
+    L-&gt;ci-&gt;u.l.pc = &amp;pc;
+    <A HREF="ldo.c.html#luaD_callhook">luaD_callhook</A>(L, <A HREF="lua.h.html#LUA_HOOKCALL">LUA_HOOKCALL</A>, -1);
+  }
+ retentry:  /* entry point when returning to old functions */
+  L-&gt;ci-&gt;u.l.pc = &amp;pc;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;ci-&gt;state == <A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A> ||
+             L-&gt;ci-&gt;state == (<A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A> | <A HREF="lstate.h.html#CI_CALLING">CI_CALLING</A>));
+  L-&gt;ci-&gt;state = <A HREF="lstate.h.html#CI_HASFRAME">CI_HASFRAME</A>;  /* activate frame */
+  pc = L-&gt;ci-&gt;u.l.savedpc;
+  cl = &amp;<A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;base - 1)-&gt;l;
+  k = cl-&gt;p-&gt;k;
+  /* <A HREF="lua.c.html#main">main</A> loop of interpreter */
+  for (;;) {
+    const <A HREF="llimits.h.html#Instruction">Instruction</A> i = *pc++;
+    <A HREF="lobject.h.html#StkId">StkId</A> base, ra;
+    if ((L-&gt;hookmask &amp; (<A HREF="lua.h.html#LUA_MASKLINE">LUA_MASKLINE</A> | <A HREF="lua.h.html#LUA_MASKCOUNT">LUA_MASKCOUNT</A>)) &amp;&amp;
+        (--L-&gt;hookcount == 0 || L-&gt;hookmask &amp; <A HREF="lua.h.html#LUA_MASKLINE">LUA_MASKLINE</A>)) {
+      <A HREF="lvm.c.html#traceexec">traceexec</A>(L);
+      if (L-&gt;ci-&gt;state &amp; <A HREF="lstate.h.html#CI_YIELD">CI_YIELD</A>) {  /* did hook yield? */
+        L-&gt;ci-&gt;u.l.savedpc = pc - 1;
+        L-&gt;ci-&gt;state = <A HREF="lstate.h.html#CI_YIELD">CI_YIELD</A> | <A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A>;
+        return NULL;
+      }
+    }
+    /* warning!! several calls may realloc the stack and invalidate `ra' */
+    base = L-&gt;base;
+    ra = <A HREF="lvm.c.html#RA">RA</A>(i);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;ci-&gt;state &amp; <A HREF="lstate.h.html#CI_HASFRAME">CI_HASFRAME</A>);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(base == L-&gt;ci-&gt;base);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;top &lt;= L-&gt;stack + L-&gt;stacksize &amp;&amp; L-&gt;top &gt;= base);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;top == L-&gt;ci-&gt;top ||
+         <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i) == <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A> ||   <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i) == <A HREF="lopcodes.h.html#OP_TAILCALL">OP_TAILCALL</A> ||
+         <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i) == <A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A> || <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i) == <A HREF="lopcodes.h.html#OP_SETLISTO">OP_SETLISTO</A>);
+    switch (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i)) {
+      case <A HREF="lopcodes.h.html#OP_MOVE">OP_MOVE</A>: {
+        <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(ra, <A HREF="lvm.c.html#RB">RB</A>(i));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_LOADK">OP_LOADK</A>: {
+        <A HREF="lobject.h.html#setobj2s">setobj2s</A>(ra, <A HREF="lvm.c.html#KBx">KBx</A>(i));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_LOADBOOL">OP_LOADBOOL</A>: {
+        <A HREF="lobject.h.html#setbvalue">setbvalue</A>(ra, <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i));
+        if (<A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i)) pc++;  /* skip next instruction (if C) */
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_LOADNIL">OP_LOADNIL</A>: {
+        <A HREF="lobject.h.html#TObject">TObject</A> *rb = <A HREF="lvm.c.html#RB">RB</A>(i);
+        do {
+          <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(rb--);
+        } while (rb &gt;= ra);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_GETUPVAL">OP_GETUPVAL</A>: {
+        int b = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        <A HREF="lobject.h.html#setobj2s">setobj2s</A>(ra, cl-&gt;upvals[b]-&gt;v);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_GETGLOBAL">OP_GETGLOBAL</A>: {
+        <A HREF="lobject.h.html#TObject">TObject</A> *rb = <A HREF="lvm.c.html#KBx">KBx</A>(i);
+        const <A HREF="lobject.h.html#TObject">TObject</A> *v;
+        <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#ttisstring">ttisstring</A>(rb) &amp;&amp; <A HREF="lobject.h.html#ttistable">ttistable</A>(&amp;cl-&gt;g));
+        v = <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(&amp;cl-&gt;g), <A HREF="lobject.h.html#tsvalue">tsvalue</A>(rb));
+        if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(v)) { <A HREF="lobject.h.html#setobj2s">setobj2s</A>(ra, v); }
+        else
+          <A HREF="lobject.h.html#setobj2s">setobj2s</A>(<A HREF="lvm.c.html#XRA">XRA</A>(i), <A HREF="lvm.c.html#luaV_index">luaV_index</A>(L, &amp;cl-&gt;g, rb, 0));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_GETTABLE">OP_GETTABLE</A>: {
+        <A HREF="lobject.h.html#StkId">StkId</A> rb = <A HREF="lvm.c.html#RB">RB</A>(i);
+        <A HREF="lobject.h.html#TObject">TObject</A> *rc = <A HREF="lvm.c.html#RKC">RKC</A>(i);
+        if (<A HREF="lobject.h.html#ttistable">ttistable</A>(rb)) {
+          const <A HREF="lobject.h.html#TObject">TObject</A> *v = <A HREF="ltable.c.html#luaH_get">luaH_get</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(rb), rc);
+          if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(v)) { <A HREF="lobject.h.html#setobj2s">setobj2s</A>(ra, v); }
+          else
+            <A HREF="lobject.h.html#setobj2s">setobj2s</A>(<A HREF="lvm.c.html#XRA">XRA</A>(i), <A HREF="lvm.c.html#luaV_index">luaV_index</A>(L, rb, rc, 0));
+        }
+        else
+          <A HREF="lobject.h.html#setobj2s">setobj2s</A>(<A HREF="lvm.c.html#XRA">XRA</A>(i), <A HREF="lvm.c.html#luaV_getnotable">luaV_getnotable</A>(L, rb, rc, 0));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETGLOBAL">OP_SETGLOBAL</A>: {
+        <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#ttisstring">ttisstring</A>(<A HREF="lvm.c.html#KBx">KBx</A>(i)) &amp;&amp; <A HREF="lobject.h.html#ttistable">ttistable</A>(&amp;cl-&gt;g));
+        <A HREF="lvm.c.html#luaV_settable">luaV_settable</A>(L, &amp;cl-&gt;g, <A HREF="lvm.c.html#KBx">KBx</A>(i), ra);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETUPVAL">OP_SETUPVAL</A>: {
+        int b = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        <A HREF="lobject.h.html#setobj">setobj</A>(cl-&gt;upvals[b]-&gt;v, ra);  /* write barrier */
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETTABLE">OP_SETTABLE</A>: {
+        <A HREF="lvm.c.html#luaV_settable">luaV_settable</A>(L, ra, <A HREF="lvm.c.html#RKB">RKB</A>(i), <A HREF="lvm.c.html#RKC">RKC</A>(i));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_NEWTABLE">OP_NEWTABLE</A>: {
+        int b = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        b = <A HREF="lobject.h.html#fb2int">fb2int</A>(b);
+        <A HREF="lobject.h.html#sethvalue">sethvalue</A>(ra, <A HREF="ltable.c.html#luaH_new">luaH_new</A>(L, b, <A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i)));
+        <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SELF">OP_SELF</A>: {
+        <A HREF="lobject.h.html#StkId">StkId</A> rb = <A HREF="lvm.c.html#RB">RB</A>(i);
+        <A HREF="lobject.h.html#TObject">TObject</A> *rc = <A HREF="lvm.c.html#RKC">RKC</A>(i);
+        <A HREF="lvm.c.html#runtime_check">runtime_check</A>(L, <A HREF="lobject.h.html#ttisstring">ttisstring</A>(rc));
+        <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(ra+1, rb);
+        if (<A HREF="lobject.h.html#ttistable">ttistable</A>(rb)) {
+          const <A HREF="lobject.h.html#TObject">TObject</A> *v = <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(rb), <A HREF="lobject.h.html#tsvalue">tsvalue</A>(rc));
+          if (!<A HREF="lobject.h.html#ttisnil">ttisnil</A>(v)) { <A HREF="lobject.h.html#setobj2s">setobj2s</A>(ra, v); }
+          else
+            <A HREF="lobject.h.html#setobj2s">setobj2s</A>(<A HREF="lvm.c.html#XRA">XRA</A>(i), <A HREF="lvm.c.html#luaV_index">luaV_index</A>(L, rb, rc, 0));
+        }
+        else
+          <A HREF="lobject.h.html#setobj2s">setobj2s</A>(<A HREF="lvm.c.html#XRA">XRA</A>(i), <A HREF="lvm.c.html#luaV_getnotable">luaV_getnotable</A>(L, rb, rc, 0));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_ADD">OP_ADD</A>: {
+        <A HREF="lobject.h.html#TObject">TObject</A> *rb = <A HREF="lvm.c.html#RKB">RKB</A>(i);
+        <A HREF="lobject.h.html#TObject">TObject</A> *rc = <A HREF="lvm.c.html#RKC">RKC</A>(i);
+        if (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(rb) &amp;&amp; <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(rc)) {
+          <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, <A HREF="lobject.h.html#nvalue">nvalue</A>(rb) + <A HREF="lobject.h.html#nvalue">nvalue</A>(rc));
+        }
+        else
+          <A HREF="lvm.c.html#Arith">Arith</A>(L, ra, rb, rc, <A HREF="ltm.h.html#TM_ADD">TM_ADD</A>);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SUB">OP_SUB</A>: {
+        <A HREF="lobject.h.html#TObject">TObject</A> *rb = <A HREF="lvm.c.html#RKB">RKB</A>(i);
+        <A HREF="lobject.h.html#TObject">TObject</A> *rc = <A HREF="lvm.c.html#RKC">RKC</A>(i);
+        if (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(rb) &amp;&amp; <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(rc)) {
+          <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, <A HREF="lobject.h.html#nvalue">nvalue</A>(rb) - <A HREF="lobject.h.html#nvalue">nvalue</A>(rc));
+        }
+        else
+          <A HREF="lvm.c.html#Arith">Arith</A>(L, ra, rb, rc, <A HREF="ltm.h.html#TM_SUB">TM_SUB</A>);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_MUL">OP_MUL</A>: {
+        <A HREF="lobject.h.html#TObject">TObject</A> *rb = <A HREF="lvm.c.html#RKB">RKB</A>(i);
+        <A HREF="lobject.h.html#TObject">TObject</A> *rc = <A HREF="lvm.c.html#RKC">RKC</A>(i);
+        if (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(rb) &amp;&amp; <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(rc)) {
+          <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, <A HREF="lobject.h.html#nvalue">nvalue</A>(rb) * <A HREF="lobject.h.html#nvalue">nvalue</A>(rc));
+        }
+        else
+          <A HREF="lvm.c.html#Arith">Arith</A>(L, ra, rb, rc, <A HREF="ltm.h.html#TM_MUL">TM_MUL</A>);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_DIV">OP_DIV</A>: {
+        <A HREF="lobject.h.html#TObject">TObject</A> *rb = <A HREF="lvm.c.html#RKB">RKB</A>(i);
+        <A HREF="lobject.h.html#TObject">TObject</A> *rc = <A HREF="lvm.c.html#RKC">RKC</A>(i);
+        if (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(rb) &amp;&amp; <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(rc)) {
+          <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, <A HREF="lobject.h.html#nvalue">nvalue</A>(rb) / <A HREF="lobject.h.html#nvalue">nvalue</A>(rc));
+        }
+        else
+          <A HREF="lvm.c.html#Arith">Arith</A>(L, ra, rb, rc, <A HREF="ltm.h.html#TM_DIV">TM_DIV</A>);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_POW">OP_POW</A>: {
+        <A HREF="lvm.c.html#Arith">Arith</A>(L, ra, <A HREF="lvm.c.html#RKB">RKB</A>(i), <A HREF="lvm.c.html#RKC">RKC</A>(i), <A HREF="ltm.h.html#TM_POW">TM_POW</A>);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_UNM">OP_UNM</A>: {
+        const <A HREF="lobject.h.html#TObject">TObject</A> *rb = <A HREF="lvm.c.html#RB">RB</A>(i);
+        <A HREF="lobject.h.html#TObject">TObject</A> temp;
+        if (<A HREF="lvm.h.html#tonumber">tonumber</A>(rb, &amp;temp)) {
+          <A HREF="lobject.h.html#setnvalue">setnvalue</A>(ra, -<A HREF="lobject.h.html#nvalue">nvalue</A>(rb));
+        }
+        else {
+          <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(&amp;temp);
+          if (!<A HREF="lvm.c.html#call_binTM">call_binTM</A>(L, <A HREF="lvm.c.html#RB">RB</A>(i), &amp;temp, ra, <A HREF="ltm.h.html#TM_UNM">TM_UNM</A>))
+            <A HREF="ldebug.c.html#luaG_aritherror">luaG_aritherror</A>(L, <A HREF="lvm.c.html#RB">RB</A>(i), &amp;temp);
+        }
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_NOT">OP_NOT</A>: {
+        int res = <A HREF="lobject.h.html#l_isfalse">l_isfalse</A>(<A HREF="lvm.c.html#RB">RB</A>(i));  /* next assignment may change this value */
+        <A HREF="lobject.h.html#setbvalue">setbvalue</A>(ra, res);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CONCAT">OP_CONCAT</A>: {
+        int b = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        int c = <A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i);
+        <A HREF="lvm.c.html#luaV_concat">luaV_concat</A>(L, c-b+1, c);  /* may change `base' (and `ra') */
+        base = L-&gt;base;
+        <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(<A HREF="lvm.c.html#RA">RA</A>(i), base+b);
+        <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_JMP">OP_JMP</A>: {
+        <A HREF="lvm.c.html#dojump">dojump</A>(pc, <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(i));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_EQ">OP_EQ</A>: {
+        if (<A HREF="lvm.h.html#equalobj">equalobj</A>(L, <A HREF="lvm.c.html#RKB">RKB</A>(i), <A HREF="lvm.c.html#RKC">RKC</A>(i)) != <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i)) pc++;
+        else <A HREF="lvm.c.html#dojump">dojump</A>(pc, <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(*pc) + 1);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_LT">OP_LT</A>: {
+        if (<A HREF="lvm.c.html#luaV_lessthan">luaV_lessthan</A>(L, <A HREF="lvm.c.html#RKB">RKB</A>(i), <A HREF="lvm.c.html#RKC">RKC</A>(i)) != <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i)) pc++;
+        else <A HREF="lvm.c.html#dojump">dojump</A>(pc, <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(*pc) + 1);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_LE">OP_LE</A>: {
+        if (<A HREF="lvm.c.html#luaV_lessequal">luaV_lessequal</A>(L, <A HREF="lvm.c.html#RKB">RKB</A>(i), <A HREF="lvm.c.html#RKC">RKC</A>(i)) != <A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i)) pc++;
+        else <A HREF="lvm.c.html#dojump">dojump</A>(pc, <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(*pc) + 1);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_TEST">OP_TEST</A>: {
+        <A HREF="lobject.h.html#TObject">TObject</A> *rb = <A HREF="lvm.c.html#RB">RB</A>(i);
+        if (<A HREF="lobject.h.html#l_isfalse">l_isfalse</A>(rb) == <A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i)) pc++;
+        else {
+          <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(ra, rb);
+          <A HREF="lvm.c.html#dojump">dojump</A>(pc, <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(*pc) + 1);
+        }
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>:
+      case <A HREF="lopcodes.h.html#OP_TAILCALL">OP_TAILCALL</A>: {
+        <A HREF="lobject.h.html#StkId">StkId</A> firstResult;
+        int b = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        int nresults;
+        if (b != 0) L-&gt;top = ra+b;  /* else previous instruction set top */
+        nresults = <A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i) - 1;
+        firstResult = <A HREF="ldo.c.html#luaD_precall">luaD_precall</A>(L, ra);
+        if (firstResult) {
+          if (firstResult &gt; L-&gt;top) {  /* yield? */
+            <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;ci-&gt;state == (<A HREF="lstate.h.html#CI_C">CI_C</A> | <A HREF="lstate.h.html#CI_YIELD">CI_YIELD</A>));
+            (L-&gt;ci - 1)-&gt;u.l.savedpc = pc;
+            (L-&gt;ci - 1)-&gt;state = <A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A>;
+            return NULL;
+          }
+          /* it was a C function (`precall' called it); adjust results */
+          <A HREF="ldo.c.html#luaD_poscall">luaD_poscall</A>(L, nresults, firstResult);
+          if (nresults &gt;= 0) L-&gt;top = L-&gt;ci-&gt;top;
+        }
+        else {  /* it is a Lua function */
+          if (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i) == <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>) {  /* regular call? */
+            (L-&gt;ci-1)-&gt;u.l.savedpc = pc;  /* save `pc' to return later */
+            (L-&gt;ci-1)-&gt;state = (<A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A> | <A HREF="lstate.h.html#CI_CALLING">CI_CALLING</A>);
+          }
+          else {  /* tail call: put new frame in place of previous one */
+            int aux;
+            base = (L-&gt;ci - 1)-&gt;base;  /* `<A HREF="ldo.c.html#luaD_precall">luaD_precall</A>' may change the stack */
+            ra = <A HREF="lvm.c.html#RA">RA</A>(i);
+            if (L-&gt;openupval) <A HREF="lfunc.c.html#luaF_close">luaF_close</A>(L, base);
+            for (aux = 0; ra+aux &lt; L-&gt;top; aux++)  /* move frame down */
+              <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(base+aux-1, ra+aux);
+            (L-&gt;ci - 1)-&gt;top = L-&gt;top = base+aux;  /* correct top */
+            <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;ci-&gt;state &amp; <A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A>);
+            (L-&gt;ci - 1)-&gt;u.l.savedpc = L-&gt;ci-&gt;u.l.savedpc;
+            (L-&gt;ci - 1)-&gt;u.l.tailcalls++;  /* one more call lost */
+            (L-&gt;ci - 1)-&gt;state = <A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A>;
+            L-&gt;ci--;  /* remove new frame */
+            L-&gt;base = L-&gt;ci-&gt;base;
+          }
+          goto callentry;
+        }
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A>: {
+        <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci - 1;  /* previous function frame */
+        int b = <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+        if (b != 0) L-&gt;top = ra+b-1;
+        <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;ci-&gt;state &amp; <A HREF="lstate.h.html#CI_HASFRAME">CI_HASFRAME</A>);
+        if (L-&gt;openupval) <A HREF="lfunc.c.html#luaF_close">luaF_close</A>(L, base);
+        L-&gt;ci-&gt;state = <A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A>;  /* deactivate current function */
+        L-&gt;ci-&gt;u.l.savedpc = pc;
+        /* previous function was running `here'? */
+        if (!(ci-&gt;state &amp; <A HREF="lstate.h.html#CI_CALLING">CI_CALLING</A>)) {
+          <A HREF="llimits.h.html#lua_assert">lua_assert</A>((ci-&gt;state &amp; <A HREF="lstate.h.html#CI_C">CI_C</A>) || ci-&gt;u.l.pc != &amp;pc);
+          return ra;  /* no: return */
+        }
+        else {  /* yes: continue its execution */
+          int nresults;
+          <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#ttisfunction">ttisfunction</A>(ci-&gt;base - 1) &amp;&amp; (ci-&gt;state &amp; <A HREF="lstate.h.html#CI_SAVEDPC">CI_SAVEDPC</A>));
+          <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*(ci-&gt;u.l.savedpc - 1)) == <A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>);
+          nresults = <A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(*(ci-&gt;u.l.savedpc - 1)) - 1;
+          <A HREF="ldo.c.html#luaD_poscall">luaD_poscall</A>(L, nresults, ra);
+          if (nresults &gt;= 0) L-&gt;top = L-&gt;ci-&gt;top;
+          goto retentry;
+        }
+      }
+      case <A HREF="lopcodes.h.html#OP_FORLOOP">OP_FORLOOP</A>: {
+        <A HREF="lua.h.html#lua_Number">lua_Number</A> step, idx, limit;
+        const <A HREF="lobject.h.html#TObject">TObject</A> *plimit = ra+1;
+        const <A HREF="lobject.h.html#TObject">TObject</A> *pstep = ra+2;
+        if (!<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(ra))
+          <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "`for' initial value must be a number");
+        if (!<A HREF="lvm.h.html#tonumber">tonumber</A>(plimit, ra+1))
+          <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "`for' limit must be a number");
+        if (!<A HREF="lvm.h.html#tonumber">tonumber</A>(pstep, ra+2))
+          <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "`for' step must be a number");
+        step = <A HREF="lobject.h.html#nvalue">nvalue</A>(pstep);
+        idx = <A HREF="lobject.h.html#nvalue">nvalue</A>(ra) + step;  /* increment index */
+        limit = <A HREF="lobject.h.html#nvalue">nvalue</A>(plimit);
+        if (step &gt; 0 ? idx &lt;= limit : idx &gt;= limit) {
+          <A HREF="lvm.c.html#dojump">dojump</A>(pc, <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(i));  /* jump back */
+          <A HREF="lobject.h.html#chgnvalue">chgnvalue</A>(ra, idx);  /* update index */
+        }
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_TFORLOOP">OP_TFORLOOP</A>: {
+        int nvar = <A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i) + 1;
+        <A HREF="lobject.h.html#StkId">StkId</A> cb = ra + nvar + 2;  /* call base */
+        <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(cb, ra);
+        <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(cb+1, ra+1);
+        <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(cb+2, ra+2);
+        L-&gt;top = cb+3;  /* func. + 2 args (state and index) */
+        <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, cb, nvar);
+        L-&gt;top = L-&gt;ci-&gt;top;
+        ra = <A HREF="lvm.c.html#XRA">XRA</A>(i) + 2;  /* final position of first result */
+        cb = ra + nvar;
+        do {  /* move results to proper positions */
+          nvar--;
+          <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(ra+nvar, cb+nvar);
+        } while (nvar &gt; 0);
+        if (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(ra))  /* break loop? */
+          pc++;  /* skip jump (break loop) */
+        else
+          <A HREF="lvm.c.html#dojump">dojump</A>(pc, <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(*pc) + 1);  /* jump back */
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_TFORPREP">OP_TFORPREP</A>: {  /* for compatibility only */
+        if (<A HREF="lobject.h.html#ttistable">ttistable</A>(ra)) {
+          <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(ra+1, ra);
+          <A HREF="lobject.h.html#setobj2s">setobj2s</A>(ra, <A HREF="ltable.c.html#luaH_getstr">luaH_getstr</A>(<A HREF="lobject.h.html#hvalue">hvalue</A>(<A HREF="lstate.h.html#gt">gt</A>(L)), <A HREF="lstring.h.html#luaS_new">luaS_new</A>(L, "next")));
+        }
+        <A HREF="lvm.c.html#dojump">dojump</A>(pc, <A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(i));
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>:
+      case <A HREF="lopcodes.h.html#OP_SETLISTO">OP_SETLISTO</A>: {
+        int bc;
+        int n;
+        <A HREF="lobject.h.html#Table">Table</A> *h;
+        <A HREF="lvm.c.html#runtime_check">runtime_check</A>(L, <A HREF="lobject.h.html#ttistable">ttistable</A>(ra));
+        h = <A HREF="lobject.h.html#hvalue">hvalue</A>(ra);
+        bc = <A HREF="lopcodes.h.html#GETARG_Bx">GETARG_Bx</A>(i);
+        if (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i) == <A HREF="lopcodes.h.html#OP_SETLIST">OP_SETLIST</A>)
+          n = (bc&amp;(<A HREF="lopcodes.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>-1)) + 1;
+        else {
+          n = L-&gt;top - ra - 1;
+          L-&gt;top = L-&gt;ci-&gt;top;
+        }
+        bc &amp;= ~(<A HREF="lopcodes.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>-1);  /* bc = bc - bc%FPF */
+        for (; n &gt; 0; n--)
+          <A HREF="lobject.h.html#setobj2t">setobj2t</A>(<A HREF="ltable.c.html#luaH_setnum">luaH_setnum</A>(L, h, bc+n), ra+n);  /* write barrier */
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CLOSE">OP_CLOSE</A>: {
+        <A HREF="lfunc.c.html#luaF_close">luaF_close</A>(L, ra);
+        break;
+      }
+      case <A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A>: {
+        <A HREF="lobject.h.html#Proto">Proto</A> *p;
+        <A HREF="lobject.h.html#Closure">Closure</A> *ncl;
+        int nup, j;
+        p = cl-&gt;p-&gt;p[<A HREF="lopcodes.h.html#GETARG_Bx">GETARG_Bx</A>(i)];
+        nup = p-&gt;nups;
+        ncl = <A HREF="lfunc.c.html#luaF_newLclosure">luaF_newLclosure</A>(L, nup, &amp;cl-&gt;g);
+        ncl-&gt;l.p = p;
+        for (j=0; j&lt;nup; j++, pc++) {
+          if (<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*pc) == <A HREF="lopcodes.h.html#OP_GETUPVAL">OP_GETUPVAL</A>)
+            ncl-&gt;l.upvals[j] = cl-&gt;upvals[<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(*pc)];
+          else {
+            <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*pc) == <A HREF="lopcodes.h.html#OP_MOVE">OP_MOVE</A>);
+            ncl-&gt;l.upvals[j] = <A HREF="lfunc.c.html#luaF_findupval">luaF_findupval</A>(L, base + <A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(*pc));
+          }
+        }
+        <A HREF="lobject.h.html#setclvalue">setclvalue</A>(ra, ncl);
+        <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L);
+        break;
+      }
+    }
+  }
+}
+
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

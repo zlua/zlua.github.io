@@ -1,0 +1,182 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lgc.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lgc.h
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lgc.h,v 2.90 2015/10/21 18:15:15 roberto Exp $
+** Garbage Collector
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lgc.h.html#lgc_h">lgc_h</A>
+#define <A NAME="lgc_h"><SPAN CLASS="definition">lgc_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+/*
+** Collectable objects may have one of three colors: white, which
+** means the object is not marked; gray, which means the
+** object is marked, but its references may be not marked; and
+** black, which means that the object and all its references are marked.
+** The <A HREF="lua.c.html#main">main</A> invariant of the garbage collector, while marking objects,
+** is that a black object can never point to a white one. Moreover,
+** any gray object must be in a "gray list" (gray, grayagain, weak,
+** allweak, ephemeron) so that it can be visited again before finishing
+** the collection cycle. These lists have no meaning when the invariant
+** is not being enforced (e.g., sweep phase).
+*/
+
+
+
+/* how much to allocate before next GC step */
+#if !defined(<A HREF="lgc.h.html#GCSTEPSIZE">GCSTEPSIZE</A>)
+/* ~100 small strings */
+#define <A NAME="GCSTEPSIZE"><SPAN CLASS="definition">GCSTEPSIZE</SPAN></A>      (<A HREF="llimits.h.html#cast_int">cast_int</A>(100 * sizeof(<A HREF="lobject.h.html#TString">TString</A>)))
+#endif
+
+
+/*
+** Possible states of the Garbage Collector
+*/
+#define <A NAME="GCSpropagate"><SPAN CLASS="definition">GCSpropagate</SPAN></A>    0
+#define <A NAME="GCSatomic"><SPAN CLASS="definition">GCSatomic</SPAN></A>       1
+#define <A NAME="GCSswpallgc"><SPAN CLASS="definition">GCSswpallgc</SPAN></A>     2
+#define <A NAME="GCSswpfinobj"><SPAN CLASS="definition">GCSswpfinobj</SPAN></A>    3
+#define <A NAME="GCSswptobefnz"><SPAN CLASS="definition">GCSswptobefnz</SPAN></A>   4
+#define <A NAME="GCSswpend"><SPAN CLASS="definition">GCSswpend</SPAN></A>       5
+#define <A NAME="GCScallfin"><SPAN CLASS="definition">GCScallfin</SPAN></A>      6
+#define <A NAME="GCSpause"><SPAN CLASS="definition">GCSpause</SPAN></A>        7
+
+
+#define <A NAME="issweepphase"><SPAN CLASS="definition">issweepphase</SPAN></A>(g)  \
+        (<A HREF="lgc.h.html#GCSswpallgc">GCSswpallgc</A> &lt;= (g)-&gt;gcstate &amp;&amp; (g)-&gt;gcstate &lt;= <A HREF="lgc.h.html#GCSswpend">GCSswpend</A>)
+
+
+/*
+** macro to tell when <A HREF="lua.c.html#main">main</A> invariant (white objects cannot point to black
+** ones) must be kept. During a collection, the sweep
+** phase may break the invariant, as objects turned white may point to
+** still-black objects. The invariant is restored when sweep ends and
+** all objects are white again.
+*/
+
+#define <A NAME="keepinvariant"><SPAN CLASS="definition">keepinvariant</SPAN></A>(g)        ((g)-&gt;gcstate &lt;= <A HREF="lgc.h.html#GCSatomic">GCSatomic</A>)
+
+
+/*
+** some useful bit tricks
+*/
+#define <A NAME="resetbits"><SPAN CLASS="definition">resetbits</SPAN></A>(x,m)          ((x) &amp;= <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_byte">lu_byte</A>, ~(m)))
+#define <A NAME="setbits"><SPAN CLASS="definition">setbits</SPAN></A>(x,m)            ((x) |= (m))
+#define <A NAME="testbits"><SPAN CLASS="definition">testbits</SPAN></A>(x,m)           ((x) &amp; (m))
+#define <A NAME="bitmask"><SPAN CLASS="definition">bitmask</SPAN></A>(b)              (1&lt;&lt;(b))
+#define <A NAME="bit2mask"><SPAN CLASS="definition">bit2mask</SPAN></A>(b1,b2)         (<A HREF="lgc.h.html#bitmask">bitmask</A>(b1) | <A HREF="lgc.h.html#bitmask">bitmask</A>(b2))
+#define <A NAME="l_setbit"><SPAN CLASS="definition">l_setbit</SPAN></A>(x,b)           <A HREF="lgc.h.html#setbits">setbits</A>(x, <A HREF="lgc.h.html#bitmask">bitmask</A>(b))
+#define <A NAME="resetbit"><SPAN CLASS="definition">resetbit</SPAN></A>(x,b)           <A HREF="lgc.h.html#resetbits">resetbits</A>(x, <A HREF="lgc.h.html#bitmask">bitmask</A>(b))
+#define <A NAME="testbit"><SPAN CLASS="definition">testbit</SPAN></A>(x,b)            <A HREF="lgc.h.html#testbits">testbits</A>(x, <A HREF="lgc.h.html#bitmask">bitmask</A>(b))
+
+
+/* Layout for bit use in 'marked' field: */
+#define <A NAME="WHITE0BIT"><SPAN CLASS="definition">WHITE0BIT</SPAN></A>       0  /* object is white (type 0) */
+#define <A NAME="WHITE1BIT"><SPAN CLASS="definition">WHITE1BIT</SPAN></A>       1  /* object is white (type 1) */
+#define <A NAME="BLACKBIT"><SPAN CLASS="definition">BLACKBIT</SPAN></A>        2  /* object is black */
+#define <A NAME="FINALIZEDBIT"><SPAN CLASS="definition">FINALIZEDBIT</SPAN></A>    3  /* object has been marked for finalization */
+/* bit 7 is currently used by tests (luaL_checkmemory) */
+
+#define <A NAME="WHITEBITS"><SPAN CLASS="definition">WHITEBITS</SPAN></A>       <A HREF="lgc.h.html#bit2mask">bit2mask</A>(<A HREF="lgc.h.html#WHITE0BIT">WHITE0BIT</A>, <A HREF="lgc.h.html#WHITE1BIT">WHITE1BIT</A>)
+
+
+#define <A NAME="iswhite"><SPAN CLASS="definition">iswhite</SPAN></A>(x)      <A HREF="lgc.h.html#testbits">testbits</A>((x)-&gt;marked, <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+#define <A NAME="isblack"><SPAN CLASS="definition">isblack</SPAN></A>(x)      <A HREF="lgc.h.html#testbit">testbit</A>((x)-&gt;marked, <A HREF="lgc.h.html#BLACKBIT">BLACKBIT</A>)
+#define <A NAME="isgray"><SPAN CLASS="definition">isgray</SPAN></A>(x)  /* neither white nor black */  \
+        (!<A HREF="lgc.h.html#testbits">testbits</A>((x)-&gt;marked, <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A> | <A HREF="lgc.h.html#bitmask">bitmask</A>(<A HREF="lgc.h.html#BLACKBIT">BLACKBIT</A>)))
+
+#define <A NAME="tofinalize"><SPAN CLASS="definition">tofinalize</SPAN></A>(x)   <A HREF="lgc.h.html#testbit">testbit</A>((x)-&gt;marked, <A HREF="lgc.h.html#FINALIZEDBIT">FINALIZEDBIT</A>)
+
+#define <A NAME="otherwhite"><SPAN CLASS="definition">otherwhite</SPAN></A>(g)   ((g)-&gt;currentwhite ^ <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+#define <A NAME="isdeadm"><SPAN CLASS="definition">isdeadm</SPAN></A>(ow,m)   (!(((m) ^ <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>) &amp; (ow)))
+#define <A NAME="isdead"><SPAN CLASS="definition">isdead</SPAN></A>(g,v)     <A HREF="lgc.h.html#isdeadm">isdeadm</A>(<A HREF="lgc.h.html#otherwhite">otherwhite</A>(g), (v)-&gt;marked)
+
+#define <A NAME="changewhite"><SPAN CLASS="definition">changewhite</SPAN></A>(x)  ((x)-&gt;marked ^= <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+#define <A NAME="gray2black"><SPAN CLASS="definition">gray2black</SPAN></A>(x)   <A HREF="lgc.h.html#l_setbit">l_setbit</A>((x)-&gt;marked, <A HREF="lgc.h.html#BLACKBIT">BLACKBIT</A>)
+
+#define <A NAME="luaC_white"><SPAN CLASS="definition">luaC_white</SPAN></A>(g)   <A HREF="llimits.h.html#cast">cast</A>(<A HREF="llimits.h.html#lu_byte">lu_byte</A>, (g)-&gt;currentwhite &amp; <A HREF="lgc.h.html#WHITEBITS">WHITEBITS</A>)
+
+
+/*
+** Does one step of collection when debt becomes positive. 'pre'/'pos'
+** allows some adjustments to be done only when needed. macro
+** '<A HREF="llimits.h.html#condchangemem">condchangemem</A>' is used only for heavy tests (forcing a full
+** GC cycle on every opportunity)
+*/
+#define <A NAME="luaC_condGC"><SPAN CLASS="definition">luaC_condGC</SPAN></A>(L,pre,pos) \
+        { if (<A HREF="lstate.h.html#G">G</A>(L)-&gt;GCdebt &gt; 0) { pre; <A HREF="lgc.c.html#luaC_step">luaC_step</A>(L); pos;}; \
+          <A HREF="llimits.h.html#condchangemem">condchangemem</A>(L,pre,pos); }
+
+/* more often than not, 'pre'/'pos' are empty */
+#define <A NAME="luaC_checkGC"><SPAN CLASS="definition">luaC_checkGC</SPAN></A>(L)         <A HREF="lgc.h.html#luaC_condGC">luaC_condGC</A>(L,,)
+
+
+#define <A NAME="luaC_barrier"><SPAN CLASS="definition">luaC_barrier</SPAN></A>(L,p,v) (  \
+        (<A HREF="lobject.h.html#iscollectable">iscollectable</A>(v) &amp;&amp; <A HREF="lgc.h.html#isblack">isblack</A>(p) &amp;&amp; <A HREF="lgc.h.html#iswhite">iswhite</A>(<A HREF="lobject.h.html#gcvalue">gcvalue</A>(v))) ?  \
+        <A HREF="lgc.c.html#luaC_barrier_">luaC_barrier_</A>(L,<A HREF="lstate.h.html#obj2gco">obj2gco</A>(p),<A HREF="lobject.h.html#gcvalue">gcvalue</A>(v)) : <A HREF="llimits.h.html#cast_void">cast_void</A>(0))
+
+#define <A NAME="luaC_barrierback"><SPAN CLASS="definition">luaC_barrierback</SPAN></A>(L,p,v) (  \
+        (<A HREF="lobject.h.html#iscollectable">iscollectable</A>(v) &amp;&amp; <A HREF="lgc.h.html#isblack">isblack</A>(p) &amp;&amp; <A HREF="lgc.h.html#iswhite">iswhite</A>(<A HREF="lobject.h.html#gcvalue">gcvalue</A>(v))) ? \
+        <A HREF="lgc.c.html#luaC_barrierback_">luaC_barrierback_</A>(L,p) : <A HREF="llimits.h.html#cast_void">cast_void</A>(0))
+
+#define <A NAME="luaC_objbarrier"><SPAN CLASS="definition">luaC_objbarrier</SPAN></A>(L,p,o) (  \
+        (<A HREF="lgc.h.html#isblack">isblack</A>(p) &amp;&amp; <A HREF="lgc.h.html#iswhite">iswhite</A>(o)) ? \
+        <A HREF="lgc.c.html#luaC_barrier_">luaC_barrier_</A>(L,<A HREF="lstate.h.html#obj2gco">obj2gco</A>(p),<A HREF="lstate.h.html#obj2gco">obj2gco</A>(o)) : <A HREF="llimits.h.html#cast_void">cast_void</A>(0))
+
+#define <A NAME="luaC_upvalbarrier"><SPAN CLASS="definition">luaC_upvalbarrier</SPAN></A>(L,uv) ( \
+        (<A HREF="lobject.h.html#iscollectable">iscollectable</A>((uv)-&gt;v) &amp;&amp; !<A HREF="lfunc.h.html#upisopen">upisopen</A>(uv)) ? \
+         <A HREF="lgc.c.html#luaC_upvalbarrier_">luaC_upvalbarrier_</A>(L,uv) : <A HREF="llimits.h.html#cast_void">cast_void</A>(0))
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_fix">luaC_fix</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> *o);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_freeallobjects">luaC_freeallobjects</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_step">luaC_step</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_runtilstate">luaC_runtilstate</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int statesmask);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_fullgc">luaC_fullgc</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int isemergency);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lobject.h.html#GCObject">GCObject</A> *<A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int tt, size_t sz);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_barrier_">luaC_barrier_</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> *o, <A HREF="lobject.h.html#GCObject">GCObject</A> *v);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_barrierback_">luaC_barrierback_</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Table">Table</A> *o);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_upvalbarrier_">luaC_upvalbarrier_</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_checkfinalizer">luaC_checkfinalizer</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#GCObject">GCObject</A> *o, <A HREF="lobject.h.html#Table">Table</A> *mt);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lgc.c.html#luaC_upvdeccount">luaC_upvdeccount</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

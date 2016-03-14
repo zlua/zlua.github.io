@@ -1,0 +1,423 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - ldo.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldo.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldo.c,v 1.109a 2000/10/30 12:38:50 roberto Exp $
+** Stack and Call structure of Lua
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;setjmp.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lparser.h.html">lparser.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+/* space to handle stack overflow errors */
+#define <A NAME="EXTRA_STACK"><SPAN CLASS="definition">EXTRA_STACK</SPAN></A>     (2*<A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>)
+
+
+void <A NAME="luaD_init"><SPAN CLASS="definition">luaD_init</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int stacksize) {
+  L-&gt;stack = <A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L, stacksize+<A HREF="ldo.c.html#EXTRA_STACK">EXTRA_STACK</A>, <A HREF="lobject.h.html#TObject">TObject</A>);
+  L-&gt;nblocks += stacksize*sizeof(<A HREF="lobject.h.html#TObject">TObject</A>);
+  L-&gt;stack_last = L-&gt;stack+(stacksize-1);
+  L-&gt;stacksize = stacksize;
+  L-&gt;Cbase = L-&gt;top = L-&gt;stack;
+}
+
+
+void <A NAME="luaD_checkstack"><SPAN CLASS="definition">luaD_checkstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  if (L-&gt;stack_last - L-&gt;top &lt;= n) {  /* stack overflow? */
+    if (L-&gt;stack_last-L-&gt;stack &gt; (L-&gt;stacksize-1)) {
+      /* overflow while handling overflow */
+      <A HREF="ldo.c.html#luaD_breakrun">luaD_breakrun</A>(L, <A HREF="lua.h.html#LUA_ERRERR">LUA_ERRERR</A>);  /* break run without error <A HREF="ldo.c.html#message">message</A> */
+    }
+    else {
+      L-&gt;stack_last += <A HREF="ldo.c.html#EXTRA_STACK">EXTRA_STACK</A>;  /* to be used by error <A HREF="ldo.c.html#message">message</A> */
+      <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "stack overflow");
+    }
+  }
+}
+
+
+static void <A NAME="restore_stack_limit"><SPAN CLASS="definition">restore_stack_limit</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  if (L-&gt;top - L-&gt;stack &lt; L-&gt;stacksize - 1)
+    L-&gt;stack_last = L-&gt;stack + (L-&gt;stacksize-1);
+}
+
+
+/*
+** Adjust stack. Set top to base+extra, pushing NILs if needed.
+** (we cannot add base+extra unless we are sure it fits in the stack;
+**  otherwise the result of such operation on pointers is undefined)
+*/
+void <A NAME="luaD_adjusttop"><SPAN CLASS="definition">luaD_adjusttop</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> base, int extra) {
+  int diff = extra-(L-&gt;top-base);
+  if (diff &lt;= 0)
+    L-&gt;top = base+extra;
+  else {
+    <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, diff);
+    while (diff--)
+      <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top++) = <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>;
+  }
+}
+
+
+/*
+** Open a hole inside the stack at `pos'
+*/
+static void <A NAME="luaD_openstack"><SPAN CLASS="definition">luaD_openstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> pos) {
+  int i = L-&gt;top-pos; 
+  while (i--) pos[i+1] = pos[i];
+  <A HREF="ldo.h.html#incr_top">incr_top</A>;
+}
+
+
+static void <A NAME="dohook"><SPAN CLASS="definition">dohook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> *ar, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> hook) {
+  <A HREF="lstate.h.html#StkId">StkId</A> old_Cbase = L-&gt;Cbase;
+  <A HREF="lstate.h.html#StkId">StkId</A> old_top = L-&gt;Cbase = L-&gt;top;
+  <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, <A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>);  /* ensure minimum stack size */
+  L-&gt;allowhooks = 0;  /* cannot call hooks inside a hook */
+  (*hook)(L, ar);
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(L-&gt;allowhooks == 0, "invalid allow");
+  L-&gt;allowhooks = 1;
+  L-&gt;top = old_top;
+  L-&gt;Cbase = old_Cbase;
+}
+
+
+void <A NAME="luaD_lineHook"><SPAN CLASS="definition">luaD_lineHook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> func, int line, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> linehook) {
+  if (L-&gt;allowhooks) {
+    <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> ar;
+    ar._func = func;
+    ar.event = "line";
+    ar.currentline = line;
+    <A HREF="ldo.c.html#dohook">dohook</A>(L, &amp;ar, linehook);
+  }
+}
+
+
+static void <A NAME="luaD_callHook"><SPAN CLASS="definition">luaD_callHook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> func, <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> callhook,
+                    const char *event) {
+  if (L-&gt;allowhooks) {
+    <A HREF="luadebug.h.html#lua_Debug">lua_Debug</A> ar;
+    ar._func = func;
+    ar.event = event;
+    <A HREF="lobject.h.html#infovalue">infovalue</A>(func)-&gt;pc = NULL;  /* function is not active */
+    <A HREF="ldo.c.html#dohook">dohook</A>(L, &amp;ar, callhook);
+  }
+}
+
+
+static <A HREF="lstate.h.html#StkId">StkId</A> <A NAME="callCclosure"><SPAN CLASS="definition">callCclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const struct <A HREF="lobject.h.html#Closure">Closure</A> *cl, <A HREF="lstate.h.html#StkId">StkId</A> base) {
+  int nup = cl-&gt;nupvalues;  /* number of upvalues */
+  <A HREF="lstate.h.html#StkId">StkId</A> old_Cbase = L-&gt;Cbase;
+  int n;
+  L-&gt;Cbase = base;       /* new base for C function */
+  <A HREF="ldo.c.html#luaD_checkstack">luaD_checkstack</A>(L, nup+<A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>);  /* ensure minimum stack size */
+  for (n=0; n&lt;nup; n++)  /* copy upvalues as extra arguments */
+    *(L-&gt;top++) = cl-&gt;upvalue[n];
+  n = (*cl-&gt;f.c)(L);  /* do the actual call */
+  L-&gt;Cbase = old_Cbase;  /* restore old C base */
+  return L-&gt;top - n;  /* return index of first result */
+}
+
+
+void <A NAME="luaD_callTM"><SPAN CLASS="definition">luaD_callTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Closure">Closure</A> *f, int nParams, int nResults) {
+  <A HREF="lstate.h.html#StkId">StkId</A> base = L-&gt;top - nParams;
+  <A HREF="ldo.c.html#luaD_openstack">luaD_openstack</A>(L, base);
+  <A HREF="lobject.h.html#clvalue">clvalue</A>(base) = f;
+  <A HREF="lobject.h.html#ttype">ttype</A>(base) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+  <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, base, nResults);
+}
+
+
+/*
+** Call a function (C or Lua). The function to be called is at *func.
+** The arguments are on the stack, right after the function.
+** When returns, the results are on the stack, starting at the original
+** function position.
+** The number of results is nResults, unless nResults=<A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>.
+*/ 
+void <A NAME="luaD_call"><SPAN CLASS="definition">luaD_call</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#StkId">StkId</A> func, int nResults) {
+  <A HREF="luadebug.h.html#lua_Hook">lua_Hook</A> callhook;
+  <A HREF="lstate.h.html#StkId">StkId</A> firstResult;
+  <A HREF="lobject.h.html#CallInfo">CallInfo</A> ci;
+  <A HREF="lobject.h.html#Closure">Closure</A> *cl;
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(func) != <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>) {
+    /* `func' is not a function; check the `function' tag method */
+    <A HREF="lobject.h.html#Closure">Closure</A> *tm = <A HREF="ltm.h.html#luaT_gettmbyObj">luaT_gettmbyObj</A>(L, func, <A HREF="ltm.h.html#TM_FUNCTION">TM_FUNCTION</A>);
+    if (tm == NULL)
+      <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A>(L, func, "call");
+    <A HREF="ldo.c.html#luaD_openstack">luaD_openstack</A>(L, func);
+    <A HREF="lobject.h.html#clvalue">clvalue</A>(func) = tm;  /* tag method is the new function to be called */
+    <A HREF="lobject.h.html#ttype">ttype</A>(func) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+  }
+  cl = <A HREF="lobject.h.html#clvalue">clvalue</A>(func);
+  ci.func = cl;
+  <A HREF="lobject.h.html#infovalue">infovalue</A>(func) = &amp;ci;
+  <A HREF="lobject.h.html#ttype">ttype</A>(func) = <A HREF="lobject.h.html#LUA_TMARK">LUA_TMARK</A>;
+  callhook = L-&gt;callhook;
+  if (callhook)
+    <A HREF="ldo.c.html#luaD_callHook">luaD_callHook</A>(L, func, callhook, "call");
+  firstResult = (cl-&gt;isC ? <A HREF="ldo.c.html#callCclosure">callCclosure</A>(L, cl, func+1) :
+                           <A HREF="lvm.c.html#luaV_execute">luaV_execute</A>(L, cl, func+1));
+  if (callhook)  /* same hook that was active at entry */
+    <A HREF="ldo.c.html#luaD_callHook">luaD_callHook</A>(L, func, callhook, "return");
+  <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(<A HREF="lobject.h.html#ttype">ttype</A>(func) == <A HREF="lobject.h.html#LUA_TMARK">LUA_TMARK</A>, "invalid tag");
+  /* move results to `func' (to erase parameters and function) */
+  if (nResults == <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>) {
+    while (firstResult &lt; L-&gt;top)  /* copy all results */
+      *func++ = *firstResult++;
+    L-&gt;top = func;
+  }
+  else {  /* copy at most `nResults' */
+    for (; nResults &gt; 0 &amp;&amp; firstResult &lt; L-&gt;top; nResults--)
+      *func++ = *firstResult++;
+    L-&gt;top = func;
+    for (; nResults &gt; 0; nResults--) {  /* if there are not enough results */
+      <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) = <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>;  /* adjust the stack */
+      <A HREF="ldo.h.html#incr_top">incr_top</A>;  /* must check stack space */
+    }
+  }
+  <A HREF="lgc.c.html#luaC_checkGC">luaC_checkGC</A>(L);
+}
+
+
+/*
+** Execute a protected call.
+*/
+struct <A NAME="CallS"><SPAN CLASS="definition">CallS</SPAN></A> {  /* data to `<A HREF="ldo.c.html#f_call">f_call</A>' */
+  <A HREF="lstate.h.html#StkId">StkId</A> func;
+  int nresults;
+};
+
+static void <A NAME="f_call"><SPAN CLASS="definition">f_call</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  struct <A HREF="ldo.c.html#CallS">CallS</A> *c = (struct <A HREF="ldo.c.html#CallS">CallS</A> *)ud;
+  <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, c-&gt;func, c-&gt;nresults);
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A NAME="lua_call"><SPAN CLASS="definition">lua_call</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nargs, int nresults) {
+  <A HREF="lstate.h.html#StkId">StkId</A> func = L-&gt;top - (nargs+1);  /* function to be called */
+  struct <A HREF="ldo.c.html#CallS">CallS</A> c;
+  int status;
+  c.func = func; c.nresults = nresults;
+  status = <A HREF="ldo.c.html#luaD_runprotected">luaD_runprotected</A>(L, <A HREF="ldo.c.html#f_call">f_call</A>, &amp;c);
+  if (status != 0)  /* an error occurred? */
+    L-&gt;top = func;  /* remove parameters from the stack */
+  return status;
+}
+
+
+/*
+** Execute a protected parser.
+*/
+struct <A NAME="ParserS"><SPAN CLASS="definition">ParserS</SPAN></A> {  /* data to `<A HREF="ldo.c.html#f_parser">f_parser</A>' */
+  <A HREF="lzio.h.html#ZIO">ZIO</A> *z;
+  int bin;
+};
+
+static void <A NAME="f_parser"><SPAN CLASS="definition">f_parser</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  struct <A HREF="ldo.c.html#ParserS">ParserS</A> *p = (struct <A HREF="ldo.c.html#ParserS">ParserS</A> *)ud;
+  <A HREF="lobject.h.html#Proto">Proto</A> *tf = p-&gt;bin ? <A HREF="lundump.c.html#luaU_undump">luaU_undump</A>(L, p-&gt;z) : <A HREF="lparser.c.html#luaY_parser">luaY_parser</A>(L, p-&gt;z);
+  <A HREF="lvm.c.html#luaV_Lclosure">luaV_Lclosure</A>(L, tf, 0);
+}
+
+
+static int <A NAME="protectedparser"><SPAN CLASS="definition">protectedparser</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lzio.h.html#ZIO">ZIO</A> *z, int bin) {
+  struct <A HREF="ldo.c.html#ParserS">ParserS</A> p;
+  unsigned long old_blocks;
+  int status;
+  p.z = z; p.bin = bin;
+  /* before parsing, give a (good) chance to GC */
+  if (L-&gt;nblocks/8 &gt;= L-&gt;GCthreshold/10)
+    <A HREF="lgc.c.html#luaC_collectgarbage">luaC_collectgarbage</A>(L);
+  old_blocks = L-&gt;nblocks;
+  status = <A HREF="ldo.c.html#luaD_runprotected">luaD_runprotected</A>(L, <A HREF="ldo.c.html#f_parser">f_parser</A>, &amp;p);
+  if (status == 0) {
+    /* add new memory to threshold (as it probably will stay) */
+    L-&gt;GCthreshold += (L-&gt;nblocks - old_blocks);
+  }
+  else if (status == <A HREF="lua.h.html#LUA_ERRRUN">LUA_ERRRUN</A>)  /* an error occurred: correct error code */
+    status = <A HREF="lua.h.html#LUA_ERRSYNTAX">LUA_ERRSYNTAX</A>;
+  return status;
+}
+
+
+static int <A NAME="parse_file"><SPAN CLASS="definition">parse_file</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *filename) {
+  <A HREF="lzio.h.html#ZIO">ZIO</A> z;
+  int status;
+  int bin;  /* flag for file mode */
+  int c;    /* look ahead char */
+  FILE *f = (filename == NULL) ? stdin : fopen(filename, "r");
+  if (f == NULL) return <A HREF="lua.h.html#LUA_ERRFILE">LUA_ERRFILE</A>;  /* unable to open file */
+  c = fgetc(f);
+  ungetc(c, f);
+  bin = (c == <A HREF="lundump.h.html#ID_CHUNK">ID_CHUNK</A>);
+  if (bin &amp;&amp; f != stdin) {
+    f = freopen(filename, "rb", f);  /* set binary mode */
+    if (f == NULL) return <A HREF="lua.h.html#LUA_ERRFILE">LUA_ERRFILE</A>;  /* unable to reopen file */
+  }
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, "@");
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, (filename == NULL) ? "(stdin)" : filename);
+  <A HREF="lapi.c.html#lua_concat">lua_concat</A>(L, 2);
+  c = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);
+  filename = <A HREF="lapi.c.html#lua_tostring">lua_tostring</A>(L, c);  /* filename = '@'..filename */
+  luaZ_Fopen(&amp;z, f, filename);
+  status = <A HREF="ldo.c.html#protectedparser">protectedparser</A>(L, &amp;z, bin);
+  <A HREF="lapi.c.html#lua_remove">lua_remove</A>(L, c);  /* remove `filename' from the stack */
+  if (f != stdin)
+    fclose(f);
+  return status;
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A NAME="lua_dofile"><SPAN CLASS="definition">lua_dofile</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *filename) {
+  int status = <A HREF="ldo.c.html#parse_file">parse_file</A>(L, filename);
+  if (status == 0)  /* parse OK? */
+    status = <A HREF="ldo.c.html#lua_call">lua_call</A>(L, 0, <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>);  /* call <A HREF="lua.c.html#main">main</A> */
+  return status;
+}
+
+
+static int <A NAME="parse_buffer"><SPAN CLASS="definition">parse_buffer</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *buff, size_t size,
+                         const char *name) {
+  <A HREF="lzio.h.html#ZIO">ZIO</A> z;
+  if (!name) name = "?";
+  luaZ_mopen(&amp;z, buff, size, name);
+  return <A HREF="ldo.c.html#protectedparser">protectedparser</A>(L, &amp;z, buff[0]==<A HREF="lundump.h.html#ID_CHUNK">ID_CHUNK</A>);
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A NAME="lua_dobuffer"><SPAN CLASS="definition">lua_dobuffer</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *buff, size_t size, const char *name) {
+  int status = <A HREF="ldo.c.html#parse_buffer">parse_buffer</A>(L, buff, size, name);
+  if (status == 0)  /* parse OK? */
+    status = <A HREF="ldo.c.html#lua_call">lua_call</A>(L, 0, <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>);  /* call <A HREF="lua.c.html#main">main</A> */
+  return status;
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A NAME="lua_dostring"><SPAN CLASS="definition">lua_dostring</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *str) {
+  return <A HREF="ldo.c.html#lua_dobuffer">lua_dobuffer</A>(L, str, strlen(str), str);
+}
+
+
+/*
+** {======================================================
+** Error-recover functions (based on long jumps)
+** =======================================================
+*/
+
+/* chain list of long jump buffers */
+struct <A NAME="lua_longjmp"><SPAN CLASS="definition">lua_longjmp</SPAN></A> {
+  jmp_buf b;
+  struct <A HREF="ldo.c.html#lua_longjmp">lua_longjmp</A> *previous;
+  volatile int status;  /* error code */
+};
+
+
+static void <A NAME="message"><SPAN CLASS="definition">message</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s) {
+  const <A HREF="lobject.h.html#TObject">TObject</A> *em = <A HREF="ltable.c.html#luaH_getglobal">luaH_getglobal</A>(L, <A HREF="lua.h.html#LUA_ERRORMESSAGE">LUA_ERRORMESSAGE</A>);
+  if (<A HREF="lobject.h.html#ttype">ttype</A>(em) == <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>) {
+    *L-&gt;top = *em;
+    <A HREF="ldo.h.html#incr_top">incr_top</A>;
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, s);
+    <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, L-&gt;top-2, 0);
+  }
+}
+
+
+/*
+** Reports an error, and jumps up to the available recovery label
+*/
+<A HREF="lua.h.html#LUA_API">LUA_API</A> void <A NAME="lua_error"><SPAN CLASS="definition">lua_error</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s) {
+  if (s) <A HREF="ldo.c.html#message">message</A>(L, s);
+  <A HREF="ldo.c.html#luaD_breakrun">luaD_breakrun</A>(L, <A HREF="lua.h.html#LUA_ERRRUN">LUA_ERRRUN</A>);
+}
+
+
+void <A NAME="luaD_breakrun"><SPAN CLASS="definition">luaD_breakrun</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int errcode) {
+  if (L-&gt;errorJmp) {
+    L-&gt;errorJmp-&gt;status = errcode;
+    longjmp(L-&gt;errorJmp-&gt;b, 1);
+  }
+  else {
+    if (errcode != <A HREF="lua.h.html#LUA_ERRMEM">LUA_ERRMEM</A>)
+      <A HREF="ldo.c.html#message">message</A>(L, "unable to recover; exiting\n");
+    exit(EXIT_FAILURE);
+  }
+}
+
+
+int <A NAME="luaD_runprotected"><SPAN CLASS="definition">luaD_runprotected</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void (*f)(<A HREF="lstate.h.html#lua_State">lua_State</A> *, void *), void *ud) {
+  <A HREF="lstate.h.html#StkId">StkId</A> oldCbase = L-&gt;Cbase;
+  <A HREF="lstate.h.html#StkId">StkId</A> oldtop = L-&gt;top;
+  struct <A HREF="ldo.c.html#lua_longjmp">lua_longjmp</A> lj;
+  int allowhooks = L-&gt;allowhooks;
+  lj.status = 0;
+  lj.previous = L-&gt;errorJmp;  /* chain new error handler */
+  L-&gt;errorJmp = &amp;lj;
+  if (setjmp(lj.b) == 0)
+    (*f)(L, ud);
+  else {  /* an error occurred: restore the state */
+    L-&gt;allowhooks = allowhooks;
+    L-&gt;Cbase = oldCbase;
+    L-&gt;top = oldtop;
+    <A HREF="ldo.c.html#restore_stack_limit">restore_stack_limit</A>(L);
+  }
+  L-&gt;errorJmp = lj.previous;  /* restore old error handler */
+  return lj.status;
+}
+
+/* }====================================================== */
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

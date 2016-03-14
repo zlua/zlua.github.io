@@ -1,0 +1,42 @@
+<HEAD>
+<TITLE>2 Environment and Modules</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=section3_3.html>3 Types</A>
+<B>Up:</B> <A HREF=manual.html>Reference Manual of the </A>
+<B> Previous:</B> <A HREF=section3_1.html>1 Introduction</A>
+<H1><A NAME=S0200>2 Environment and Modules</A></H1>
+<P>
+All statements in Lua are executed in a <I>global environment</I>.
+This environment, which keeps all global variables and functions,
+is initialized at the beginning of the embedding program and
+persists until its end.
+<P>
+The global environment can be manipulated by Lua code or
+by the embedding program,
+which can read and write global variables
+using functions in the library that implements Lua.
+<P>
+Global variables do not need declaration.
+Any variable is assumed to be global unless explicitly declared local
+(see local declarations, Section <A HREF=subsection3_4_4.html#localvar>4.4.5</A>).
+Before the first assignment, the value of a global variable is <B>nil</B>.
+<P>
+The unit of execution of Lua is called a <I>module</I>.
+The syntax for modules is:<A HREF=manual.foot.html#427>*</A>
+<PRE>
+   <I>module</I> ::= {<I> statement </I>|<I> function </I>}<BR></PRE>A module may contain statements and function definitions,
+and may be in a file or in a string inside the host program.
+When a module is executed, first all its functions and statements are compiled,
+and the functions added to the global environment;
+then the statements are executed in sequential order.
+All modifications a module effects on the global environment persist
+after its end.
+Those include modifications to global variables and definitions
+of new functions<A HREF=manual.foot.html#372>*</A>.
+<P>
+<B> Next:</B> <A HREF=section3_3.html>3 Types</A>
+<B>Up:</B> <A HREF=manual.html>Reference Manual of the </A>
+<B> Previous:</B> <A HREF=section3_1.html>1 Introduction</A>
+
+</BODY>

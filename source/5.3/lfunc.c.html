@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lfunc.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lfunc.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lfunc.c,v 2.45 2014/11/02 19:19:04 roberto Exp $
+** Auxiliary functions to manipulate prototypes and closures
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="lfunc_c"><SPAN CLASS="definition">lfunc_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;stddef.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+
+<A HREF="lobject.h.html#CClosure">CClosure</A> *<A NAME="luaF_newCclosure"><SPAN CLASS="definition">luaF_newCclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o = <A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>, <A HREF="lfunc.h.html#sizeCclosure">sizeCclosure</A>(n));
+  <A HREF="lobject.h.html#CClosure">CClosure</A> *c = <A HREF="lstate.h.html#gco2ccl">gco2ccl</A>(o);
+  c-&gt;nupvalues = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(n);
+  return c;
+}
+
+
+<A HREF="lobject.h.html#LClosure">LClosure</A> *<A NAME="luaF_newLclosure"><SPAN CLASS="definition">luaF_newLclosure</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o = <A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>, <A HREF="lfunc.h.html#sizeLclosure">sizeLclosure</A>(n));
+  <A HREF="lobject.h.html#LClosure">LClosure</A> *c = <A HREF="lstate.h.html#gco2lcl">gco2lcl</A>(o);
+  c-&gt;p = NULL;
+  c-&gt;nupvalues = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(n);
+  while (n--) c-&gt;upvals[n] = NULL;
+  return c;
+}
+
+/*
+** fill a closure with new closed upvalues
+*/
+void <A NAME="luaF_initupvals"><SPAN CLASS="definition">luaF_initupvals</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#LClosure">LClosure</A> *cl) {
+  int i;
+  for (i = 0; i &lt; cl-&gt;nupvalues; i++) {
+    <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv = <A HREF="lmem.h.html#luaM_new">luaM_new</A>(L, <A HREF="lfunc.h.html#UpVal">UpVal</A>);
+    uv-&gt;refcount = 1;
+    uv-&gt;v = &amp;uv-&gt;u.value;  /* make it closed */
+    <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(uv-&gt;v);
+    cl-&gt;upvals[i] = uv;
+  }
+}
+
+
+<A HREF="lfunc.h.html#UpVal">UpVal</A> *<A NAME="luaF_findupval"><SPAN CLASS="definition">luaF_findupval</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> level) {
+  <A HREF="lfunc.h.html#UpVal">UpVal</A> **pp = &amp;L-&gt;openupval;
+  <A HREF="lfunc.h.html#UpVal">UpVal</A> *p;
+  <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lfunc.h.html#isintwups">isintwups</A>(L) || L-&gt;openupval == NULL);
+  while (*pp != NULL &amp;&amp; (p = *pp)-&gt;v &gt;= level) {
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lfunc.h.html#upisopen">upisopen</A>(p));
+    if (p-&gt;v == level)  /* found a corresponding upvalue? */
+      return p;  /* return it */
+    pp = &amp;p-&gt;u.open.next;
+  }
+  /* not found: create a new upvalue */
+  uv = <A HREF="lmem.h.html#luaM_new">luaM_new</A>(L, <A HREF="lfunc.h.html#UpVal">UpVal</A>);
+  uv-&gt;refcount = 0;
+  uv-&gt;u.open.next = *pp;  /* link it to list of open upvalues */
+  uv-&gt;u.open.touched = 1;
+  *pp = uv;
+  uv-&gt;v = level;  /* current value lives in the stack */
+  if (!<A HREF="lfunc.h.html#isintwups">isintwups</A>(L)) {  /* thread not in list of threads with upvalues? */
+    L-&gt;twups = <A HREF="lstate.h.html#G">G</A>(L)-&gt;twups;  /* link it to the list */
+    <A HREF="lstate.h.html#G">G</A>(L)-&gt;twups = L;
+  }
+  return uv;
+}
+
+
+void <A NAME="luaF_close"><SPAN CLASS="definition">luaF_close</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> level) {
+  <A HREF="lfunc.h.html#UpVal">UpVal</A> *uv;
+  while (L-&gt;openupval != NULL &amp;&amp; (uv = L-&gt;openupval)-&gt;v &gt;= level) {
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lfunc.h.html#upisopen">upisopen</A>(uv));
+    L-&gt;openupval = uv-&gt;u.open.next;  /* remove from 'open' list */
+    if (uv-&gt;refcount == 0)  /* no references? */
+      <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, uv);  /* free upvalue */
+    else {
+      <A HREF="lobject.h.html#setobj">setobj</A>(L, &amp;uv-&gt;u.value, uv-&gt;v);  /* move value to upvalue slot */
+      uv-&gt;v = &amp;uv-&gt;u.value;  /* now current value lives here */
+      <A HREF="lgc.h.html#luaC_upvalbarrier">luaC_upvalbarrier</A>(L, uv);
+    }
+  }
+}
+
+
+<A HREF="lobject.h.html#Proto">Proto</A> *<A NAME="luaF_newproto"><SPAN CLASS="definition">luaF_newproto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *o = <A HREF="lgc.c.html#luaC_newobj">luaC_newobj</A>(L, <A HREF="lobject.h.html#LUA_TPROTO">LUA_TPROTO</A>, sizeof(<A HREF="lobject.h.html#Proto">Proto</A>));
+  <A HREF="lobject.h.html#Proto">Proto</A> *f = <A HREF="lstate.h.html#gco2p">gco2p</A>(o);
+  f-&gt;k = NULL;
+  f-&gt;sizek = 0;
+  f-&gt;p = NULL;
+  f-&gt;sizep = 0;
+  f-&gt;code = NULL;
+  f-&gt;cache = NULL;
+  f-&gt;sizecode = 0;
+  f-&gt;lineinfo = NULL;
+  f-&gt;sizelineinfo = 0;
+  f-&gt;upvalues = NULL;
+  f-&gt;sizeupvalues = 0;
+  f-&gt;numparams = 0;
+  f-&gt;is_vararg = 0;
+  f-&gt;maxstacksize = 0;
+  f-&gt;locvars = NULL;
+  f-&gt;sizelocvars = 0;
+  f-&gt;linedefined = 0;
+  f-&gt;lastlinedefined = 0;
+  f-&gt;source = NULL;
+  return f;
+}
+
+
+void <A NAME="luaF_freeproto"><SPAN CLASS="definition">luaF_freeproto</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *f) {
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;code, f-&gt;sizecode);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;p, f-&gt;sizep);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;k, f-&gt;sizek);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;lineinfo, f-&gt;sizelineinfo);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;locvars, f-&gt;sizelocvars);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, f-&gt;upvalues, f-&gt;sizeupvalues);
+  <A HREF="lmem.h.html#luaM_free">luaM_free</A>(L, f);
+}
+
+
+/*
+** Look for n-th local variable at line 'line' in function 'func'.
+** Returns NULL if not found.
+*/
+const char *<A NAME="luaF_getlocalname"><SPAN CLASS="definition">luaF_getlocalname</SPAN></A> (const <A HREF="lobject.h.html#Proto">Proto</A> *f, int local_number, int pc) {
+  int i;
+  for (i = 0; i&lt;f-&gt;sizelocvars &amp;&amp; f-&gt;locvars[i].startpc &lt;= pc; i++) {
+    if (pc &lt; f-&gt;locvars[i].endpc) {  /* is variable active? */
+      local_number--;
+      if (local_number == 0)
+        return <A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;locvars[i].varname);
+    }
+  }
+  return NULL;  /* not found */
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

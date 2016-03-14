@@ -1,0 +1,66 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - ldebug.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldebug.h
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldebug.h,v 1.32 2002/11/18 11:01:55 roberto Exp $
+** Auxiliary functions from Debug Interface module
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="ldebug.h.html#ldebug_h">ldebug_h</A>
+#define <A NAME="ldebug_h"><SPAN CLASS="definition">ldebug_h</SPAN></A>
+
+
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+#define <A NAME="pcRel"><SPAN CLASS="definition">pcRel</SPAN></A>(pc, p)    (<A HREF="llimits.h.html#cast">cast</A>(int, (pc) - (p)-&gt;code) - 1)
+
+#define <A NAME="getline"><SPAN CLASS="definition">getline</SPAN></A>(f,pc)   (((f)-&gt;lineinfo) ? (f)-&gt;lineinfo[pc] : 0)
+
+#define <A NAME="resethookcount"><SPAN CLASS="definition">resethookcount</SPAN></A>(L)       (L-&gt;hookcount = L-&gt;basehookcount)
+
+
+void <A HREF="ldebug.c.html#luaG_inithooks">luaG_inithooks</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+void <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *o, const char *opname);
+void <A HREF="ldebug.c.html#luaG_concaterror">luaG_concaterror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> p1, <A HREF="lobject.h.html#StkId">StkId</A> p2);
+void <A HREF="ldebug.c.html#luaG_aritherror">luaG_aritherror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *p1, const <A HREF="lobject.h.html#TObject">TObject</A> *p2);
+int <A HREF="ldebug.c.html#luaG_ordererror">luaG_ordererror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TObject">TObject</A> *p1, const <A HREF="lobject.h.html#TObject">TObject</A> *p2);
+void <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...);
+void <A HREF="ldebug.c.html#luaG_errormsg">luaG_errormsg</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+int <A HREF="ldebug.c.html#luaG_checkcode">luaG_checkcode</A> (const <A HREF="lobject.h.html#Proto">Proto</A> *pt);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

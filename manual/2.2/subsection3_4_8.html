@@ -1,0 +1,48 @@
+<HEAD>
+<TITLE>4.8 Error Handling</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_7.html>4.7 Fallbacks</A>
+<HR>
+<H2><A NAME=S0480>4.8 Error Handling</A></H2>
+ <A NAME=error></A>
+<P>
+Because Lua is an extension language,
+all Lua actions start from C code calling a function from the Lua library.
+Whenever an error occurs during Lua compilation or execution,
+an error fallback function is called,
+and then the corresponding function from the library
+(<TT><B>lua_dofile</B></TT>, <TT><B>lua_dostring</B></TT>,
+<TT><B>lua_call</B></TT>, and <TT><B>lua_callfunction</B></TT>)
+is terminated returning an error condition.
+<P>
+The only argument to the error fallback function is a string describing
+the error and some extra informations,
+like current line (when the error is at compilation)
+or current function (when the error is at execution).
+For more information about an error,
+the Lua program can include the compilation pragma <TT><B>$debug</B></TT>.
+
+This pragma must be written in a line by itself.
+When an error occurs in a program compiled with this option,
+the error message includes extra information showing the stack of calls.
+<P>
+The standard error routine only prints the error message
+to <TT><B>stderr</B></TT>.
+If needed, it is possible to change the error fallback routine;
+see Section <A HREF=subsection3_4_7.html#fallback>4.7</A>.
+<P>
+Lua code can generate an error by calling the function <TT><B>error</B></TT>.
+Its optional parameter is a string,
+which is used as the error message.
+<P>
+<HR>
+<B> Next:</B> <A HREF=section3_5.html>5 The Application Program </A>
+<B>Up:</B> <A HREF=section3_4.html>4 The Language</A>
+<B> Previous:</B> <A HREF=subsection3_4_7.html>4.7 Fallbacks</A>
+<HR>
+
+</BODY>

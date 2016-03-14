@@ -1,0 +1,760 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - loadlib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+loadlib.c
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: loadlib.c,v 1.111.1.1 2013/04/12 18:48:47 roberto Exp $
+** Dynamic library loader for Lua
+** See Copyright Notice in lua.h
+**
+** This module contains an implementation of loadlib for Unix systems
+** that have dlfcn, an implementation for Windows, and a stub for other
+** systems.
+*/
+
+
+/*
+** if needed, includes windows header before everything else
+*/
+#if defined(_WIN32)
+#include &lt;windows.h&gt;
+#endif
+
+
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+
+#define <A NAME="loadlib_c"><SPAN CLASS="definition">loadlib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+/*
+** <A HREF="loadlib.c.html#LUA_PATH">LUA_PATH</A> and <A HREF="loadlib.c.html#LUA_CPATH">LUA_CPATH</A> are the names of the environment
+** variables that Lua check to set its paths.
+*/
+#if !defined(<A HREF="loadlib.c.html#LUA_PATH">LUA_PATH</A>)
+#define <A NAME="LUA_PATH"><SPAN CLASS="definition">LUA_PATH</SPAN></A>        "<A NAME="LUA_PATH"><SPAN CLASS="definition">LUA_PATH</SPAN></A>"
+#endif
+
+#if !defined(<A HREF="loadlib.c.html#LUA_CPATH">LUA_CPATH</A>)
+#define <A NAME="LUA_CPATH"><SPAN CLASS="definition">LUA_CPATH</SPAN></A>       "<A NAME="LUA_CPATH"><SPAN CLASS="definition">LUA_CPATH</SPAN></A>"
+#endif
+
+#define <A NAME="LUA_PATHSUFFIX"><SPAN CLASS="definition">LUA_PATHSUFFIX</SPAN></A>          "_" <A HREF="lua.h.html#LUA_VERSION_MAJOR">LUA_VERSION_MAJOR</A> "_" <A HREF="lua.h.html#LUA_VERSION_MINOR">LUA_VERSION_MINOR</A>
+
+#define <A NAME="LUA_PATHVERSION"><SPAN CLASS="definition">LUA_PATHVERSION</SPAN></A>         <A HREF="loadlib.c.html#LUA_PATH">LUA_PATH</A> <A HREF="loadlib.c.html#LUA_PATHSUFFIX">LUA_PATHSUFFIX</A>
+#define <A NAME="LUA_CPATHVERSION"><SPAN CLASS="definition">LUA_CPATHVERSION</SPAN></A>        <A HREF="loadlib.c.html#LUA_CPATH">LUA_CPATH</A> <A HREF="loadlib.c.html#LUA_PATHSUFFIX">LUA_PATHSUFFIX</A>
+
+/*
+** <A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A> is the character that separates templates in a path.
+** <A HREF="loadlib.c.html#LUA_PATH_MARK">LUA_PATH_MARK</A> is the string that marks the substitution points in a
+** template.
+** <A HREF="loadlib.c.html#LUA_EXEC_DIR">LUA_EXEC_DIR</A> in a Windows path is replaced by the executable's
+** directory.
+** <A HREF="loadlib.c.html#LUA_IGMARK">LUA_IGMARK</A> is a mark to ignore all before it when building the
+** luaopen_ function name.
+*/
+#if !defined (<A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A>)
+#define <A NAME="LUA_PATH_SEP"><SPAN CLASS="definition">LUA_PATH_SEP</SPAN></A>            ";"
+#endif
+#if !defined (<A HREF="loadlib.c.html#LUA_PATH_MARK">LUA_PATH_MARK</A>)
+#define <A NAME="LUA_PATH_MARK"><SPAN CLASS="definition">LUA_PATH_MARK</SPAN></A>           "?"
+#endif
+#if !defined (<A HREF="loadlib.c.html#LUA_EXEC_DIR">LUA_EXEC_DIR</A>)
+#define <A NAME="LUA_EXEC_DIR"><SPAN CLASS="definition">LUA_EXEC_DIR</SPAN></A>            "!"
+#endif
+#if !defined (<A HREF="loadlib.c.html#LUA_IGMARK">LUA_IGMARK</A>)
+#define <A NAME="LUA_IGMARK"><SPAN CLASS="definition">LUA_IGMARK</SPAN></A>              "-"
+#endif
+
+
+/*
+** <A HREF="loadlib.c.html#LUA_CSUBSEP">LUA_CSUBSEP</A> is the character that replaces dots in submodule names
+** when searching for a C loader.
+** <A HREF="loadlib.c.html#LUA_LSUBSEP">LUA_LSUBSEP</A> is the character that replaces dots in submodule names
+** when searching for a Lua loader.
+*/
+#if !defined(<A HREF="loadlib.c.html#LUA_CSUBSEP">LUA_CSUBSEP</A>)
+#define <A NAME="LUA_CSUBSEP"><SPAN CLASS="definition">LUA_CSUBSEP</SPAN></A>             <A HREF="luaconf.h.html#LUA_DIRSEP">LUA_DIRSEP</A>
+#endif
+
+#if !defined(<A HREF="loadlib.c.html#LUA_LSUBSEP">LUA_LSUBSEP</A>)
+#define <A NAME="LUA_LSUBSEP"><SPAN CLASS="definition">LUA_LSUBSEP</SPAN></A>             <A HREF="luaconf.h.html#LUA_DIRSEP">LUA_DIRSEP</A>
+#endif
+
+
+/* prefix for open functions in C libraries */
+#define <A NAME="LUA_POF"><SPAN CLASS="definition">LUA_POF</SPAN></A>         "luaopen_"
+
+/* separator for open functions in C libraries */
+#define <A NAME="LUA_OFSEP"><SPAN CLASS="definition">LUA_OFSEP</SPAN></A>       "_"
+
+
+/* table (in the registry) that keeps handles for all loaded C libraries */
+#define <A NAME="CLIBS"><SPAN CLASS="definition">CLIBS</SPAN></A>           "_CLIBS"
+
+#define <A HREF="loadlib.c.html#LIB_FAIL">LIB_FAIL</A>        "open"
+
+
+/* error codes for <A HREF="loadlib.c.html#ll_loadfunc">ll_loadfunc</A> */
+#define <A NAME="ERRLIB"><SPAN CLASS="definition">ERRLIB</SPAN></A>          1
+#define <A NAME="ERRFUNC"><SPAN CLASS="definition">ERRFUNC</SPAN></A>         2
+
+#define <A HREF="loadlib.c.html#setprogdir">setprogdir</A>(L)           ((void)0)
+
+
+/*
+** system-dependent functions
+*/
+static void <A HREF="loadlib.c.html#ll_unloadlib">ll_unloadlib</A> (void *lib);
+static void *<A HREF="loadlib.c.html#ll_load">ll_load</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *path, int seeglb);
+static <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> <A HREF="loadlib.c.html#ll_sym">ll_sym</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *lib, const char *sym);
+
+
+
+#if defined(<A HREF="luaconf.h.html#LUA_USE_DLOPEN">LUA_USE_DLOPEN</A>)
+/*
+** {========================================================================
+** This is an implementation of loadlib based on the dlfcn interface.
+** The dlfcn interface is available in Linux, SunOS, Solaris, IRIX, FreeBSD,
+** NetBSD, AIX 4.2, HPUX 11, and  probably most other Unix flavors, at least
+** as an emulation layer on top of native functions.
+** =========================================================================
+*/
+
+#include &lt;dlfcn.h&gt;
+
+static void <A HREF="loadlib.c.html#ll_unloadlib">ll_unloadlib</A> (void *lib) {
+  dlclose(lib);
+}
+
+
+static void *<A HREF="loadlib.c.html#ll_load">ll_load</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *path, int seeglb) {
+  void *lib = dlopen(path, RTLD_NOW | (seeglb ? RTLD_GLOBAL : RTLD_LOCAL));
+  if (lib == NULL) <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, dlerror());
+  return lib;
+}
+
+
+static <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> <A HREF="loadlib.c.html#ll_sym">ll_sym</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *lib, const char *sym) {
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> f = (<A HREF="lua.h.html#lua_CFunction">lua_CFunction</A>)dlsym(lib, sym);
+  if (f == NULL) <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, dlerror());
+  return f;
+}
+
+/* }====================================================== */
+
+
+
+#elif defined(<A HREF="luaconf.h.html#LUA_DL_DLL">LUA_DL_DLL</A>)
+/*
+** {======================================================================
+** This is an implementation of loadlib for Windows using native functions.
+** =======================================================================
+*/
+
+#undef <A NAME="setprogdir"><SPAN CLASS="definition">setprogdir</SPAN></A>
+
+/*
+** optional flags for LoadLibraryEx
+*/
+#if !defined(<A HREF="loadlib.c.html#LUA_LLE_FLAGS">LUA_LLE_FLAGS</A>)
+#define <A NAME="LUA_LLE_FLAGS"><SPAN CLASS="definition">LUA_LLE_FLAGS</SPAN></A>   0
+#endif
+
+
+static void <A HREF="loadlib.c.html#setprogdir">setprogdir</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  char buff[MAX_PATH + 1];
+  char *lb;
+  DWORD nsize = sizeof(buff)/sizeof(char);
+  DWORD n = GetModuleFileNameA(NULL, buff, nsize);
+  if (n == 0 || n == nsize || (lb = strrchr(buff, '\\')) == NULL)
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "unable to get ModuleFileName");
+  else {
+    *lb = '\0';
+    <A HREF="lauxlib.c.html#luaL_gsub">luaL_gsub</A>(L, <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1), <A HREF="loadlib.c.html#LUA_EXEC_DIR">LUA_EXEC_DIR</A>, buff);
+    <A HREF="lapi.c.html#lua_remove">lua_remove</A>(L, -2);  /* remove original string */
+  }
+}
+
+
+static void <A NAME="pusherror"><SPAN CLASS="definition">pusherror</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int error = GetLastError();
+  char buffer[128];
+  if (FormatMessageA(FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM,
+      NULL, error, 0, buffer, sizeof(buffer)/sizeof(char), NULL))
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, buffer);
+  else
+    <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "system error %d\n", error);
+}
+
+static void <A HREF="loadlib.c.html#ll_unloadlib">ll_unloadlib</A> (void *lib) {
+  FreeLibrary((HMODULE)lib);
+}
+
+
+static void *<A HREF="loadlib.c.html#ll_load">ll_load</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *path, int seeglb) {
+  HMODULE lib = LoadLibraryExA(path, NULL, <A HREF="loadlib.c.html#LUA_LLE_FLAGS">LUA_LLE_FLAGS</A>);
+  (void)(seeglb);  /* not used: symbols are 'global' by default */
+  if (lib == NULL) <A HREF="loadlib.c.html#pusherror">pusherror</A>(L);
+  return lib;
+}
+
+
+static <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> <A HREF="loadlib.c.html#ll_sym">ll_sym</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *lib, const char *sym) {
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> f = (<A HREF="lua.h.html#lua_CFunction">lua_CFunction</A>)GetProcAddress((HMODULE)lib, sym);
+  if (f == NULL) <A HREF="loadlib.c.html#pusherror">pusherror</A>(L);
+  return f;
+}
+
+/* }====================================================== */
+
+
+#else
+/*
+** {======================================================
+** Fallback for other systems
+** =======================================================
+*/
+
+#undef <A HREF="loadlib.c.html#LIB_FAIL">LIB_FAIL</A>
+#define <A NAME="LIB_FAIL"><SPAN CLASS="definition">LIB_FAIL</SPAN></A>        "absent"
+
+
+#define <A NAME="DLMSG"><SPAN CLASS="definition">DLMSG</SPAN></A>   "dynamic libraries not enabled; check your Lua installation"
+
+
+static void <A NAME="ll_unloadlib"><SPAN CLASS="definition">ll_unloadlib</SPAN></A> (void *lib) {
+  (void)(lib);  /* not used */
+}
+
+
+static void *<A NAME="ll_load"><SPAN CLASS="definition">ll_load</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *path, int seeglb) {
+  (void)(path); (void)(seeglb);  /* not used */
+  <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, <A HREF="loadlib.c.html#DLMSG">DLMSG</A>);
+  return NULL;
+}
+
+
+static <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> <A NAME="ll_sym"><SPAN CLASS="definition">ll_sym</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *lib, const char *sym) {
+  (void)(lib); (void)(sym);  /* not used */
+  <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, <A HREF="loadlib.c.html#DLMSG">DLMSG</A>);
+  return NULL;
+}
+
+/* }====================================================== */
+#endif
+
+
+static void *<A NAME="ll_checkclib"><SPAN CLASS="definition">ll_checkclib</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *path) {
+  void *plib;
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, <A HREF="loadlib.c.html#CLIBS">CLIBS</A>);
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, -1, path);
+  plib = <A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1);  /* plib = <A HREF="loadlib.c.html#CLIBS">CLIBS</A>[path] */
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 2);  /* pop <A HREF="loadlib.c.html#CLIBS">CLIBS</A> table and 'plib' */
+  return plib;
+}
+
+
+static void <A NAME="ll_addtoclib"><SPAN CLASS="definition">ll_addtoclib</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *path, void *plib) {
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, <A HREF="loadlib.c.html#CLIBS">CLIBS</A>);
+  <A HREF="lapi.c.html#lua_pushlightuserdata">lua_pushlightuserdata</A>(L, plib);
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -3, path);  /* <A HREF="loadlib.c.html#CLIBS">CLIBS</A>[path] = plib */
+  <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, -2, <A HREF="lauxlib.c.html#luaL_len">luaL_len</A>(L, -2) + 1);  /* <A HREF="loadlib.c.html#CLIBS">CLIBS</A>[#<A HREF="loadlib.c.html#CLIBS">CLIBS</A> + 1] = plib */
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* pop <A HREF="loadlib.c.html#CLIBS">CLIBS</A> table */
+}
+
+
+/*
+** __gc tag method for <A HREF="loadlib.c.html#CLIBS">CLIBS</A> table: calls '<A HREF="loadlib.c.html#ll_unloadlib">ll_unloadlib</A>' for all lib
+** handles in list <A HREF="loadlib.c.html#CLIBS">CLIBS</A>
+*/
+static int <A NAME="gctm"><SPAN CLASS="definition">gctm</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="lauxlib.c.html#luaL_len">luaL_len</A>(L, 1);
+  for (; n &gt;= 1; n--) {  /* for each handle, in reverse order */
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 1, n);  /* get handle <A HREF="loadlib.c.html#CLIBS">CLIBS</A>[n] */
+    <A HREF="loadlib.c.html#ll_unloadlib">ll_unloadlib</A>(<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, -1));
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* pop handle */
+  }
+  return 0;
+}
+
+
+static int <A NAME="ll_loadfunc"><SPAN CLASS="definition">ll_loadfunc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *path, const char *sym) {
+  void *reg = <A HREF="loadlib.c.html#ll_checkclib">ll_checkclib</A>(L, path);  /* check loaded C libraries */
+  if (reg == NULL) {  /* must load library? */
+    reg = <A HREF="loadlib.c.html#ll_load">ll_load</A>(L, path, *sym == '*');
+    if (reg == NULL) return <A HREF="loadlib.c.html#ERRLIB">ERRLIB</A>;  /* unable to load library */
+    <A HREF="loadlib.c.html#ll_addtoclib">ll_addtoclib</A>(L, path, reg);
+  }
+  if (*sym == '*') {  /* loading only library (no function)? */
+    <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 1);  /* return 'true' */
+    return 0;  /* no errors */
+  }
+  else {
+    <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> f = <A HREF="loadlib.c.html#ll_sym">ll_sym</A>(L, reg, sym);
+    if (f == NULL)
+      return <A HREF="loadlib.c.html#ERRFUNC">ERRFUNC</A>;  /* unable to find function */
+    <A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, f);  /* else create new function */
+    return 0;  /* no errors */
+  }
+}
+
+
+static int <A NAME="ll_loadlib"><SPAN CLASS="definition">ll_loadlib</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *path = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  const char *init = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 2);
+  int stat = <A HREF="loadlib.c.html#ll_loadfunc">ll_loadfunc</A>(L, path, init);
+  if (stat == 0)  /* no errors? */
+    return 1;  /* return the loaded function */
+  else {  /* error; error message is on stack top */
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+    <A HREF="lapi.c.html#lua_insert">lua_insert</A>(L, -2);
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, (stat == <A HREF="loadlib.c.html#ERRLIB">ERRLIB</A>) ?  <A HREF="loadlib.c.html#LIB_FAIL">LIB_FAIL</A> : "init");
+    return 3;  /* return nil, error message, and where */
+  }
+}
+
+
+
+/*
+** {======================================================
+** 'require' function
+** =======================================================
+*/
+
+
+static int <A NAME="readable"><SPAN CLASS="definition">readable</SPAN></A> (const char *filename) {
+  FILE *f = fopen(filename, "r");  /* try to open file */
+  if (f == NULL) return 0;  /* open failed */
+  fclose(f);
+  return 1;
+}
+
+
+static const char *<A NAME="pushnexttemplate"><SPAN CLASS="definition">pushnexttemplate</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *path) {
+  const char *l;
+  while (*path == *<A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A>) path++;  /* skip separators */
+  if (*path == '\0') return NULL;  /* no more templates */
+  l = strchr(path, *<A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A>);  /* find next separator */
+  if (l == NULL) l = path + strlen(path);
+  <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, path, l - path);  /* template */
+  return l;
+}
+
+
+static const char *<A NAME="searchpath"><SPAN CLASS="definition">searchpath</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *name,
+                                             const char *path,
+                                             const char *sep,
+                                             const char *dirsep) {
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> msg;  /* to build error message */
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;msg);
+  if (*sep != '\0')  /* non-empty separator? */
+    name = <A HREF="lauxlib.c.html#luaL_gsub">luaL_gsub</A>(L, name, sep, dirsep);  /* replace it by 'dirsep' */
+  while ((path = <A HREF="loadlib.c.html#pushnexttemplate">pushnexttemplate</A>(L, path)) != NULL) {
+    const char *filename = <A HREF="lauxlib.c.html#luaL_gsub">luaL_gsub</A>(L, <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1),
+                                     <A HREF="loadlib.c.html#LUA_PATH_MARK">LUA_PATH_MARK</A>, name);
+    <A HREF="lapi.c.html#lua_remove">lua_remove</A>(L, -2);  /* remove path template */
+    if (<A HREF="loadlib.c.html#readable">readable</A>(filename))  /* does file exist and is <A HREF="loadlib.c.html#readable">readable</A>? */
+      return filename;  /* return that file name */
+    <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "\n\tno file " <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A>, filename);
+    <A HREF="lapi.c.html#lua_remove">lua_remove</A>(L, -2);  /* remove file name */
+    <A HREF="lauxlib.c.html#luaL_addvalue">luaL_addvalue</A>(&amp;msg);  /* concatenate error msg. entry */
+  }
+  <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;msg);  /* create error message */
+  return NULL;  /* not found */
+}
+
+
+static int <A NAME="ll_searchpath"><SPAN CLASS="definition">ll_searchpath</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *f = <A HREF="loadlib.c.html#searchpath">searchpath</A>(L, <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1),
+                                <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 2),
+                                <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 3, "."),
+                                <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 4, <A HREF="luaconf.h.html#LUA_DIRSEP">LUA_DIRSEP</A>));
+  if (f != NULL) return 1;
+  else {  /* error message is on top of the stack */
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+    <A HREF="lapi.c.html#lua_insert">lua_insert</A>(L, -2);
+    return 2;  /* return nil + error message */
+  }
+}
+
+
+static const char *<A NAME="findfile"><SPAN CLASS="definition">findfile</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *name,
+                                           const char *pname,
+                                           const char *dirsep) {
+  const char *path;
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, <A HREF="lua.h.html#lua_upvalueindex">lua_upvalueindex</A>(1), pname);
+  path = <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1);
+  if (path == NULL)
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("package.%s") " must be a string", pname);
+  return <A HREF="loadlib.c.html#searchpath">searchpath</A>(L, name, path, ".", dirsep);
+}
+
+
+static int <A NAME="checkload"><SPAN CLASS="definition">checkload</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int stat, const char *filename) {
+  if (stat) {  /* module loaded successfully? */
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, filename);  /* will be 2nd argument to module */
+    return 2;  /* return open function and file name */
+  }
+  else
+    return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "error loading module " <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A>
+                         " from file " <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A> ":\n\t%s",
+                          <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, 1), filename, <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1));
+}
+
+
+static int <A NAME="searcher_Lua"><SPAN CLASS="definition">searcher_Lua</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *filename;
+  const char *name = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  filename = <A HREF="loadlib.c.html#findfile">findfile</A>(L, name, "path", <A HREF="loadlib.c.html#LUA_LSUBSEP">LUA_LSUBSEP</A>);
+  if (filename == NULL) return 1;  /* module not found in this path */
+  return <A HREF="loadlib.c.html#checkload">checkload</A>(L, (<A HREF="lauxlib.h.html#luaL_loadfile">luaL_loadfile</A>(L, filename) == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>), filename);
+}
+
+
+static int <A NAME="loadfunc"><SPAN CLASS="definition">loadfunc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *filename, const char *modname) {
+  const char *funcname;
+  const char *mark;
+  modname = <A HREF="lauxlib.c.html#luaL_gsub">luaL_gsub</A>(L, modname, ".", <A HREF="loadlib.c.html#LUA_OFSEP">LUA_OFSEP</A>);
+  mark = strchr(modname, *<A HREF="loadlib.c.html#LUA_IGMARK">LUA_IGMARK</A>);
+  if (mark) {
+    int stat;
+    funcname = <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, modname, mark - modname);
+    funcname = <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, <A HREF="loadlib.c.html#LUA_POF">LUA_POF</A>"%s", funcname);
+    stat = <A HREF="loadlib.c.html#ll_loadfunc">ll_loadfunc</A>(L, filename, funcname);
+    if (stat != <A HREF="loadlib.c.html#ERRFUNC">ERRFUNC</A>) return stat;
+    modname = mark + 1;  /* else go ahead and try old-style name */
+  }
+  funcname = <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, <A HREF="loadlib.c.html#LUA_POF">LUA_POF</A>"%s", modname);
+  return <A HREF="loadlib.c.html#ll_loadfunc">ll_loadfunc</A>(L, filename, funcname);
+}
+
+
+static int <A NAME="searcher_C"><SPAN CLASS="definition">searcher_C</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *name = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  const char *filename = <A HREF="loadlib.c.html#findfile">findfile</A>(L, name, "cpath", <A HREF="loadlib.c.html#LUA_CSUBSEP">LUA_CSUBSEP</A>);
+  if (filename == NULL) return 1;  /* module not found in this path */
+  return <A HREF="loadlib.c.html#checkload">checkload</A>(L, (<A HREF="loadlib.c.html#loadfunc">loadfunc</A>(L, filename, name) == 0), filename);
+}
+
+
+static int <A NAME="searcher_Croot"><SPAN CLASS="definition">searcher_Croot</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *filename;
+  const char *name = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  const char *p = strchr(name, '.');
+  int stat;
+  if (p == NULL) return 0;  /* is root */
+  <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, name, p - name);
+  filename = <A HREF="loadlib.c.html#findfile">findfile</A>(L, <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1), "cpath", <A HREF="loadlib.c.html#LUA_CSUBSEP">LUA_CSUBSEP</A>);
+  if (filename == NULL) return 1;  /* root not found */
+  if ((stat = <A HREF="loadlib.c.html#loadfunc">loadfunc</A>(L, filename, name)) != 0) {
+    if (stat != <A HREF="loadlib.c.html#ERRFUNC">ERRFUNC</A>)
+      return <A HREF="loadlib.c.html#checkload">checkload</A>(L, 0, filename);  /* real error */
+    else {  /* open function not found */
+      <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "\n\tno module " <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A> " in file " <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A>,
+                         name, filename);
+      return 1;
+    }
+  }
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, filename);  /* will be 2nd argument to module */
+  return 2;
+}
+
+
+static int <A NAME="searcher_preload"><SPAN CLASS="definition">searcher_preload</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *name = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, "_PRELOAD");
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, -1, name);
+  if (<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1))  /* not found? */
+    <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "\n\tno field package.preload['%s']", name);
+  return 1;
+}
+
+
+static void <A NAME="findloader"><SPAN CLASS="definition">findloader</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *name) {
+  int i;
+  <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> msg;  /* to build error message */
+  <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;msg);
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, <A HREF="lua.h.html#lua_upvalueindex">lua_upvalueindex</A>(1), "searchers");  /* will be at index 3 */
+  if (!<A HREF="lua.h.html#lua_istable">lua_istable</A>(L, 3))
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("package.searchers") " must be a table");
+  /*  iterate over available searchers to find a loader */
+  for (i = 1; ; i++) {
+    <A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>(L, 3, i);  /* get a searcher */
+    if (<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1)) {  /* no more searchers? */
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove nil */
+      <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;msg);  /* create error message */
+      <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "module " <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A> " not found:%s",
+                    name, <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1));
+    }
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, name);
+    <A HREF="lua.h.html#lua_call">lua_call</A>(L, 1, 2);  /* call it */
+    if (<A HREF="lua.h.html#lua_isfunction">lua_isfunction</A>(L, -2))  /* did it find a loader? */
+      return;  /* module loader found */
+    else if (<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>(L, -2)) {  /* searcher returned error message? */
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove extra return */
+      <A HREF="lauxlib.c.html#luaL_addvalue">luaL_addvalue</A>(&amp;msg);  /* concatenate error message */
+    }
+    else
+      <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 2);  /* remove both returns */
+  }
+}
+
+
+static int <A NAME="ll_require"><SPAN CLASS="definition">ll_require</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *name = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 1);  /* _LOADED table will be at index 2 */
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, "_LOADED");
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, 2, name);  /* _LOADED[name] */
+  if (<A HREF="lapi.c.html#lua_toboolean">lua_toboolean</A>(L, -1))  /* is it there? */
+    return 1;  /* package is already loaded */
+  /* else must load package */
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove 'getfield' result */
+  <A HREF="loadlib.c.html#findloader">findloader</A>(L, name);
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, name);  /* pass name as argument to module loader */
+  <A HREF="lapi.c.html#lua_insert">lua_insert</A>(L, -2);  /* name is 1st argument (before search data) */
+  <A HREF="lua.h.html#lua_call">lua_call</A>(L, 2, 1);  /* run loader to load module */
+  if (!<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1))  /* non-nil return? */
+    <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, 2, name);  /* _LOADED[name] = returned value */
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, 2, name);
+  if (<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1)) {   /* module did not set a value? */
+    <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 1);  /* use true as result */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);  /* extra copy to be returned */
+    <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, 2, name);  /* _LOADED[name] = true */
+  }
+  return 1;
+}
+
+/* }====================================================== */
+
+
+
+/*
+** {======================================================
+** 'module' function
+** =======================================================
+*/
+#if defined(<A HREF="luaconf.h.html#LUA_COMPAT_MODULE">LUA_COMPAT_MODULE</A>)
+
+/*
+** changes the environment variable of calling function
+*/
+static void <A NAME="set_env"><SPAN CLASS="definition">set_env</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lua.h.html#lua_Debug">lua_Debug</A> ar;
+  if (<A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(L, 1, &amp;ar) == 0 ||
+      <A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>(L, "f", &amp;ar) == 0 ||  /* get calling function */
+      <A HREF="lapi.c.html#lua_iscfunction">lua_iscfunction</A>(L, -1))
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("module") " not called from a Lua function");
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -2);  /* copy new environment table to top */
+  <A HREF="lapi.c.html#lua_setupvalue">lua_setupvalue</A>(L, -2, 1);
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove function */
+}
+
+
+static void <A NAME="dooptions"><SPAN CLASS="definition">dooptions</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  int i;
+  for (i = 2; i &lt;= n; i++) {
+    if (<A HREF="lua.h.html#lua_isfunction">lua_isfunction</A>(L, i)) {  /* avoid 'calling' extra info. */
+      <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, i);  /* get option (a function) */
+      <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -2);  /* module */
+      <A HREF="lua.h.html#lua_call">lua_call</A>(L, 1, 0);
+    }
+  }
+}
+
+
+static void <A NAME="modinit"><SPAN CLASS="definition">modinit</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *modname) {
+  const char *dot;
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "_M");  /* module._M = module */
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, modname);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "_NAME");
+  dot = strrchr(modname, '.');  /* look for last dot in module name */
+  if (dot == NULL) dot = modname;
+  else dot++;
+  /* set _PACKAGE as package name (full module name minus last part) */
+  <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, modname, dot - modname);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "_PACKAGE");
+}
+
+
+static int <A NAME="ll_module"><SPAN CLASS="definition">ll_module</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *modname = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  int lastarg = <A HREF="lapi.c.html#lua_gettop">lua_gettop</A>(L);  /* last parameter */
+  <A HREF="lauxlib.c.html#luaL_pushmodule">luaL_pushmodule</A>(L, modname, 1);  /* get/create module table */
+  /* check whether table already has a _NAME field */
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, -1, "_NAME");
+  if (!<A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1))  /* is table an initialized module? */
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);
+  else {  /* no; initialize it */
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);
+    <A HREF="loadlib.c.html#modinit">modinit</A>(L, modname);
+  }
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+  <A HREF="loadlib.c.html#set_env">set_env</A>(L);
+  <A HREF="loadlib.c.html#dooptions">dooptions</A>(L, lastarg);
+  return 1;
+}
+
+
+static int <A NAME="ll_seeall"><SPAN CLASS="definition">ll_seeall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+  if (!<A HREF="lapi.c.html#lua_getmetatable">lua_getmetatable</A>(L, 1)) {
+    <A HREF="lapi.c.html#lua_createtable">lua_createtable</A>(L, 0, 1); /* create new metatable */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+    <A HREF="lapi.c.html#lua_setmetatable">lua_setmetatable</A>(L, 1);
+  }
+  <A HREF="lua.h.html#lua_pushglobaltable">lua_pushglobaltable</A>(L);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "__index");  /* mt.__index = _G */
+  return 0;
+}
+
+#endif
+/* }====================================================== */
+
+
+
+/* auxiliary mark (for internal use) */
+#define <A NAME="AUXMARK"><SPAN CLASS="definition">AUXMARK</SPAN></A>         "\1"
+
+
+/*
+** return registry.LUA_NOENV as a boolean
+*/
+static int <A NAME="noenv"><SPAN CLASS="definition">noenv</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int b;
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, "LUA_NOENV");
+  b = <A HREF="lapi.c.html#lua_toboolean">lua_toboolean</A>(L, -1);
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* remove value */
+  return b;
+}
+
+
+static void <A NAME="setpath"><SPAN CLASS="definition">setpath</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fieldname, const char *envname1,
+                                   const char *envname2, const char *def) {
+  const char *path = getenv(envname1);
+  if (path == NULL)  /* no environment variable? */
+    path = getenv(envname2);  /* try alternative name */
+  if (path == NULL || <A HREF="loadlib.c.html#noenv">noenv</A>(L))  /* no environment variable? */
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, def);  /* use default */
+  else {
+    /* replace ";;" by ";<A HREF="loadlib.c.html#AUXMARK">AUXMARK</A>;" and then <A HREF="loadlib.c.html#AUXMARK">AUXMARK</A> by default path */
+    path = <A HREF="lauxlib.c.html#luaL_gsub">luaL_gsub</A>(L, path, <A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A> <A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A>,
+                              <A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A> <A HREF="loadlib.c.html#AUXMARK">AUXMARK</A> <A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A>);
+    <A HREF="lauxlib.c.html#luaL_gsub">luaL_gsub</A>(L, path, <A HREF="loadlib.c.html#AUXMARK">AUXMARK</A>, def);
+    <A HREF="lapi.c.html#lua_remove">lua_remove</A>(L, -2);
+  }
+  <A HREF="loadlib.c.html#setprogdir">setprogdir</A>(L);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, fieldname);
+}
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="pk_funcs"><SPAN CLASS="definition">pk_funcs</SPAN></A>[] = {
+  {"loadlib", <A HREF="loadlib.c.html#ll_loadlib">ll_loadlib</A>},
+  {"<A HREF="loadlib.c.html#searchpath">searchpath</A>", <A HREF="loadlib.c.html#ll_searchpath">ll_searchpath</A>},
+#if defined(<A HREF="luaconf.h.html#LUA_COMPAT_MODULE">LUA_COMPAT_MODULE</A>)
+  {"seeall", <A HREF="loadlib.c.html#ll_seeall">ll_seeall</A>},
+#endif
+  {NULL, NULL}
+};
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="ll_funcs"><SPAN CLASS="definition">ll_funcs</SPAN></A>[] = {
+#if defined(<A HREF="luaconf.h.html#LUA_COMPAT_MODULE">LUA_COMPAT_MODULE</A>)
+  {"module", <A HREF="loadlib.c.html#ll_module">ll_module</A>},
+#endif
+  {"require", <A HREF="loadlib.c.html#ll_require">ll_require</A>},
+  {NULL, NULL}
+};
+
+
+static void <A NAME="createsearcherstable"><SPAN CLASS="definition">createsearcherstable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  static const <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> searchers[] =
+    {<A HREF="loadlib.c.html#searcher_preload">searcher_preload</A>, <A HREF="loadlib.c.html#searcher_Lua">searcher_Lua</A>, <A HREF="loadlib.c.html#searcher_C">searcher_C</A>, <A HREF="loadlib.c.html#searcher_Croot">searcher_Croot</A>, NULL};
+  int i;
+  /* create 'searchers' table */
+  <A HREF="lapi.c.html#lua_createtable">lua_createtable</A>(L, sizeof(searchers)/sizeof(searchers[0]) - 1, 0);
+  /* fill it with pre-defined searchers */
+  for (i=0; searchers[i] != NULL; i++) {
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -2);  /* set 'package' as upvalue for all searchers */
+    <A HREF="lapi.c.html#lua_pushcclosure">lua_pushcclosure</A>(L, searchers[i], 1);
+    <A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>(L, -2, i+1);
+  }
+}
+
+
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int <A NAME="luaopen_package"><SPAN CLASS="definition">luaopen_package</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  /* create table <A HREF="loadlib.c.html#CLIBS">CLIBS</A> to keep track of loaded C libraries */
+  <A HREF="lauxlib.c.html#luaL_getsubtable">luaL_getsubtable</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, <A HREF="loadlib.c.html#CLIBS">CLIBS</A>);
+  <A HREF="lapi.c.html#lua_createtable">lua_createtable</A>(L, 0, 1);  /* metatable for <A HREF="loadlib.c.html#CLIBS">CLIBS</A> */
+  <A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, <A HREF="loadlib.c.html#gctm">gctm</A>);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "__gc");  /* set finalizer for <A HREF="loadlib.c.html#CLIBS">CLIBS</A> table */
+  <A HREF="lapi.c.html#lua_setmetatable">lua_setmetatable</A>(L, -2);
+  /* create `package' table */
+  <A HREF="lauxlib.h.html#luaL_newlib">luaL_newlib</A>(L, <A HREF="loadlib.c.html#pk_funcs">pk_funcs</A>);
+  <A HREF="loadlib.c.html#createsearcherstable">createsearcherstable</A>(L);
+#if defined(<A HREF="luaconf.h.html#LUA_COMPAT_LOADERS">LUA_COMPAT_LOADERS</A>)
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);  /* make a copy of 'searchers' table */
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -3, "loaders");  /* put it in field `loaders' */
+#endif
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "searchers");  /* put it in field 'searchers' */
+  /* set field 'path' */
+  <A HREF="loadlib.c.html#setpath">setpath</A>(L, "path", <A HREF="loadlib.c.html#LUA_PATHVERSION">LUA_PATHVERSION</A>, <A HREF="loadlib.c.html#LUA_PATH">LUA_PATH</A>, <A HREF="luaconf.h.html#LUA_PATH_DEFAULT">LUA_PATH_DEFAULT</A>);
+  /* set field 'cpath' */
+  <A HREF="loadlib.c.html#setpath">setpath</A>(L, "cpath", <A HREF="loadlib.c.html#LUA_CPATHVERSION">LUA_CPATHVERSION</A>, <A HREF="loadlib.c.html#LUA_CPATH">LUA_CPATH</A>, <A HREF="luaconf.h.html#LUA_CPATH_DEFAULT">LUA_CPATH_DEFAULT</A>);
+  /* store config information */
+  <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, <A HREF="luaconf.h.html#LUA_DIRSEP">LUA_DIRSEP</A> "\n" <A HREF="loadlib.c.html#LUA_PATH_SEP">LUA_PATH_SEP</A> "\n" <A HREF="loadlib.c.html#LUA_PATH_MARK">LUA_PATH_MARK</A> "\n"
+                     <A HREF="loadlib.c.html#LUA_EXEC_DIR">LUA_EXEC_DIR</A> "\n" <A HREF="loadlib.c.html#LUA_IGMARK">LUA_IGMARK</A> "\n");
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "config");
+  /* set field `loaded' */
+  <A HREF="lauxlib.c.html#luaL_getsubtable">luaL_getsubtable</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, "_LOADED");
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "loaded");
+  /* set field `preload' */
+  <A HREF="lauxlib.c.html#luaL_getsubtable">luaL_getsubtable</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, "_PRELOAD");
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "preload");
+  <A HREF="lua.h.html#lua_pushglobaltable">lua_pushglobaltable</A>(L);
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -2);  /* set 'package' as upvalue for next lib */
+  <A HREF="lauxlib.c.html#luaL_setfuncs">luaL_setfuncs</A>(L, <A HREF="loadlib.c.html#ll_funcs">ll_funcs</A>, 1);  /* open lib into global table */
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);  /* pop global table */
+  return 1;  /* return 'package' table */
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

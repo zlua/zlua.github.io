@@ -1,0 +1,278 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - loslib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+loslib.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: loslib.c,v 1.19.1.3 2008/01/18 16:38:18 roberto Exp $
+** Standard Operating System library
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;errno.h&gt;
+#include &lt;locale.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;time.h&gt;
+
+#define <A NAME="loslib_c"><SPAN CLASS="definition">loslib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+static int <A NAME="os_pushresult"><SPAN CLASS="definition">os_pushresult</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int i, const char *filename) {
+  int en = errno;  /* calls to Lua API may change this value */
+  if (i) {
+    <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, 1);
+    return 1;
+  }
+  else {
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+    <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "%s: %s", filename, strerror(en));
+    <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, en);
+    return 3;
+  }
+}
+
+
+static int <A NAME="os_execute"><SPAN CLASS="definition">os_execute</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, system(<A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 1, NULL)));
+  return 1;
+}
+
+
+static int <A NAME="os_remove"><SPAN CLASS="definition">os_remove</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *filename = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  return <A HREF="loslib.c.html#os_pushresult">os_pushresult</A>(L, remove(filename) == 0, filename);
+}
+
+
+static int <A NAME="os_rename"><SPAN CLASS="definition">os_rename</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *fromname = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1);
+  const char *toname = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 2);
+  return <A HREF="loslib.c.html#os_pushresult">os_pushresult</A>(L, rename(fromname, toname) == 0, fromname);
+}
+
+
+static int <A NAME="os_tmpname"><SPAN CLASS="definition">os_tmpname</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  char buff[<A HREF="luaconf.h.html#LUA_TMPNAMBUFSIZE">LUA_TMPNAMBUFSIZE</A>];
+  int err;
+  <A HREF="luaconf.h.html#lua_tmpnam">lua_tmpnam</A>(buff, err);
+  if (err)
+    return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "unable to generate a unique filename");
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, buff);
+  return 1;
+}
+
+
+static int <A NAME="os_getenv"><SPAN CLASS="definition">os_getenv</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, getenv(<A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, 1)));  /* if NULL push nil */
+  return 1;
+}
+
+
+static int <A NAME="os_clock"><SPAN CLASS="definition">os_clock</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, ((<A HREF="lua.h.html#lua_Number">lua_Number</A>)clock())/(<A HREF="lua.h.html#lua_Number">lua_Number</A>)CLOCKS_PER_SEC);
+  return 1;
+}
+
+
+/*
+** {======================================================
+** Time/Date operations
+** { year=%Y, month=%m, day=%d, hour=%H, min=%M, sec=%S,
+**   wday=%w+1, yday=%j, isdst=? }
+** =======================================================
+*/
+
+static void <A NAME="setfield"><SPAN CLASS="definition">setfield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *key, int value) {
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, value);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, key);
+}
+
+static void <A NAME="setboolfield"><SPAN CLASS="definition">setboolfield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *key, int value) {
+  if (value &lt; 0)  /* undefined? */
+    return;  /* does not set field */
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, value);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, key);
+}
+
+static int <A NAME="getboolfield"><SPAN CLASS="definition">getboolfield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *key) {
+  int res;
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, -1, key);
+  res = <A HREF="lua.h.html#lua_isnil">lua_isnil</A>(L, -1) ? -1 : <A HREF="lapi.c.html#lua_toboolean">lua_toboolean</A>(L, -1);
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);
+  return res;
+}
+
+
+static int <A NAME="getfield"><SPAN CLASS="definition">getfield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *key, int d) {
+  int res;
+  <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, -1, key);
+  if (<A HREF="lapi.c.html#lua_isnumber">lua_isnumber</A>(L, -1))
+    res = (int)<A HREF="lapi.c.html#lua_tointeger">lua_tointeger</A>(L, -1);
+  else {
+    if (d &lt; 0)
+      return <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "field " <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A> " missing in date table", key);
+    res = d;
+  }
+  <A HREF="lua.h.html#lua_pop">lua_pop</A>(L, 1);
+  return res;
+}
+
+
+static int <A NAME="os_date"><SPAN CLASS="definition">os_date</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  const char *s = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 1, "%c");
+  time_t t = <A HREF="lauxlib.h.html#luaL_opt">luaL_opt</A>(L, (time_t)<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>, 2, time(NULL));
+  struct tm *stm;
+  if (*s == '!') {  /* UTC? */
+    stm = gmtime(&amp;t);
+    s++;  /* skip `!' */
+  }
+  else
+    stm = localtime(&amp;t);
+  if (stm == NULL)  /* invalid date? */
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+  else if (strcmp(s, "*t") == 0) {
+    <A HREF="lapi.c.html#lua_createtable">lua_createtable</A>(L, 0, 9);  /* 9 = number of fields */
+    <A HREF="loslib.c.html#setfield">setfield</A>(L, "sec", stm-&gt;tm_sec);
+    <A HREF="loslib.c.html#setfield">setfield</A>(L, "min", stm-&gt;tm_min);
+    <A HREF="loslib.c.html#setfield">setfield</A>(L, "hour", stm-&gt;tm_hour);
+    <A HREF="loslib.c.html#setfield">setfield</A>(L, "day", stm-&gt;tm_mday);
+    <A HREF="loslib.c.html#setfield">setfield</A>(L, "month", stm-&gt;tm_mon+1);
+    <A HREF="loslib.c.html#setfield">setfield</A>(L, "year", stm-&gt;tm_year+1900);
+    <A HREF="loslib.c.html#setfield">setfield</A>(L, "wday", stm-&gt;tm_wday+1);
+    <A HREF="loslib.c.html#setfield">setfield</A>(L, "yday", stm-&gt;tm_yday+1);
+    <A HREF="loslib.c.html#setboolfield">setboolfield</A>(L, "isdst", stm-&gt;tm_isdst);
+  }
+  else {
+    char cc[3];
+    <A HREF="lauxlib.h.html#luaL_Buffer">luaL_Buffer</A> b;
+    cc[0] = '%'; cc[2] = '\0';
+    <A HREF="lauxlib.c.html#luaL_buffinit">luaL_buffinit</A>(L, &amp;b);
+    for (; *s; s++) {
+      if (*s != '%' || *(s + 1) == '\0')  /* no conversion specifier? */
+        <A HREF="lauxlib.h.html#luaL_addchar">luaL_addchar</A>(&amp;b, *s);
+      else {
+        size_t reslen;
+        char buff[200];  /* should be big enough for any conversion result */
+        cc[1] = *(++s);
+        reslen = strftime(buff, sizeof(buff), cc, stm);
+        <A HREF="lauxlib.c.html#luaL_addlstring">luaL_addlstring</A>(&amp;b, buff, reslen);
+      }
+    }
+    <A HREF="lauxlib.c.html#luaL_pushresult">luaL_pushresult</A>(&amp;b);
+  }
+  return 1;
+}
+
+
+static int <A NAME="os_time"><SPAN CLASS="definition">os_time</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  time_t t;
+  if (<A HREF="lua.h.html#lua_isnoneornil">lua_isnoneornil</A>(L, 1))  /* called without args? */
+    t = time(NULL);  /* get current time */
+  else {
+    struct tm ts;
+    <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>);
+    <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 1);  /* make sure table is at the top */
+    ts.tm_sec = <A HREF="loslib.c.html#getfield">getfield</A>(L, "sec", 0);
+    ts.tm_min = <A HREF="loslib.c.html#getfield">getfield</A>(L, "min", 0);
+    ts.tm_hour = <A HREF="loslib.c.html#getfield">getfield</A>(L, "hour", 12);
+    ts.tm_mday = <A HREF="loslib.c.html#getfield">getfield</A>(L, "day", -1);
+    ts.tm_mon = <A HREF="loslib.c.html#getfield">getfield</A>(L, "month", -1) - 1;
+    ts.tm_year = <A HREF="loslib.c.html#getfield">getfield</A>(L, "year", -1) - 1900;
+    ts.tm_isdst = <A HREF="loslib.c.html#getboolfield">getboolfield</A>(L, "isdst");
+    t = mktime(&amp;ts);
+  }
+  if (t == (time_t)(-1))
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+  else
+    <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, (<A HREF="lua.h.html#lua_Number">lua_Number</A>)t);
+  return 1;
+}
+
+
+static int <A NAME="os_difftime"><SPAN CLASS="definition">os_difftime</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>(L, difftime((time_t)(<A HREF="lauxlib.c.html#luaL_checknumber">luaL_checknumber</A>(L, 1)),
+                             (time_t)(<A HREF="lauxlib.c.html#luaL_optnumber">luaL_optnumber</A>(L, 2, 0))));
+  return 1;
+}
+
+/* }====================================================== */
+
+
+static int <A NAME="os_setlocale"><SPAN CLASS="definition">os_setlocale</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  static const int cat[] = {LC_ALL, LC_COLLATE, LC_CTYPE, LC_MONETARY,
+                      LC_NUMERIC, LC_TIME};
+  static const char *const catnames[] = {"all", "collate", "ctype", "monetary",
+     "numeric", "time", NULL};
+  const char *l = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, 1, NULL);
+  int op = <A HREF="lauxlib.c.html#luaL_checkoption">luaL_checkoption</A>(L, 2, "all", catnames);
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, setlocale(cat[op], l));
+  return 1;
+}
+
+
+static int <A NAME="os_exit"><SPAN CLASS="definition">os_exit</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  exit(<A HREF="lauxlib.h.html#luaL_optint">luaL_optint</A>(L, 1, EXIT_SUCCESS));
+}
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="syslib"><SPAN CLASS="definition">syslib</SPAN></A>[] = {
+  {"clock",     <A HREF="loslib.c.html#os_clock">os_clock</A>},
+  {"date",      <A HREF="loslib.c.html#os_date">os_date</A>},
+  {"difftime",  <A HREF="loslib.c.html#os_difftime">os_difftime</A>},
+  {"execute",   <A HREF="loslib.c.html#os_execute">os_execute</A>},
+  {"exit",      <A HREF="loslib.c.html#os_exit">os_exit</A>},
+  {"getenv",    <A HREF="loslib.c.html#os_getenv">os_getenv</A>},
+  {"remove",    <A HREF="loslib.c.html#os_remove">os_remove</A>},
+  {"rename",    <A HREF="loslib.c.html#os_rename">os_rename</A>},
+  {"setlocale", <A HREF="loslib.c.html#os_setlocale">os_setlocale</A>},
+  {"time",      <A HREF="loslib.c.html#os_time">os_time</A>},
+  {"tmpname",   <A HREF="loslib.c.html#os_tmpname">os_tmpname</A>},
+  {NULL, NULL}
+};
+
+/* }====================================================== */
+
+
+
+<A HREF="luaconf.h.html#LUALIB_API">LUALIB_API</A> int <A NAME="luaopen_os"><SPAN CLASS="definition">luaopen_os</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_register">luaL_register</A>(L, <A HREF="lualib.h.html#LUA_OSLIBNAME">LUA_OSLIBNAME</A>, <A HREF="loslib.c.html#syslib">syslib</A>);
+  return 1;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:55 2016
+</P>
+
+</BODY>
+</HTML>

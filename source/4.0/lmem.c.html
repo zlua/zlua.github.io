@@ -1,0 +1,185 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lmem.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lmem.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lmem.c,v 1.39 2000/10/30 16:29:59 roberto Exp $
+** Interface to Memory Manager
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdlib.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+
+
+
+
+#ifdef LUA_DEBUG
+/*
+** {======================================================================
+** Controlled version for <A HREF="lmem.c.html#realloc">realloc</A>.
+** =======================================================================
+*/
+
+
+#include &lt;assert.h&gt;
+#include &lt;limits.h&gt;
+#include &lt;string.h&gt;
+
+#define <A HREF="lmem.c.html#realloc">realloc</A>(b, s)   <A HREF="lmem.c.html#debug_realloc">debug_realloc</A>(b, s)
+#define <A NAME="malloc"><SPAN CLASS="definition">malloc</SPAN></A>(b)       <A HREF="lmem.c.html#debug_realloc">debug_realloc</A>(NULL, b)
+#define <A HREF="lmem.c.html#free">free</A>(b)         <A HREF="lmem.c.html#debug_realloc">debug_realloc</A>(b, 0)
+
+
+/* ensures maximum alignment for <A HREF="lmem.c.html#HEADER">HEADER</A> */
+#define <A NAME="HEADER"><SPAN CLASS="definition">HEADER</SPAN></A>  (sizeof(union <A HREF="llimits.h.html#L_Umaxalign">L_Umaxalign</A>))
+
+#define <A NAME="MARKSIZE"><SPAN CLASS="definition">MARKSIZE</SPAN></A>        16
+#define <A NAME="MARK"><SPAN CLASS="definition">MARK</SPAN></A>            0x55  /* 01010101 (a nice pattern) */
+
+
+#define <A NAME="blocksize"><SPAN CLASS="definition">blocksize</SPAN></A>(b)    ((unsigned long *)((char *)(b) - <A HREF="lmem.c.html#HEADER">HEADER</A>))
+
+unsigned long <A NAME="memdebug_numblocks"><SPAN CLASS="definition">memdebug_numblocks</SPAN></A> = 0;
+unsigned long <A NAME="memdebug_total"><SPAN CLASS="definition">memdebug_total</SPAN></A> = 0;
+unsigned long <A NAME="memdebug_maxmem"><SPAN CLASS="definition">memdebug_maxmem</SPAN></A> = 0;
+unsigned long <A NAME="memdebug_memlimit"><SPAN CLASS="definition">memdebug_memlimit</SPAN></A> = LONG_MAX;
+
+
+static void *<A NAME="checkblock"><SPAN CLASS="definition">checkblock</SPAN></A> (void *block) {
+  unsigned long *b = <A HREF="lmem.c.html#blocksize">blocksize</A>(block);
+  unsigned long size = *b;
+  int i;
+  for (i=0;i&lt;<A HREF="lmem.c.html#MARKSIZE">MARKSIZE</A>;i++)
+    assert(*(((char *)b)+<A HREF="lmem.c.html#HEADER">HEADER</A>+size+i) == <A HREF="lmem.c.html#MARK">MARK</A>+i);  /* corrupted block? */
+  <A HREF="lmem.c.html#memdebug_numblocks">memdebug_numblocks</A>--;
+  <A HREF="lmem.c.html#memdebug_total">memdebug_total</A> -= size;
+  return b;
+}
+
+
+static void <A NAME="freeblock"><SPAN CLASS="definition">freeblock</SPAN></A> (void *block) {
+  if (block) {
+    size_t size = *<A HREF="lmem.c.html#blocksize">blocksize</A>(block);
+    block = <A HREF="lmem.c.html#checkblock">checkblock</A>(block);
+    memset(block, -1, size+<A HREF="lmem.c.html#HEADER">HEADER</A>+<A HREF="lmem.c.html#MARKSIZE">MARKSIZE</A>);  /* erase block */
+    (<A HREF="lmem.c.html#free">free</A>)(block);  /* <A HREF="lmem.c.html#free">free</A> original block */
+  }
+}
+
+
+static void *<A NAME="debug_realloc"><SPAN CLASS="definition">debug_realloc</SPAN></A> (void *block, size_t size) {
+  if (size == 0) {
+    <A HREF="lmem.c.html#freeblock">freeblock</A>(block);
+    return NULL;
+  }
+  else if (<A HREF="lmem.c.html#memdebug_total">memdebug_total</A>+size &gt; <A HREF="lmem.c.html#memdebug_memlimit">memdebug_memlimit</A>)
+    return NULL;  /* to test memory allocation errors */
+  else {
+    size_t realsize = <A HREF="lmem.c.html#HEADER">HEADER</A>+size+<A HREF="lmem.c.html#MARKSIZE">MARKSIZE</A>;
+    char *newblock = (char *)(<A HREF="lmem.c.html#malloc">malloc</A>)(realsize);  /* alloc a new block */
+    int i;
+    if (realsize &lt; size) return NULL;  /* overflow! */
+    if (newblock == NULL) return NULL;
+    if (block) {
+      size_t oldsize = *<A HREF="lmem.c.html#blocksize">blocksize</A>(block);
+      if (oldsize &gt; size) oldsize = size;
+      memcpy(newblock+<A HREF="lmem.c.html#HEADER">HEADER</A>, block, oldsize);
+      <A HREF="lmem.c.html#freeblock">freeblock</A>(block);  /* erase (and check) old copy */
+    }
+    <A HREF="lmem.c.html#memdebug_total">memdebug_total</A> += size;
+    if (<A HREF="lmem.c.html#memdebug_total">memdebug_total</A> &gt; <A HREF="lmem.c.html#memdebug_maxmem">memdebug_maxmem</A>) <A HREF="lmem.c.html#memdebug_maxmem">memdebug_maxmem</A> = <A HREF="lmem.c.html#memdebug_total">memdebug_total</A>;
+    <A HREF="lmem.c.html#memdebug_numblocks">memdebug_numblocks</A>++;
+    *(unsigned long *)newblock = size;
+    for (i=0;i&lt;<A HREF="lmem.c.html#MARKSIZE">MARKSIZE</A>;i++)
+      *(newblock+<A HREF="lmem.c.html#HEADER">HEADER</A>+size+i) = (char)(<A HREF="lmem.c.html#MARK">MARK</A>+i);
+    return newblock+<A HREF="lmem.c.html#HEADER">HEADER</A>;
+  }
+}
+
+
+/* }====================================================================== */
+#endif
+
+
+
+/*
+** Real ISO (ANSI) systems do not need these tests;
+** but some systems (Sun OS) are not that ISO...
+*/
+#ifdef OLD_ANSI
+#define <A NAME="realloc"><SPAN CLASS="definition">realloc</SPAN></A>(b,s)    ((b) == NULL ? <A HREF="lmem.c.html#malloc">malloc</A>(s) : (<A NAME="realloc"><SPAN CLASS="definition">realloc</SPAN></A>)(b, s))
+#define <A NAME="free"><SPAN CLASS="definition">free</SPAN></A>(b)         if (b) (<A NAME="free"><SPAN CLASS="definition">free</SPAN></A>)(b)
+#endif
+
+
+void *<A NAME="luaM_growaux"><SPAN CLASS="definition">luaM_growaux</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, size_t nelems,
+               int inc, size_t size, const char *errormsg, size_t limit) {
+  size_t newn = nelems+inc;
+  if (nelems &gt;= limit-inc) <A HREF="ldo.c.html#lua_error">lua_error</A>(L, errormsg);
+  if ((newn ^ nelems) &lt;= nelems ||  /* still the same power-of-2 limit? */
+       (nelems &gt; 0 &amp;&amp; newn &lt; <A HREF="llimits.h.html#MINPOWER2">MINPOWER2</A>))  /* or block already is <A HREF="llimits.h.html#MINPOWER2">MINPOWER2</A>? */
+      return block;  /* do not need to reallocate */
+  else  /* it crossed a power-of-2 boundary; grow to next power */
+    return <A HREF="lmem.c.html#luaM_realloc">luaM_realloc</A>(L, block, <A HREF="lobject.c.html#luaO_power2">luaO_power2</A>(newn)*size);
+}
+
+
+/*
+** generic allocation routine.
+*/
+void *<A NAME="luaM_realloc"><SPAN CLASS="definition">luaM_realloc</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, <A HREF="llimits.h.html#lint32">lint32</A> size) {
+  if (size == 0) {
+    <A HREF="lmem.c.html#free">free</A>(block);  /* block may be NULL; that is OK for <A HREF="lmem.c.html#free">free</A> */
+    return NULL;
+  }
+  else if (size &gt;= <A HREF="llimits.h.html#MAX_SIZET">MAX_SIZET</A>)
+    <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "memory allocation error: block too big");
+  block = <A HREF="lmem.c.html#realloc">realloc</A>(block, size);
+  if (block == NULL) {
+    if (L)
+      <A HREF="ldo.c.html#luaD_breakrun">luaD_breakrun</A>(L, <A HREF="lua.h.html#LUA_ERRMEM">LUA_ERRMEM</A>);  /* break run without error message */
+    else return NULL;  /* error before creating state! */
+  }
+  return block;
+}
+
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,586 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - luaconf.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+luaconf.h
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: luaconf.h,v 1.176.1.2 2013/11/21 17:26:16 roberto Exp $
+** Configuration file for Lua
+** See Copyright Notice in lua.h
+*/
+
+
+#ifndef <A HREF="luaconf.h.html#lconfig_h">lconfig_h</A>
+#define <A NAME="lconfig_h"><SPAN CLASS="definition">lconfig_h</SPAN></A>
+
+#include &lt;limits.h&gt;
+#include &lt;stddef.h&gt;
+
+
+/*
+** ==================================================================
+** Search for "@@" to find all configurable definitions.
+** ===================================================================
+*/
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_ANSI">LUA_ANSI</A> controls the use of non-ansi features.
+** CHANGE it (define it) if you want Lua to avoid the use of any
+** non-ansi feature or library.
+*/
+#if !defined(<A HREF="luaconf.h.html#LUA_ANSI">LUA_ANSI</A>) &amp;&amp; defined(__STRICT_ANSI__)
+#define <A NAME="LUA_ANSI"><SPAN CLASS="definition">LUA_ANSI</SPAN></A>
+#endif
+
+
+#if !defined(<A HREF="luaconf.h.html#LUA_ANSI">LUA_ANSI</A>) &amp;&amp; defined(_WIN32) &amp;&amp; !defined(_WIN32_WCE)
+#define <A NAME="LUA_WIN"><SPAN CLASS="definition">LUA_WIN</SPAN></A>         /* enable goodies for regular Windows platforms */
+#endif
+
+#if defined(<A HREF="luaconf.h.html#LUA_WIN">LUA_WIN</A>)
+#define <A NAME="LUA_DL_DLL"><SPAN CLASS="definition">LUA_DL_DLL</SPAN></A>
+#define <A HREF="luaconf.h.html#LUA_USE_AFORMAT">LUA_USE_AFORMAT</A>         /* assume 'printf' handles 'aA' specifiers */
+#endif
+
+
+
+#if defined(LUA_USE_LINUX)
+#define <A HREF="luaconf.h.html#LUA_USE_POSIX">LUA_USE_POSIX</A>
+#define <A HREF="luaconf.h.html#LUA_USE_DLOPEN">LUA_USE_DLOPEN</A>          /* needs an extra library: -ldl */
+#define <A HREF="luaconf.h.html#LUA_USE_READLINE">LUA_USE_READLINE</A>        /* needs some extra libraries */
+#define <A HREF="luaconf.h.html#LUA_USE_STRTODHEX">LUA_USE_STRTODHEX</A>       /* assume 'strtod' handles hex formats */
+#define <A HREF="luaconf.h.html#LUA_USE_AFORMAT">LUA_USE_AFORMAT</A>         /* assume 'printf' handles 'aA' specifiers */
+#define <A HREF="luaconf.h.html#LUA_USE_LONGLONG">LUA_USE_LONGLONG</A>        /* assume support for long long */
+#endif
+
+#if defined(LUA_USE_MACOSX)
+#define <A NAME="LUA_USE_POSIX"><SPAN CLASS="definition">LUA_USE_POSIX</SPAN></A>
+#define <A NAME="LUA_USE_DLOPEN"><SPAN CLASS="definition">LUA_USE_DLOPEN</SPAN></A>          /* does not need -ldl */
+#define <A NAME="LUA_USE_READLINE"><SPAN CLASS="definition">LUA_USE_READLINE</SPAN></A>        /* needs an extra library: -lreadline */
+#define <A NAME="LUA_USE_STRTODHEX"><SPAN CLASS="definition">LUA_USE_STRTODHEX</SPAN></A>       /* assume 'strtod' handles hex formats */
+#define <A NAME="LUA_USE_AFORMAT"><SPAN CLASS="definition">LUA_USE_AFORMAT</SPAN></A>         /* assume 'printf' handles 'aA' specifiers */
+#define <A NAME="LUA_USE_LONGLONG"><SPAN CLASS="definition">LUA_USE_LONGLONG</SPAN></A>        /* assume support for long long */
+#endif
+
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_USE_POSIX">LUA_USE_POSIX</A> includes all functionality listed as X/Open System
+@* Interfaces Extension (XSI).
+** CHANGE it (define it) if your system is XSI compatible.
+*/
+#if defined(<A HREF="luaconf.h.html#LUA_USE_POSIX">LUA_USE_POSIX</A>)
+#define <A NAME="LUA_USE_MKSTEMP"><SPAN CLASS="definition">LUA_USE_MKSTEMP</SPAN></A>
+#define <A NAME="LUA_USE_ISATTY"><SPAN CLASS="definition">LUA_USE_ISATTY</SPAN></A>
+#define <A NAME="LUA_USE_POPEN"><SPAN CLASS="definition">LUA_USE_POPEN</SPAN></A>
+#define <A NAME="LUA_USE_ULONGJMP"><SPAN CLASS="definition">LUA_USE_ULONGJMP</SPAN></A>
+#define <A NAME="LUA_USE_GMTIME_R"><SPAN CLASS="definition">LUA_USE_GMTIME_R</SPAN></A>
+#endif
+
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_PATH_DEFAULT">LUA_PATH_DEFAULT</A> is the default path that Lua uses to look for
+@* Lua libraries.
+@@ <A HREF="luaconf.h.html#LUA_CPATH_DEFAULT">LUA_CPATH_DEFAULT</A> is the default path that Lua uses to look for
+@* C libraries.
+** CHANGE them if your machine has a non-conventional directory
+** hierarchy or if you want to install your libraries in
+** non-conventional directories.
+*/
+#if defined(_WIN32)     /* { */
+/*
+** In Windows, any exclamation mark ('!') in the path is replaced by the
+** path of the directory of the executable file of the current process.
+*/
+#define <A HREF="luaconf.h.html#LUA_LDIR">LUA_LDIR</A>        "!\\lua\\"
+#define <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>        "!\\"
+#define <A HREF="luaconf.h.html#LUA_PATH_DEFAULT">LUA_PATH_DEFAULT</A>  \
+                <A HREF="luaconf.h.html#LUA_LDIR">LUA_LDIR</A>"?.lua;"  <A HREF="luaconf.h.html#LUA_LDIR">LUA_LDIR</A>"?\\init.lua;" \
+                <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>"?.lua;"  <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>"?\\init.lua;" ".\\?.lua"
+#define <A HREF="luaconf.h.html#LUA_CPATH_DEFAULT">LUA_CPATH_DEFAULT</A> \
+                <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>"?.dll;" <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>"loadall.dll;" ".\\?.dll"
+
+#else                   /* }{ */
+
+#define <A NAME="LUA_VDIR"><SPAN CLASS="definition">LUA_VDIR</SPAN></A>        <A HREF="lua.h.html#LUA_VERSION_MAJOR">LUA_VERSION_MAJOR</A> "." <A HREF="lua.h.html#LUA_VERSION_MINOR">LUA_VERSION_MINOR</A> "/"
+#define <A NAME="LUA_ROOT"><SPAN CLASS="definition">LUA_ROOT</SPAN></A>        "/usr/local/"
+#define <A NAME="LUA_LDIR"><SPAN CLASS="definition">LUA_LDIR</SPAN></A>        <A HREF="luaconf.h.html#LUA_ROOT">LUA_ROOT</A> "share/lua/" <A HREF="luaconf.h.html#LUA_VDIR">LUA_VDIR</A>
+#define <A NAME="LUA_CDIR"><SPAN CLASS="definition">LUA_CDIR</SPAN></A>        <A HREF="luaconf.h.html#LUA_ROOT">LUA_ROOT</A> "lib/lua/" <A HREF="luaconf.h.html#LUA_VDIR">LUA_VDIR</A>
+#define <A NAME="LUA_PATH_DEFAULT"><SPAN CLASS="definition">LUA_PATH_DEFAULT</SPAN></A>  \
+                <A HREF="luaconf.h.html#LUA_LDIR">LUA_LDIR</A>"?.lua;"  <A HREF="luaconf.h.html#LUA_LDIR">LUA_LDIR</A>"?/init.lua;" \
+                <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>"?.lua;"  <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>"?/init.lua;" "./?.lua"
+#define <A NAME="LUA_CPATH_DEFAULT"><SPAN CLASS="definition">LUA_CPATH_DEFAULT</SPAN></A> \
+                <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>"?.so;" <A HREF="luaconf.h.html#LUA_CDIR">LUA_CDIR</A>"loadall.so;" "./?.so"
+#endif                  /* } */
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_DIRSEP">LUA_DIRSEP</A> is the directory separator (for submodules).
+** CHANGE it if your machine does not use "/" as the directory separator
+** and is not Windows. (On Windows Lua automatically uses "\".)
+*/
+#if defined(_WIN32)
+#define <A HREF="luaconf.h.html#LUA_DIRSEP">LUA_DIRSEP</A>      "\\"
+#else
+#define <A NAME="LUA_DIRSEP"><SPAN CLASS="definition">LUA_DIRSEP</SPAN></A>      "/"
+#endif
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_ENV">LUA_ENV</A> is the name of the variable that holds the current
+@@ environment, used to access global names.
+** CHANGE it if you do not like this name.
+*/
+#define <A NAME="LUA_ENV"><SPAN CLASS="definition">LUA_ENV</SPAN></A>         "_ENV"
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_API">LUA_API</A> is a mark for all core API functions.
+@@ <A HREF="luaconf.h.html#LUALIB_API">LUALIB_API</A> is a mark for all auxiliary library functions.
+@@ <A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> is a mark for all standard library opening functions.
+** CHANGE them if you need to define those functions in some special way.
+** For instance, if you want to create one Windows DLL with the core and
+** the libraries, you may want to use the following definition (define
+** LUA_BUILD_AS_DLL to get it).
+*/
+#if defined(LUA_BUILD_AS_DLL)   /* { */
+
+#if defined(LUA_CORE) || defined(LUA_LIB)       /* { */
+#define <A HREF="luaconf.h.html#LUA_API">LUA_API</A> __declspec(dllexport)
+#else                                           /* }{ */
+#define <A HREF="luaconf.h.html#LUA_API">LUA_API</A> __declspec(dllimport)
+#endif                                          /* } */
+
+#else                           /* }{ */
+
+#define <A NAME="LUA_API"><SPAN CLASS="definition">LUA_API</SPAN></A>         extern
+
+#endif                          /* } */
+
+
+/* more often than not the libs go together with the core */
+#define <A NAME="LUALIB_API"><SPAN CLASS="definition">LUALIB_API</SPAN></A>      <A HREF="luaconf.h.html#LUA_API">LUA_API</A>
+#define <A NAME="LUAMOD_API"><SPAN CLASS="definition">LUAMOD_API</SPAN></A>      <A HREF="luaconf.h.html#LUALIB_API">LUALIB_API</A>
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> is a mark for all extern functions that are not to be
+@* exported to outside modules.
+@@ <A HREF="luaconf.h.html#LUAI_DDEF">LUAI_DDEF</A> and <A HREF="luaconf.h.html#LUAI_DDEC">LUAI_DDEC</A> are marks for all extern (const) variables
+@* that are not to be exported to outside modules (<A HREF="luaconf.h.html#LUAI_DDEF">LUAI_DDEF</A> for
+@* definitions and <A HREF="luaconf.h.html#LUAI_DDEC">LUAI_DDEC</A> for declarations).
+** CHANGE them if you need to mark them in some special way. Elf/gcc
+** (versions 3.2 and later) mark them as "hidden" to optimize access
+** when Lua is compiled as a shared library. Not all elf targets support
+** this attribute. Unfortunately, gcc does not offer a way to check
+** whether the target offers that support, and those without support
+** give a warning about it. To avoid these warnings, change to the
+** default definition.
+*/
+#if defined(__GNUC__) &amp;&amp; ((__GNUC__*100 + __GNUC_MINOR__) &gt;= 302) &amp;&amp; \
+    defined(__ELF__)            /* { */
+#define <A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A>       __attribute__((visibility("hidden"))) extern
+#define <A HREF="luaconf.h.html#LUAI_DDEC">LUAI_DDEC</A>       <A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A>
+#define <A HREF="luaconf.h.html#LUAI_DDEF">LUAI_DDEF</A>       /* empty */
+
+#else                           /* }{ */
+#define <A NAME="LUAI_FUNC"><SPAN CLASS="definition">LUAI_FUNC</SPAN></A>       extern
+#define <A NAME="LUAI_DDEC"><SPAN CLASS="definition">LUAI_DDEC</SPAN></A>       extern
+#define <A NAME="LUAI_DDEF"><SPAN CLASS="definition">LUAI_DDEF</SPAN></A>       /* empty */
+#endif                          /* } */
+
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A> describes how error messages quote program elements.
+** CHANGE it if you want a different appearance.
+*/
+#define <A NAME="LUA_QL"><SPAN CLASS="definition">LUA_QL</SPAN></A>(x)       "'" x "'"
+#define <A NAME="LUA_QS"><SPAN CLASS="definition">LUA_QS</SPAN></A>          <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("%s")
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_IDSIZE">LUA_IDSIZE</A> gives the maximum size for the description of the source
+@* of a function in debug information.
+** CHANGE it if you want a different size.
+*/
+#define <A NAME="LUA_IDSIZE"><SPAN CLASS="definition">LUA_IDSIZE</SPAN></A>      60
+
+
+/*
+@@ <A HREF="luaconf.h.html#luai_writestring">luai_writestring</A>/<A HREF="luaconf.h.html#luai_writeline">luai_writeline</A> define how 'print' prints its results.
+** They are only used in libraries and the stand-alone program. (The #if
+** avoids including 'stdio.h' everywhere.)
+*/
+#if defined(LUA_LIB) || defined(lua_c)
+#include &lt;stdio.h&gt;
+#define <A NAME="luai_writestring"><SPAN CLASS="definition">luai_writestring</SPAN></A>(s,l)   fwrite((s), sizeof(char), (l), stdout)
+#define <A NAME="luai_writeline"><SPAN CLASS="definition">luai_writeline</SPAN></A>()        (<A HREF="luaconf.h.html#luai_writestring">luai_writestring</A>("\n", 1), fflush(stdout))
+#endif
+
+/*
+@@ <A HREF="luaconf.h.html#luai_writestringerror">luai_writestringerror</A> defines how to print error messages.
+** (A format string with one argument is enough for Lua...)
+*/
+#define <A NAME="luai_writestringerror"><SPAN CLASS="definition">luai_writestringerror</SPAN></A>(s,p) \
+        (fprintf(stderr, (s), (p)), fflush(stderr))
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUAI_MAXSHORTLEN">LUAI_MAXSHORTLEN</A> is the maximum length for short strings, that is,
+** strings that are internalized. (Cannot be smaller than reserved words
+** or tags for metamethods, as these strings must be internalized;
+** #("function") = 8, #("__newindex") = 10.)
+*/
+#define <A NAME="LUAI_MAXSHORTLEN"><SPAN CLASS="definition">LUAI_MAXSHORTLEN</SPAN></A>        40
+
+
+
+/*
+** {==================================================================
+** Compatibility with previous versions
+** ===================================================================
+*/
+
+/*
+@@ LUA_COMPAT_ALL controls all compatibility options.
+** You can define it to get all options, or change specific options
+** to fit your specific needs.
+*/
+#if defined(LUA_COMPAT_ALL)     /* { */
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_COMPAT_UNPACK">LUA_COMPAT_UNPACK</A> controls the presence of global 'unpack'.
+** You can replace it with 'table.unpack'.
+*/
+#define <A NAME="LUA_COMPAT_UNPACK"><SPAN CLASS="definition">LUA_COMPAT_UNPACK</SPAN></A>
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_COMPAT_LOADERS">LUA_COMPAT_LOADERS</A> controls the presence of table 'package.loaders'.
+** You can replace it with 'package.searchers'.
+*/
+#define <A NAME="LUA_COMPAT_LOADERS"><SPAN CLASS="definition">LUA_COMPAT_LOADERS</SPAN></A>
+
+/*
+@@ macro '<A HREF="luaconf.h.html#lua_cpcall">lua_cpcall</A>' emulates deprecated function <A HREF="luaconf.h.html#lua_cpcall">lua_cpcall</A>.
+** You can call your C function directly (with light C functions).
+*/
+#define <A NAME="lua_cpcall"><SPAN CLASS="definition">lua_cpcall</SPAN></A>(L,f,u)  \
+        (<A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, (f)), \
+         <A HREF="lapi.c.html#lua_pushlightuserdata">lua_pushlightuserdata</A>(L,(u)), \
+         <A HREF="lua.h.html#lua_pcall">lua_pcall</A>(L,1,0,0))
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_COMPAT_LOG10">LUA_COMPAT_LOG10</A> defines the function 'log10' in the math library.
+** You can rewrite 'log10(x)' as 'log(x, 10)'.
+*/
+#define <A NAME="LUA_COMPAT_LOG10"><SPAN CLASS="definition">LUA_COMPAT_LOG10</SPAN></A>
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_COMPAT_LOADSTRING">LUA_COMPAT_LOADSTRING</A> defines the function 'loadstring' in the base
+** library. You can rewrite 'loadstring(s)' as 'load(s)'.
+*/
+#define <A NAME="LUA_COMPAT_LOADSTRING"><SPAN CLASS="definition">LUA_COMPAT_LOADSTRING</SPAN></A>
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_COMPAT_MAXN">LUA_COMPAT_MAXN</A> defines the function 'maxn' in the table library.
+*/
+#define <A NAME="LUA_COMPAT_MAXN"><SPAN CLASS="definition">LUA_COMPAT_MAXN</SPAN></A>
+
+/*
+@@ The following macros supply trivial compatibility for some
+** changes in the API. The macros themselves document how to
+** change your code to avoid using them.
+*/
+#define <A NAME="lua_strlen"><SPAN CLASS="definition">lua_strlen</SPAN></A>(L,i)         <A HREF="lapi.c.html#lua_rawlen">lua_rawlen</A>(L, (i))
+
+#define <A NAME="lua_objlen"><SPAN CLASS="definition">lua_objlen</SPAN></A>(L,i)         <A HREF="lapi.c.html#lua_rawlen">lua_rawlen</A>(L, (i))
+
+#define <A NAME="lua_equal"><SPAN CLASS="definition">lua_equal</SPAN></A>(L,idx1,idx2)          <A HREF="lapi.c.html#lua_compare">lua_compare</A>(L,(idx1),(idx2),<A HREF="lua.h.html#LUA_OPEQ">LUA_OPEQ</A>)
+#define <A NAME="lua_lessthan"><SPAN CLASS="definition">lua_lessthan</SPAN></A>(L,idx1,idx2)       <A HREF="lapi.c.html#lua_compare">lua_compare</A>(L,(idx1),(idx2),<A HREF="lua.h.html#LUA_OPLT">LUA_OPLT</A>)
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_COMPAT_MODULE">LUA_COMPAT_MODULE</A> controls compatibility with previous
+** module functions 'module' (Lua) and '<A HREF="lauxlib.h.html#luaL_register">luaL_register</A>' (C).
+*/
+#define <A NAME="LUA_COMPAT_MODULE"><SPAN CLASS="definition">LUA_COMPAT_MODULE</SPAN></A>
+
+#endif                          /* } */
+
+/* }================================================================== */
+
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUAI_BITSINT">LUAI_BITSINT</A> defines the number of bits in an int.
+** CHANGE here if Lua cannot automatically detect the number of bits of
+** your machine. Probably you do not need to change this.
+*/
+/* avoid overflows in comparison */
+#if INT_MAX-20 &lt; 32760          /* { */
+#define <A HREF="luaconf.h.html#LUAI_BITSINT">LUAI_BITSINT</A>    16
+#elif INT_MAX &gt; 2147483640L     /* }{ */
+/* int has at least 32 bits */
+#define <A NAME="LUAI_BITSINT"><SPAN CLASS="definition">LUAI_BITSINT</SPAN></A>    32
+#else                           /* }{ */
+#error "you must define LUA_BITSINT with number of bits in an integer"
+#endif                          /* } */
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_INT32">LUA_INT32</A> is a signed integer with exactly 32 bits.
+@@ <A HREF="luaconf.h.html#LUAI_UMEM">LUAI_UMEM</A> is an unsigned integer big enough to count the total
+@* memory used by Lua.
+@@ <A HREF="luaconf.h.html#LUAI_MEM">LUAI_MEM</A> is a signed integer big enough to count the total memory
+@* used by Lua.
+** CHANGE here if for some weird reason the default definitions are not
+** good enough for your machine. Probably you do not need to change
+** this.
+*/
+#if <A HREF="luaconf.h.html#LUAI_BITSINT">LUAI_BITSINT</A> &gt;= 32          /* { */
+#define <A HREF="luaconf.h.html#LUA_INT32">LUA_INT32</A>       int
+#define <A HREF="luaconf.h.html#LUAI_UMEM">LUAI_UMEM</A>       size_t
+#define <A HREF="luaconf.h.html#LUAI_MEM">LUAI_MEM</A>        ptrdiff_t
+#else                           /* }{ */
+/* 16-bit ints */
+#define <A NAME="LUA_INT32"><SPAN CLASS="definition">LUA_INT32</SPAN></A>       long
+#define <A NAME="LUAI_UMEM"><SPAN CLASS="definition">LUAI_UMEM</SPAN></A>       unsigned long
+#define <A NAME="LUAI_MEM"><SPAN CLASS="definition">LUAI_MEM</SPAN></A>        long
+#endif                          /* } */
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A> limits the size of the Lua stack.
+** CHANGE it if you need a different limit. This limit is arbitrary;
+** its only purpose is to stop Lua from consuming unlimited stack
+** space (and to reserve some numbers for pseudo-indices).
+*/
+#if <A HREF="luaconf.h.html#LUAI_BITSINT">LUAI_BITSINT</A> &gt;= 32
+#define <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A>           1000000
+#else
+#define <A NAME="LUAI_MAXSTACK"><SPAN CLASS="definition">LUAI_MAXSTACK</SPAN></A>           15000
+#endif
+
+/* reserve some space for error handling */
+#define <A NAME="LUAI_FIRSTPSEUDOIDX"><SPAN CLASS="definition">LUAI_FIRSTPSEUDOIDX</SPAN></A>     (-<A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A> - 1000)
+
+
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUAL_BUFFERSIZE">LUAL_BUFFERSIZE</A> is the buffer size used by the lauxlib buffer system.
+** CHANGE it if it uses too much C-stack space.
+*/
+#define <A NAME="LUAL_BUFFERSIZE"><SPAN CLASS="definition">LUAL_BUFFERSIZE</SPAN></A>         BUFSIZ
+
+
+
+
+/*
+** {==================================================================
+@@ <A HREF="luaconf.h.html#LUA_NUMBER">LUA_NUMBER</A> is the type of numbers in Lua.
+** CHANGE the following definitions only if you want to build Lua
+** with a number type different from double. You may also need to
+** change <A HREF="llimits.h.html#lua_number2int">lua_number2int</A> &amp; <A HREF="llimits.h.html#lua_number2integer">lua_number2integer</A>.
+** ===================================================================
+*/
+
+#define <A NAME="LUA_NUMBER_DOUBLE"><SPAN CLASS="definition">LUA_NUMBER_DOUBLE</SPAN></A>
+#define <A NAME="LUA_NUMBER"><SPAN CLASS="definition">LUA_NUMBER</SPAN></A>      double
+
+/*
+@@ <A HREF="luaconf.h.html#LUAI_UACNUMBER">LUAI_UACNUMBER</A> is the result of an 'usual argument conversion'
+@* over a number.
+*/
+#define <A NAME="LUAI_UACNUMBER"><SPAN CLASS="definition">LUAI_UACNUMBER</SPAN></A>  double
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_NUMBER_SCAN">LUA_NUMBER_SCAN</A> is the format for reading numbers.
+@@ <A HREF="luaconf.h.html#LUA_NUMBER_FMT">LUA_NUMBER_FMT</A> is the format for writing numbers.
+@@ <A HREF="luaconf.h.html#lua_number2str">lua_number2str</A> converts a number to a string.
+@@ <A HREF="luaconf.h.html#LUAI_MAXNUMBER2STR">LUAI_MAXNUMBER2STR</A> is maximum size of previous conversion.
+*/
+#define <A NAME="LUA_NUMBER_SCAN"><SPAN CLASS="definition">LUA_NUMBER_SCAN</SPAN></A>         "%lf"
+#define <A NAME="LUA_NUMBER_FMT"><SPAN CLASS="definition">LUA_NUMBER_FMT</SPAN></A>          "%.14g"
+#define <A NAME="lua_number2str"><SPAN CLASS="definition">lua_number2str</SPAN></A>(s,n)     sprintf((s), <A HREF="luaconf.h.html#LUA_NUMBER_FMT">LUA_NUMBER_FMT</A>, (n))
+#define <A NAME="LUAI_MAXNUMBER2STR"><SPAN CLASS="definition">LUAI_MAXNUMBER2STR</SPAN></A>      32 /* 16 digits, sign, point, and \0 */
+
+
+/*
+@@ <A HREF="luaconf.h.html#l_mathop">l_mathop</A> allows the addition of an 'l' or 'f' to all math operations
+*/
+#define <A NAME="l_mathop"><SPAN CLASS="definition">l_mathop</SPAN></A>(x)             (x)
+
+
+/*
+@@ <A HREF="luaconf.h.html#lua_str2number">lua_str2number</A> converts a decimal numeric string to a number.
+@@ <A HREF="luaconf.h.html#lua_strx2number">lua_strx2number</A> converts an hexadecimal numeric string to a number.
+** In C99, 'strtod' does both conversions. C89, however, has no function
+** to convert floating hexadecimal strings to numbers. For these
+** systems, you can leave '<A HREF="luaconf.h.html#lua_strx2number">lua_strx2number</A>' undefined and Lua will
+** provide its own implementation.
+*/
+#define <A NAME="lua_str2number"><SPAN CLASS="definition">lua_str2number</SPAN></A>(s,p)     strtod((s), (p))
+
+#if defined(<A HREF="luaconf.h.html#LUA_USE_STRTODHEX">LUA_USE_STRTODHEX</A>)
+#define <A NAME="lua_strx2number"><SPAN CLASS="definition">lua_strx2number</SPAN></A>(s,p)    strtod((s), (p))
+#endif
+
+
+/*
+@@ The luai_num* macros define the primitive operations over numbers.
+*/
+
+/* the following operations need the math library */
+#if defined(lobject_c) || defined(lvm_c)
+#include &lt;math.h&gt;
+#define <A NAME="luai_nummod"><SPAN CLASS="definition">luai_nummod</SPAN></A>(L,a,b)      ((a) - <A HREF="luaconf.h.html#l_mathop">l_mathop</A>(floor)((a)/(b))*(b))
+#define <A NAME="luai_numpow"><SPAN CLASS="definition">luai_numpow</SPAN></A>(L,a,b)      (<A HREF="luaconf.h.html#l_mathop">l_mathop</A>(pow)(a,b))
+#endif
+
+/* these are quite standard operations */
+#if defined(LUA_CORE)
+#define <A NAME="luai_numadd"><SPAN CLASS="definition">luai_numadd</SPAN></A>(L,a,b)      ((a)+(b))
+#define <A NAME="luai_numsub"><SPAN CLASS="definition">luai_numsub</SPAN></A>(L,a,b)      ((a)-(b))
+#define <A NAME="luai_nummul"><SPAN CLASS="definition">luai_nummul</SPAN></A>(L,a,b)      ((a)*(b))
+#define <A NAME="luai_numdiv"><SPAN CLASS="definition">luai_numdiv</SPAN></A>(L,a,b)      ((a)/(b))
+#define <A NAME="luai_numunm"><SPAN CLASS="definition">luai_numunm</SPAN></A>(L,a)        (-(a))
+#define <A NAME="luai_numeq"><SPAN CLASS="definition">luai_numeq</SPAN></A>(a,b)         ((a)==(b))
+#define <A NAME="luai_numlt"><SPAN CLASS="definition">luai_numlt</SPAN></A>(L,a,b)       ((a)&lt;(b))
+#define <A NAME="luai_numle"><SPAN CLASS="definition">luai_numle</SPAN></A>(L,a,b)       ((a)&lt;=(b))
+#define <A NAME="luai_numisnan"><SPAN CLASS="definition">luai_numisnan</SPAN></A>(L,a)      (!<A HREF="luaconf.h.html#luai_numeq">luai_numeq</A>((a), (a)))
+#endif
+
+
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_INTEGER">LUA_INTEGER</A> is the integral type used by <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>/<A HREF="lua.h.html#lua_tointeger">lua_tointeger</A>.
+** CHANGE that if ptrdiff_t is not adequate on your machine. (On most
+** machines, ptrdiff_t gives a good choice between int or long.)
+*/
+#define <A NAME="LUA_INTEGER"><SPAN CLASS="definition">LUA_INTEGER</SPAN></A>     ptrdiff_t
+
+/*
+@@ <A HREF="luaconf.h.html#LUA_UNSIGNED">LUA_UNSIGNED</A> is the integral type used by <A HREF="lapi.c.html#lua_pushunsigned">lua_pushunsigned</A>/<A HREF="lua.h.html#lua_tounsigned">lua_tounsigned</A>.
+** It must have at least 32 bits.
+*/
+#define <A NAME="LUA_UNSIGNED"><SPAN CLASS="definition">LUA_UNSIGNED</SPAN></A>    unsigned <A HREF="luaconf.h.html#LUA_INT32">LUA_INT32</A>
+
+
+
+/*
+** Some tricks with doubles
+*/
+
+#if defined(<A HREF="luaconf.h.html#LUA_NUMBER_DOUBLE">LUA_NUMBER_DOUBLE</A>) &amp;&amp; !defined(<A HREF="luaconf.h.html#LUA_ANSI">LUA_ANSI</A>)    /* { */
+/*
+** The next definitions activate some tricks to speed up the
+** conversion from doubles to integer types, mainly to <A HREF="luaconf.h.html#LUA_UNSIGNED">LUA_UNSIGNED</A>.
+**
+@@ <A HREF="luaconf.h.html#LUA_MSASMTRICK">LUA_MSASMTRICK</A> uses Microsoft assembler to avoid clashes with a
+** DirectX idiosyncrasy.
+**
+@@ <A HREF="luaconf.h.html#LUA_IEEE754TRICK">LUA_IEEE754TRICK</A> uses a trick that should work on any machine
+** using IEEE754 with a 32-bit integer type.
+**
+@@ <A HREF="luaconf.h.html#LUA_IEEELL">LUA_IEEELL</A> extends the trick to <A HREF="luaconf.h.html#LUA_INTEGER">LUA_INTEGER</A>; should only be
+** defined when <A HREF="luaconf.h.html#LUA_INTEGER">LUA_INTEGER</A> is a 32-bit integer.
+**
+@@ <A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A> is the endianness of doubles in your machine
+** (0 for little endian, 1 for big endian); if not defined, Lua will
+** check it dynamically for <A HREF="luaconf.h.html#LUA_IEEE754TRICK">LUA_IEEE754TRICK</A> (but not for <A HREF="luaconf.h.html#LUA_NANTRICK">LUA_NANTRICK</A>).
+**
+@@ <A HREF="luaconf.h.html#LUA_NANTRICK">LUA_NANTRICK</A> controls the use of a trick to pack all types into
+** a single double value, using NaN values to represent non-number
+** values. The trick only works on 32-bit machines (ints and pointers
+** are 32-bit values) with numbers represented as IEEE 754-2008 doubles
+** with conventional endianess (12345678 or 87654321), in CPUs that do
+** not produce signaling NaN values (all NaNs are quiet).
+*/
+
+/* Microsoft compiler on a Pentium (32 bit) ? */
+#if defined(<A HREF="luaconf.h.html#LUA_WIN">LUA_WIN</A>) &amp;&amp; defined(_MSC_VER) &amp;&amp; defined(_M_IX86)   /* { */
+
+#define <A NAME="LUA_MSASMTRICK"><SPAN CLASS="definition">LUA_MSASMTRICK</SPAN></A>
+#define <A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A>          0
+#define <A HREF="luaconf.h.html#LUA_NANTRICK">LUA_NANTRICK</A>
+
+
+/* pentium 32 bits? */
+#elif defined(__i386__) || defined(__i386) || defined(__X86__) /* }{ */
+
+#define <A HREF="luaconf.h.html#LUA_IEEE754TRICK">LUA_IEEE754TRICK</A>
+#define <A NAME="LUA_IEEELL"><SPAN CLASS="definition">LUA_IEEELL</SPAN></A>
+#define <A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A>          0
+#define <A NAME="LUA_NANTRICK"><SPAN CLASS="definition">LUA_NANTRICK</SPAN></A>
+
+/* pentium 64 bits? */
+#elif defined(__x86_64)                                         /* }{ */
+
+#define <A HREF="luaconf.h.html#LUA_IEEE754TRICK">LUA_IEEE754TRICK</A>
+#define <A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A>          0
+
+#elif defined(__POWERPC__) || defined(__ppc__)                  /* }{ */
+
+#define <A HREF="luaconf.h.html#LUA_IEEE754TRICK">LUA_IEEE754TRICK</A>
+#define <A NAME="LUA_IEEEENDIAN"><SPAN CLASS="definition">LUA_IEEEENDIAN</SPAN></A>          1
+
+#else                                                           /* }{ */
+
+/* assume IEEE754 and a 32-bit integer type */
+#define <A NAME="LUA_IEEE754TRICK"><SPAN CLASS="definition">LUA_IEEE754TRICK</SPAN></A>
+
+#endif                                                          /* } */
+
+#endif                                                  /* } */
+
+/* }================================================================== */
+
+
+
+
+/* =================================================================== */
+
+/*
+** Local configuration. You can use this space to add your redefinitions
+** without modifying the <A HREF="lua.c.html#main">main</A> part of the file.
+*/
+
+
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:41 2016
+</P>
+
+</BODY>
+</HTML>

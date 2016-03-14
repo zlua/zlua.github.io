@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>Programming in Lua : p1</title>
+<link rel="stylesheet" type="text/css" href="pil.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</head>
+<body>
+<p class="warning">
+<A HREF="contents.html"><IMG TITLE="Programming in Lua (first edition)" SRC="capa.jpg" ALT="" ALIGN="left"></A>This first edition was written for Lua 5.0. While still largely relevant for later versions, there are some differences.<BR>The third edition targets Lua 5.2 and is available at <A HREF="http://www.amazon.com/exec/obidos/ASIN/859037985X/theprogrammil3-20">Amazon</A> and other bookstores.<BR>By buying the book, you also help to <A HREF="../donations.html">support the Lua project</A>.
+</p>
+<table width="100%" class="nav">
+<tr>
+<td width="10%" align="left"></td>
+<td width="80%" align="center"><a href="contents.html">
+<font color="gray">Programming in </font><font color="blue"> Lua</font>
+</a></td>
+<td width="10%" align="right"><a href="p1.1.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+<tr>
+<td width="10%" align="left"></td>
+<td width="80%" align="center"><a href="contents.html#0">Preface</a></td>
+<td width="10%" align="right"></td></tr>
+</table>
+<hr>
+<h1>Preface</h1>
+
+<p>Currently,
+many programming languages are concerned with how to help you
+write programs with hundreds of thousands of lines.
+For that, they offer you packages, namespaces,
+complex type systems,
+a myriad of constructions,
+and thousands of documentation pages to be studied.
+
+<p>Lua does not try to help you
+write programs with hundreds of thousands of lines.
+Instead, Lua tries to help you solve
+your problem with only hundreds of lines, or even less.
+To achieve this aim,
+Lua relies on <em>extensibility</em>, like many other languages.
+Unlike most other languages, however,
+Lua is easily extended not only with software written in Lua itself,
+but also with software written in other languages,
+such as C and C++.
+
+<p>Lua was designed, from the beginning,
+to be integrated with software written in C
+and other conventional languages.
+This duality of languages brings many benefits.
+Lua is a tiny and simple language,
+partly because it does not try to do
+what C is already good for,
+such as sheer performance, low-level operations,
+or interface with third-party software.
+Lua relies on C for those tasks.
+What Lua does offer is what C is not good for:
+a good distance from the hardware,
+dynamic structures, no redundancies, ease of testing and debugging.
+For that, Lua has a safe environment,
+automatic memory management,
+and great facility to handle strings and other
+kinds of data with dynamic size.
+
+<p>More than being an extensible language,
+Lua is also a <em>glue language</em>.
+Lua supports a component-based approach to software development,
+where we create an application by gluing together
+existing high-level components.
+Usually, these components are written in a compiled,
+statically typed language, such as C or C++;
+Lua is the glue that we use to compose and connect those components.
+Usually, the components (or objects) represent more concrete,
+low-level concepts (such as widgets and data structures)
+that are not subject to many changes during program development
+and that take the bulk of the CPU time of the final program.
+Lua gives the final shape of the application,
+which will probably change a lot during the life cycle of the product.
+However, unlike other glue technologies,
+Lua is a full-fledged language as well.
+Therefore, we can use Lua not only to glue components,
+but also to adapt and reshape them,
+or even to create whole new components.
+
+<p>Of course, Lua is not the only scripting language around.
+There are other languages that you can use for more or less
+the same purposes,
+such as Perl, Tcl, Ruby, Forth, and Python.
+The following features set Lua apart from these languages;
+although other languages share some of these features with Lua,
+no other language offers a similar profile:
+<ul>
+
+<li> <em>Extensibility:</em>
+Lua's extensibility is so remarkable that many people
+regard Lua not as a language,
+but as a kit for building domain-specific languages.
+Lua has been designed from scratch to be extended,
+both through Lua code and through external C code.
+As a proof of concept,
+it implements most of its own basic functionality
+through external libraries.
+It is really easy to interface Lua with C/C++
+and other languages,
+such as Fortran, Java, Smalltalk, Ada,
+and even with other scripting languages.
+
+<li> <em>Simplicity:</em>
+Lua is a simple and small language.
+It has few (but powerful) concepts.
+This simplicity makes Lua easy to learn
+and contributes for a small implementation.
+Its complete distribution (source code, manual, plus binaries for
+some platforms) fits comfortably in a floppy disk.
+
+<li> <em>Efficiency:</em>
+Lua has a quite efficient implementation.
+Independent benchmarks show Lua as one of the fastest languages
+in the realm of scripting (interpreted) languages.
+
+<li> <em>Portability:</em>
+When we talk about portability,
+we are not talking about running Lua
+both on Windows and on Unix platforms.
+We are talking about running Lua
+on all platforms we have ever heard about:
+NextStep, OS/2, PlayStation II (Sony), Mac OS-9 and OS X,
+BeOS, MS-DOS, IBM mainframes,
+EPOC, PalmOS, MCF5206eLITE Evaluation Board,
+RISC OS,
+plus of course all flavors of Unix and Windows.
+The source code for each of these platforms is virtually the same.
+Lua does not use conditional compilation
+to adapt its code to different machines;
+instead, it sticks to the standard ANSI (ISO) C.
+That way, usually you do not need to adapt it to a new environment:
+If you have an ANSI C compiler, you just have to compile Lua,
+out of the box.
+
+</ul>
+
+<p>A great part of the power of Lua comes from its libraries.
+This is not by chance.
+One of the main strengths of Lua is its extensibility
+through new types and functions.
+Many features contribute to this strength.
+Dynamic typing allows a great degree of polymorphism.
+Automatic memory management simplifies interfaces,
+because there is no need to decide who is responsible
+for allocating and deallocating memory, or how to handle overflows.
+Higher-order functions and anonymous functions allow
+a high degree of parametrization,
+making functions more versatile.
+
+<p>Lua comes with a small set of standard libraries.
+When installing Lua in a strongly limited environment,
+such as embedded processors,
+it may be wise to choose carefully which libraries you need.
+Moreover, if the limitations are hard,
+it is easy to go inside the libraries' source code
+and choose one by one which functions should be kept.
+
+Remember, however, that Lua is rather small
+(even with all standard libraries)
+and in most systems you can use the whole package without any concerns.
+
+<hr>
+<table width="100%" class="nav">
+<tr>
+<td width="90%" align="left">
+<small>
+  Copyright &copy; 2003&ndash;2004 Roberto Ierusalimschy.  All rights reserved.
+</small>
+</td>
+<td width="10%" align="right"><a href="p1.1.html"><img src="right.png" alt="Next"></a></td>
+</tr>
+</table>
+
+
+</body></html>
+

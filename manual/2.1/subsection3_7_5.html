@@ -1,0 +1,47 @@
+<HEAD>
+<TITLE>7.5 A CFunction</TITLE>
+</HEAD>
+<BODY>
+<B> Next:</B> <A HREF=subsection3_7_6.html>7.6 Calling Lua Functions </A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=subsection3_7_4.html>7.4 Inheritance</A>
+<H2><A NAME=S0750>7.5 A CFunction</A></H2>
+ <A NAME=exCFunction></A>
+A CFunction to compute the maximum of a variable number of arguments
+is shown below.
+<TT><B><B><PRE>
+void math_max (void)
+{
+ int i=1;   /* number of arguments */
+ double d, dmax;
+ lua_Object o;
+ /* the function must get at least one argument */
+ if ((o = lua_getparam(i++)) == LUA_NOOBJECT)
+   lua_error (&quot;too few arguments to function `max'&quot;);
+ /* and this argument must be a number */
+ if (!lua_isnumber(o))
+   lua_error (&quot;incorrect argument to function `max'&quot;);
+ dmax = lua_getnumber (o);
+ /* loops until there is no more arguments */
+ while ((o = lua_getparam(i++)) != LUA_NOOBJECT)
+ {
+  if (!lua_isnumber(o))
+    lua_error (&quot;incorrect argument to function `max'&quot;);
+  d = lua_getnumber (o);
+  if (d &gt; dmax) dmax = d;
+ }
+ /* push the result to be returned */
+ lua_pushnumber (dmax);
+}</PRE></B></B></TT>
+After registered with
+<TT><B><B><PRE>
+lua_register (&quot;max&quot;, math_max);</PRE></B></B></TT>
+this function is available in Lua, as follows:
+<TT><B><B><PRE>
+i = max(4, 5, 10, -34)  -- i receives 10</PRE></B></B></TT>
+<P>
+<B> Next:</B> <A HREF=subsection3_7_6.html>7.6 Calling Lua Functions </A>
+<B>Up:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B> Previous:</B> <A HREF=subsection3_7_4.html>7.4 Inheritance</A>
+
+</BODY>

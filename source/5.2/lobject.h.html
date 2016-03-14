@@ -1,0 +1,642 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.2.4 source code - lobject.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lobject.h
+<SPAN CLASS="note">(5.2.4)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lobject.h,v 2.71.1.2 2014/05/07 14:14:58 roberto Exp $
+** Type definitions for Lua objects
+** See Copyright Notice in lua.h
+*/
+
+
+#ifndef <A HREF="lobject.h.html#lobject_h">lobject_h</A>
+#define <A NAME="lobject_h"><SPAN CLASS="definition">lobject_h</SPAN></A>
+
+
+#include &lt;stdarg.h&gt;
+
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+/*
+** Extra tags for non-values
+*/
+#define <A NAME="LUA_TPROTO"><SPAN CLASS="definition">LUA_TPROTO</SPAN></A>      <A HREF="lua.h.html#LUA_NUMTAGS">LUA_NUMTAGS</A>
+#define <A NAME="LUA_TUPVAL"><SPAN CLASS="definition">LUA_TUPVAL</SPAN></A>      (<A HREF="lua.h.html#LUA_NUMTAGS">LUA_NUMTAGS</A>+1)
+#define <A NAME="LUA_TDEADKEY"><SPAN CLASS="definition">LUA_TDEADKEY</SPAN></A>    (<A HREF="lua.h.html#LUA_NUMTAGS">LUA_NUMTAGS</A>+2)
+
+/*
+** number of all possible tags (including <A HREF="lua.h.html#LUA_TNONE">LUA_TNONE</A> but excluding DEADKEY)
+*/
+#define <A NAME="LUA_TOTALTAGS"><SPAN CLASS="definition">LUA_TOTALTAGS</SPAN></A>   (<A HREF="lobject.h.html#LUA_TUPVAL">LUA_TUPVAL</A>+2)
+
+
+/*
+** tags for Tagged Values have the following use of bits:
+** bits 0-3: actual tag (a LUA_T* value)
+** bits 4-5: variant bits
+** bit 6: whether value is collectable
+*/
+
+#define <A NAME="VARBITS"><SPAN CLASS="definition">VARBITS</SPAN></A>         (3 &lt;&lt; 4)
+
+
+/*
+** <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A> variants:
+** 0 - Lua function
+** 1 - light C function
+** 2 - regular C function (closure)
+*/
+
+/* Variant tags for functions */
+#define <A NAME="LUA_TLCL"><SPAN CLASS="definition">LUA_TLCL</SPAN></A>        (<A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A> | (0 &lt;&lt; 4))  /* Lua closure */
+#define <A NAME="LUA_TLCF"><SPAN CLASS="definition">LUA_TLCF</SPAN></A>        (<A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A> | (1 &lt;&lt; 4))  /* light C function */
+#define <A NAME="LUA_TCCL"><SPAN CLASS="definition">LUA_TCCL</SPAN></A>        (<A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A> | (2 &lt;&lt; 4))  /* C closure */
+
+
+/* Variant tags for strings */
+#define <A NAME="LUA_TSHRSTR"><SPAN CLASS="definition">LUA_TSHRSTR</SPAN></A>     (<A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A> | (0 &lt;&lt; 4))  /* short strings */
+#define <A NAME="LUA_TLNGSTR"><SPAN CLASS="definition">LUA_TLNGSTR</SPAN></A>     (<A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A> | (1 &lt;&lt; 4))  /* long strings */
+
+
+/* Bit mark for collectable types */
+#define <A NAME="BIT_ISCOLLECTABLE"><SPAN CLASS="definition">BIT_ISCOLLECTABLE</SPAN></A>       (1 &lt;&lt; 6)
+
+/* mark a tag as collectable */
+#define <A NAME="ctb"><SPAN CLASS="definition">ctb</SPAN></A>(t)                  ((t) | <A HREF="lobject.h.html#BIT_ISCOLLECTABLE">BIT_ISCOLLECTABLE</A>)
+
+
+/*
+** Union of all collectable objects
+*/
+typedef union <A NAME="GCObject"><SPAN CLASS="definition">GCObject</SPAN></A> <A NAME="GCObject"><SPAN CLASS="definition">GCObject</SPAN></A>;
+
+
+/*
+** Common Header for all collectable objects (in macro form, to be
+** included in other objects)
+*/
+#define <A NAME="CommonHeader"><SPAN CLASS="definition">CommonHeader</SPAN></A>    <A HREF="lobject.h.html#GCObject">GCObject</A> *next; <A HREF="llimits.h.html#lu_byte">lu_byte</A> tt; <A HREF="llimits.h.html#lu_byte">lu_byte</A> marked
+
+
+/*
+** Common header in struct form
+*/
+typedef struct <A NAME="GCheader"><SPAN CLASS="definition">GCheader</SPAN></A> {
+  <A HREF="lobject.h.html#CommonHeader">CommonHeader</A>;
+} <A HREF="lobject.h.html#GCheader">GCheader</A>;
+
+
+
+/*
+** Union of all Lua values
+*/
+typedef union <A HREF="lobject.h.html#Value">Value</A> <A HREF="lobject.h.html#Value">Value</A>;
+
+
+#define <A HREF="lobject.h.html#numfield">numfield</A>        <A HREF="lua.h.html#lua_Number">lua_Number</A> n;    /* numbers */
+
+
+
+/*
+** Tagged Values. This is the basic representation of values in Lua,
+** an actual value plus a tag with its type.
+*/
+
+#define <A HREF="lobject.h.html#TValuefields">TValuefields</A>    <A HREF="lobject.h.html#Value">Value</A> value_; int <A HREF="lobject.h.html#tt_">tt_</A>
+
+typedef struct <A HREF="lobject.h.html#lua_TValue">lua_TValue</A> <A NAME="TValue"><SPAN CLASS="definition">TValue</SPAN></A>;
+
+
+/* macro defining a nil value */
+#define <A HREF="lobject.h.html#NILCONSTANT">NILCONSTANT</A>     {NULL}, <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>
+
+
+#define <A HREF="lobject.h.html#val_">val_</A>(o)         ((o)-&gt;value_)
+#define <A HREF="lobject.h.html#num_">num_</A>(o)         (<A HREF="lobject.h.html#val_">val_</A>(o).n)
+
+
+/* raw type tag of a <A HREF="lobject.h.html#TValue">TValue</A> */
+#define <A HREF="lobject.h.html#rttype">rttype</A>(o)       ((o)-&gt;<A HREF="lobject.h.html#tt_">tt_</A>)
+
+/* tag with no variants (bits 0-3) */
+#define <A NAME="novariant"><SPAN CLASS="definition">novariant</SPAN></A>(x)    ((x) &amp; 0x0F)
+
+/* type tag of a <A HREF="lobject.h.html#TValue">TValue</A> (bits 0-3 for tags + variant bits 4-5) */
+#define <A NAME="ttype"><SPAN CLASS="definition">ttype</SPAN></A>(o)        (<A HREF="lobject.h.html#rttype">rttype</A>(o) &amp; 0x3F)
+
+/* type tag of a <A HREF="lobject.h.html#TValue">TValue</A> with no variants (bits 0-3) */
+#define <A NAME="ttypenv"><SPAN CLASS="definition">ttypenv</SPAN></A>(o)      (<A HREF="lobject.h.html#novariant">novariant</A>(<A HREF="lobject.h.html#rttype">rttype</A>(o)))
+
+
+/* Macros to test type */
+#define <A HREF="lobject.h.html#checktag">checktag</A>(o,t)           (<A HREF="lobject.h.html#rttype">rttype</A>(o) == (t))
+#define <A HREF="lobject.h.html#checktype">checktype</A>(o,t)          (<A HREF="lobject.h.html#ttypenv">ttypenv</A>(o) == (t))
+#define <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(o)           <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>)
+#define <A NAME="ttisnil"><SPAN CLASS="definition">ttisnil</SPAN></A>(o)              <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>)
+#define <A NAME="ttisboolean"><SPAN CLASS="definition">ttisboolean</SPAN></A>(o)          <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>)
+#define <A NAME="ttislightuserdata"><SPAN CLASS="definition">ttislightuserdata</SPAN></A>(o)    <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lua.h.html#LUA_TLIGHTUSERDATA">LUA_TLIGHTUSERDATA</A>)
+#define <A NAME="ttisstring"><SPAN CLASS="definition">ttisstring</SPAN></A>(o)           <A HREF="lobject.h.html#checktype">checktype</A>((o), <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>)
+#define <A NAME="ttisshrstring"><SPAN CLASS="definition">ttisshrstring</SPAN></A>(o)        <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lobject.h.html#LUA_TSHRSTR">LUA_TSHRSTR</A>))
+#define <A NAME="ttislngstring"><SPAN CLASS="definition">ttislngstring</SPAN></A>(o)        <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lobject.h.html#LUA_TLNGSTR">LUA_TLNGSTR</A>))
+#define <A NAME="ttistable"><SPAN CLASS="definition">ttistable</SPAN></A>(o)            <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>))
+#define <A NAME="ttisfunction"><SPAN CLASS="definition">ttisfunction</SPAN></A>(o)         <A HREF="lobject.h.html#checktype">checktype</A>(o, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>)
+#define <A NAME="ttisclosure"><SPAN CLASS="definition">ttisclosure</SPAN></A>(o)          ((<A HREF="lobject.h.html#rttype">rttype</A>(o) &amp; 0x1F) == <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>)
+#define <A NAME="ttisCclosure"><SPAN CLASS="definition">ttisCclosure</SPAN></A>(o)         <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>))
+#define <A NAME="ttisLclosure"><SPAN CLASS="definition">ttisLclosure</SPAN></A>(o)         <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>))
+#define <A NAME="ttislcf"><SPAN CLASS="definition">ttislcf</SPAN></A>(o)              <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#LUA_TLCF">LUA_TLCF</A>)
+#define <A NAME="ttisuserdata"><SPAN CLASS="definition">ttisuserdata</SPAN></A>(o)         <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>))
+#define <A NAME="ttisthread"><SPAN CLASS="definition">ttisthread</SPAN></A>(o)           <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lua.h.html#LUA_TTHREAD">LUA_TTHREAD</A>))
+#define <A NAME="ttisdeadkey"><SPAN CLASS="definition">ttisdeadkey</SPAN></A>(o)          <A HREF="lobject.h.html#checktag">checktag</A>((o), <A HREF="lobject.h.html#LUA_TDEADKEY">LUA_TDEADKEY</A>)
+
+#define <A HREF="lobject.h.html#ttisequal">ttisequal</A>(o1,o2)        (<A HREF="lobject.h.html#rttype">rttype</A>(o1) == <A HREF="lobject.h.html#rttype">rttype</A>(o2))
+
+/* Macros to access values */
+#define <A NAME="nvalue"><SPAN CLASS="definition">nvalue</SPAN></A>(o)       <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(o), <A HREF="lobject.h.html#num_">num_</A>(o))
+#define <A NAME="gcvalue"><SPAN CLASS="definition">gcvalue</SPAN></A>(o)      <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#iscollectable">iscollectable</A>(o), <A HREF="lobject.h.html#val_">val_</A>(o).gc)
+#define <A NAME="pvalue"><SPAN CLASS="definition">pvalue</SPAN></A>(o)       <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttislightuserdata">ttislightuserdata</A>(o), <A HREF="lobject.h.html#val_">val_</A>(o).p)
+#define <A NAME="rawtsvalue"><SPAN CLASS="definition">rawtsvalue</SPAN></A>(o)   <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisstring">ttisstring</A>(o), &amp;<A HREF="lobject.h.html#val_">val_</A>(o).gc-&gt;ts)
+#define <A NAME="tsvalue"><SPAN CLASS="definition">tsvalue</SPAN></A>(o)      (&amp;<A HREF="lobject.h.html#rawtsvalue">rawtsvalue</A>(o)-&gt;tsv)
+#define <A NAME="rawuvalue"><SPAN CLASS="definition">rawuvalue</SPAN></A>(o)    <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisuserdata">ttisuserdata</A>(o), &amp;<A HREF="lobject.h.html#val_">val_</A>(o).gc-&gt;u)
+#define <A NAME="uvalue"><SPAN CLASS="definition">uvalue</SPAN></A>(o)       (&amp;<A HREF="lobject.h.html#rawuvalue">rawuvalue</A>(o)-&gt;uv)
+#define <A NAME="clvalue"><SPAN CLASS="definition">clvalue</SPAN></A>(o)      <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisclosure">ttisclosure</A>(o), &amp;<A HREF="lobject.h.html#val_">val_</A>(o).gc-&gt;cl)
+#define <A NAME="clLvalue"><SPAN CLASS="definition">clLvalue</SPAN></A>(o)     <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisLclosure">ttisLclosure</A>(o), &amp;<A HREF="lobject.h.html#val_">val_</A>(o).gc-&gt;cl.l)
+#define <A NAME="clCvalue"><SPAN CLASS="definition">clCvalue</SPAN></A>(o)     <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisCclosure">ttisCclosure</A>(o), &amp;<A HREF="lobject.h.html#val_">val_</A>(o).gc-&gt;cl.c)
+#define <A NAME="fvalue"><SPAN CLASS="definition">fvalue</SPAN></A>(o)       <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttislcf">ttislcf</A>(o), <A HREF="lobject.h.html#val_">val_</A>(o).f)
+#define <A NAME="hvalue"><SPAN CLASS="definition">hvalue</SPAN></A>(o)       <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttistable">ttistable</A>(o), &amp;<A HREF="lobject.h.html#val_">val_</A>(o).gc-&gt;h)
+#define <A NAME="bvalue"><SPAN CLASS="definition">bvalue</SPAN></A>(o)       <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisboolean">ttisboolean</A>(o), <A HREF="lobject.h.html#val_">val_</A>(o).b)
+#define <A NAME="thvalue"><SPAN CLASS="definition">thvalue</SPAN></A>(o)      <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisthread">ttisthread</A>(o), &amp;<A HREF="lobject.h.html#val_">val_</A>(o).gc-&gt;th)
+/* a dead value may get the 'gc' field, but cannot access its contents */
+#define <A NAME="deadvalue"><SPAN CLASS="definition">deadvalue</SPAN></A>(o)    <A HREF="llimits.h.html#check_exp">check_exp</A>(<A HREF="lobject.h.html#ttisdeadkey">ttisdeadkey</A>(o), <A HREF="llimits.h.html#cast">cast</A>(void *, <A HREF="lobject.h.html#val_">val_</A>(o).gc))
+
+#define <A NAME="l_isfalse"><SPAN CLASS="definition">l_isfalse</SPAN></A>(o)    (<A HREF="lobject.h.html#ttisnil">ttisnil</A>(o) || (<A HREF="lobject.h.html#ttisboolean">ttisboolean</A>(o) &amp;&amp; <A HREF="lobject.h.html#bvalue">bvalue</A>(o) == 0))
+
+
+#define <A NAME="iscollectable"><SPAN CLASS="definition">iscollectable</SPAN></A>(o)        (<A HREF="lobject.h.html#rttype">rttype</A>(o) &amp; <A HREF="lobject.h.html#BIT_ISCOLLECTABLE">BIT_ISCOLLECTABLE</A>)
+
+
+/* Macros for internal tests */
+#define <A NAME="righttt"><SPAN CLASS="definition">righttt</SPAN></A>(obj)            (<A HREF="lobject.h.html#ttype">ttype</A>(obj) == <A HREF="lobject.h.html#gcvalue">gcvalue</A>(obj)-&gt;<A HREF="lstate.h.html#gch">gch</A>.tt)
+
+#define <A NAME="checkliveness"><SPAN CLASS="definition">checkliveness</SPAN></A>(g,obj) \
+        <A HREF="llimits.h.html#lua_longassert">lua_longassert</A>(!<A HREF="lobject.h.html#iscollectable">iscollectable</A>(obj) || \
+                        (<A HREF="lobject.h.html#righttt">righttt</A>(obj) &amp;&amp; !<A HREF="lgc.h.html#isdead">isdead</A>(g,<A HREF="lobject.h.html#gcvalue">gcvalue</A>(obj))))
+
+
+/* Macros to set values */
+#define <A HREF="lobject.h.html#settt_">settt_</A>(o,t)     ((o)-&gt;<A HREF="lobject.h.html#tt_">tt_</A>=(t))
+
+#define <A HREF="lobject.h.html#setnvalue">setnvalue</A>(obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); <A HREF="lobject.h.html#num_">num_</A>(io)=(x); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>); }
+
+#define <A NAME="setnilvalue"><SPAN CLASS="definition">setnilvalue</SPAN></A>(obj) <A HREF="lobject.h.html#settt_">settt_</A>(obj, <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>)
+
+#define <A NAME="setfvalue"><SPAN CLASS="definition">setfvalue</SPAN></A>(obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); <A HREF="lobject.h.html#val_">val_</A>(io).f=(x); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lobject.h.html#LUA_TLCF">LUA_TLCF</A>); }
+
+#define <A NAME="setpvalue"><SPAN CLASS="definition">setpvalue</SPAN></A>(obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); <A HREF="lobject.h.html#val_">val_</A>(io).p=(x); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lua.h.html#LUA_TLIGHTUSERDATA">LUA_TLIGHTUSERDATA</A>); }
+
+#define <A NAME="setbvalue"><SPAN CLASS="definition">setbvalue</SPAN></A>(obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); <A HREF="lobject.h.html#val_">val_</A>(io).b=(x); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>); }
+
+#define <A NAME="setgcovalue"><SPAN CLASS="definition">setgcovalue</SPAN></A>(L,obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); <A HREF="lobject.h.html#GCObject">GCObject</A> *i_g=(x); \
+    <A HREF="lobject.h.html#val_">val_</A>(io).gc=i_g; <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lstate.h.html#gch">gch</A>(i_g)-&gt;tt)); }
+
+#define <A NAME="setsvalue"><SPAN CLASS="definition">setsvalue</SPAN></A>(L,obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); \
+    <A HREF="lobject.h.html#TString">TString</A> *x_ = (x); \
+    <A HREF="lobject.h.html#val_">val_</A>(io).gc=<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#GCObject">GCObject</A> *, x_); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lobject.h.html#ctb">ctb</A>(x_-&gt;tsv.tt)); \
+    <A HREF="lobject.h.html#checkliveness">checkliveness</A>(<A HREF="lstate.h.html#G">G</A>(L),io); }
+
+#define <A NAME="setuvalue"><SPAN CLASS="definition">setuvalue</SPAN></A>(L,obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); \
+    <A HREF="lobject.h.html#val_">val_</A>(io).gc=<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#GCObject">GCObject</A> *, (x)); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>)); \
+    <A HREF="lobject.h.html#checkliveness">checkliveness</A>(<A HREF="lstate.h.html#G">G</A>(L),io); }
+
+#define <A NAME="setthvalue"><SPAN CLASS="definition">setthvalue</SPAN></A>(L,obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); \
+    <A HREF="lobject.h.html#val_">val_</A>(io).gc=<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#GCObject">GCObject</A> *, (x)); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lua.h.html#LUA_TTHREAD">LUA_TTHREAD</A>)); \
+    <A HREF="lobject.h.html#checkliveness">checkliveness</A>(<A HREF="lstate.h.html#G">G</A>(L),io); }
+
+#define <A NAME="setclLvalue"><SPAN CLASS="definition">setclLvalue</SPAN></A>(L,obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); \
+    <A HREF="lobject.h.html#val_">val_</A>(io).gc=<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#GCObject">GCObject</A> *, (x)); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>)); \
+    <A HREF="lobject.h.html#checkliveness">checkliveness</A>(<A HREF="lstate.h.html#G">G</A>(L),io); }
+
+#define <A NAME="setclCvalue"><SPAN CLASS="definition">setclCvalue</SPAN></A>(L,obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); \
+    <A HREF="lobject.h.html#val_">val_</A>(io).gc=<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#GCObject">GCObject</A> *, (x)); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>)); \
+    <A HREF="lobject.h.html#checkliveness">checkliveness</A>(<A HREF="lstate.h.html#G">G</A>(L),io); }
+
+#define <A NAME="sethvalue"><SPAN CLASS="definition">sethvalue</SPAN></A>(L,obj,x) \
+  { <A HREF="lobject.h.html#TValue">TValue</A> *io=(obj); \
+    <A HREF="lobject.h.html#val_">val_</A>(io).gc=<A HREF="llimits.h.html#cast">cast</A>(<A HREF="lobject.h.html#GCObject">GCObject</A> *, (x)); <A HREF="lobject.h.html#settt_">settt_</A>(io, <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>)); \
+    <A HREF="lobject.h.html#checkliveness">checkliveness</A>(<A HREF="lstate.h.html#G">G</A>(L),io); }
+
+#define <A NAME="setdeadvalue"><SPAN CLASS="definition">setdeadvalue</SPAN></A>(obj)       <A HREF="lobject.h.html#settt_">settt_</A>(obj, <A HREF="lobject.h.html#LUA_TDEADKEY">LUA_TDEADKEY</A>)
+
+
+
+#define <A HREF="lobject.h.html#setobj">setobj</A>(L,obj1,obj2) \
+        { const <A HREF="lobject.h.html#TValue">TValue</A> *io2=(obj2); <A HREF="lobject.h.html#TValue">TValue</A> *io1=(obj1); \
+          io1-&gt;value_ = io2-&gt;value_; io1-&gt;<A HREF="lobject.h.html#tt_">tt_</A> = io2-&gt;<A HREF="lobject.h.html#tt_">tt_</A>; \
+          <A HREF="lobject.h.html#checkliveness">checkliveness</A>(<A HREF="lstate.h.html#G">G</A>(L),io1); }
+
+
+/*
+** different types of assignments, according to destination
+*/
+
+/* from stack to (same) stack */
+#define <A NAME="setobjs2s"><SPAN CLASS="definition">setobjs2s</SPAN></A>       <A HREF="lobject.h.html#setobj">setobj</A>
+/* to stack (not from same stack) */
+#define <A NAME="setobj2s"><SPAN CLASS="definition">setobj2s</SPAN></A>        <A HREF="lobject.h.html#setobj">setobj</A>
+#define <A NAME="setsvalue2s"><SPAN CLASS="definition">setsvalue2s</SPAN></A>     <A HREF="lobject.h.html#setsvalue">setsvalue</A>
+#define <A NAME="sethvalue2s"><SPAN CLASS="definition">sethvalue2s</SPAN></A>     <A HREF="lobject.h.html#sethvalue">sethvalue</A>
+#define <A NAME="setptvalue2s"><SPAN CLASS="definition">setptvalue2s</SPAN></A>    setptvalue
+/* from table to same table */
+#define <A NAME="setobjt2t"><SPAN CLASS="definition">setobjt2t</SPAN></A>       <A HREF="lobject.h.html#setobj">setobj</A>
+/* to table */
+#define <A NAME="setobj2t"><SPAN CLASS="definition">setobj2t</SPAN></A>        <A HREF="lobject.h.html#setobj">setobj</A>
+/* to new object */
+#define <A NAME="setobj2n"><SPAN CLASS="definition">setobj2n</SPAN></A>        <A HREF="lobject.h.html#setobj">setobj</A>
+#define <A NAME="setsvalue2n"><SPAN CLASS="definition">setsvalue2n</SPAN></A>     <A HREF="lobject.h.html#setsvalue">setsvalue</A>
+
+
+/* check whether a number is valid (useful only for NaN trick) */
+#define <A HREF="lobject.h.html#luai_checknum">luai_checknum</A>(L,o,c)    { /* empty */ }
+
+
+/*
+** {======================================================
+** NaN Trick
+** =======================================================
+*/
+#if defined(<A HREF="luaconf.h.html#LUA_NANTRICK">LUA_NANTRICK</A>)
+
+/*
+** numbers are represented in the '<A HREF="lobject.h.html#d_">d_</A>' field. All other values have the
+** value (<A HREF="lobject.h.html#NNMARK">NNMARK</A> | tag) in 'tt__'. A number with such pattern would be
+** a "signaled NaN", which is never generated by regular operations by
+** the CPU (nor by 'strtod')
+*/
+
+/* allows for external implementation for part of the trick */
+#if !defined(<A HREF="lobject.h.html#NNMARK">NNMARK</A>)    /* { */
+
+
+#if !defined(<A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A>)
+#error option '<A HREF="luaconf.h.html#LUA_NANTRICK">LUA_NANTRICK</A>' needs '<A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A>'
+#endif
+
+
+#define <A NAME="NNMARK"><SPAN CLASS="definition">NNMARK</SPAN></A>          0x7FF7A500
+#define <A NAME="NNMASK"><SPAN CLASS="definition">NNMASK</SPAN></A>          0x7FFFFF00
+
+#undef <A HREF="lobject.h.html#TValuefields">TValuefields</A>
+#undef <A HREF="lobject.h.html#NILCONSTANT">NILCONSTANT</A>
+
+#if (<A HREF="luaconf.h.html#LUA_IEEEENDIAN">LUA_IEEEENDIAN</A> == 0)       /* { */
+
+/* little endian */
+#define <A HREF="lobject.h.html#TValuefields">TValuefields</A>  \
+        union { struct { <A HREF="lobject.h.html#Value">Value</A> v__; int tt__; } i; double d__; } u
+#define <A HREF="lobject.h.html#NILCONSTANT">NILCONSTANT</A>     {{{NULL}, <A HREF="lobject.h.html#tag2tt">tag2tt</A>(<A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>)}}
+/* field-access macros */
+#define <A HREF="lobject.h.html#v_">v_</A>(o)           ((o)-&gt;u.i.v__)
+#define <A HREF="lobject.h.html#d_">d_</A>(o)           ((o)-&gt;u.d__)
+#define <A HREF="lobject.h.html#tt_">tt_</A>(o)          ((o)-&gt;u.i.tt__)
+
+#else                           /* }{ */
+
+/* big endian */
+#define <A NAME="TValuefields"><SPAN CLASS="definition">TValuefields</SPAN></A>  \
+        union { struct { int tt__; <A HREF="lobject.h.html#Value">Value</A> v__; } i; double d__; } u
+#define <A NAME="NILCONSTANT"><SPAN CLASS="definition">NILCONSTANT</SPAN></A>     {{<A HREF="lobject.h.html#tag2tt">tag2tt</A>(<A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>), {NULL}}}
+/* field-access macros */
+#define <A NAME="v_"><SPAN CLASS="definition">v_</SPAN></A>(o)           ((o)-&gt;u.i.v__)
+#define <A NAME="d_"><SPAN CLASS="definition">d_</SPAN></A>(o)           ((o)-&gt;u.d__)
+#define <A NAME="tt_"><SPAN CLASS="definition">tt_</SPAN></A>(o)          ((o)-&gt;u.i.tt__)
+
+#endif                          /* } */
+
+#endif                  /* } */
+
+
+/* correspondence with standard representation */
+#undef <A HREF="lobject.h.html#val_">val_</A>
+#define <A NAME="val_"><SPAN CLASS="definition">val_</SPAN></A>(o)         <A HREF="lobject.h.html#v_">v_</A>(o)
+#undef <A HREF="lobject.h.html#num_">num_</A>
+#define <A NAME="num_"><SPAN CLASS="definition">num_</SPAN></A>(o)         <A HREF="lobject.h.html#d_">d_</A>(o)
+
+
+#undef <A HREF="lobject.h.html#numfield">numfield</A>
+#define <A NAME="numfield"><SPAN CLASS="definition">numfield</SPAN></A>        /* no such field; numbers are the entire struct */
+
+/* basic check to distinguish numbers from non-numbers */
+#undef <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>
+#define <A NAME="ttisnumber"><SPAN CLASS="definition">ttisnumber</SPAN></A>(o)   ((<A HREF="lobject.h.html#tt_">tt_</A>(o) &amp; <A HREF="lobject.h.html#NNMASK">NNMASK</A>) != <A HREF="lobject.h.html#NNMARK">NNMARK</A>)
+
+#define <A NAME="tag2tt"><SPAN CLASS="definition">tag2tt</SPAN></A>(t)       (<A HREF="lobject.h.html#NNMARK">NNMARK</A> | (t))
+
+#undef <A HREF="lobject.h.html#rttype">rttype</A>
+#define <A NAME="rttype"><SPAN CLASS="definition">rttype</SPAN></A>(o)       (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(o) ? <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A> : <A HREF="lobject.h.html#tt_">tt_</A>(o) &amp; 0xff)
+
+#undef <A HREF="lobject.h.html#settt_">settt_</A>
+#define <A NAME="settt_"><SPAN CLASS="definition">settt_</SPAN></A>(o,t)     (<A HREF="lobject.h.html#tt_">tt_</A>(o) = <A HREF="lobject.h.html#tag2tt">tag2tt</A>(t))
+
+#undef <A HREF="lobject.h.html#setnvalue">setnvalue</A>
+#define <A NAME="setnvalue"><SPAN CLASS="definition">setnvalue</SPAN></A>(obj,x) \
+        { <A HREF="lobject.h.html#TValue">TValue</A> *io_=(obj); <A HREF="lobject.h.html#num_">num_</A>(io_)=(x); <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(io_)); }
+
+#undef <A HREF="lobject.h.html#setobj">setobj</A>
+#define <A NAME="setobj"><SPAN CLASS="definition">setobj</SPAN></A>(L,obj1,obj2) \
+        { const <A HREF="lobject.h.html#TValue">TValue</A> *o2_=(obj2); <A HREF="lobject.h.html#TValue">TValue</A> *o1_=(obj1); \
+          o1_-&gt;u = o2_-&gt;u; \
+          <A HREF="lobject.h.html#checkliveness">checkliveness</A>(<A HREF="lstate.h.html#G">G</A>(L),o1_); }
+
+
+/*
+** these redefinitions are not mandatory, but these forms are more efficient
+*/
+
+#undef <A HREF="lobject.h.html#checktag">checktag</A>
+#undef <A HREF="lobject.h.html#checktype">checktype</A>
+#define <A NAME="checktag"><SPAN CLASS="definition">checktag</SPAN></A>(o,t)   (<A HREF="lobject.h.html#tt_">tt_</A>(o) == <A HREF="lobject.h.html#tag2tt">tag2tt</A>(t))
+#define <A NAME="checktype"><SPAN CLASS="definition">checktype</SPAN></A>(o,t)  (<A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lobject.h.html#tt_">tt_</A>(o) | <A HREF="lobject.h.html#VARBITS">VARBITS</A>) == <A HREF="lobject.h.html#ctb">ctb</A>(<A HREF="lobject.h.html#tag2tt">tag2tt</A>(t) | <A HREF="lobject.h.html#VARBITS">VARBITS</A>))
+
+#undef <A HREF="lobject.h.html#ttisequal">ttisequal</A>
+#define <A NAME="ttisequal"><SPAN CLASS="definition">ttisequal</SPAN></A>(o1,o2)  \
+        (<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(o1) ? <A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(o2) : (<A HREF="lobject.h.html#tt_">tt_</A>(o1) == <A HREF="lobject.h.html#tt_">tt_</A>(o2)))
+
+
+#undef <A HREF="lobject.h.html#luai_checknum">luai_checknum</A>
+#define <A NAME="luai_checknum"><SPAN CLASS="definition">luai_checknum</SPAN></A>(L,o,c)    { if (!<A HREF="lobject.h.html#ttisnumber">ttisnumber</A>(o)) c; }
+
+#endif
+/* }====================================================== */
+
+
+
+/*
+** {======================================================
+** types and prototypes
+** =======================================================
+*/
+
+
+union <A NAME="Value"><SPAN CLASS="definition">Value</SPAN></A> {
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *gc;    /* collectable objects */
+  void *p;         /* light userdata */
+  int b;           /* booleans */
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> f; /* light C functions */
+  <A HREF="lobject.h.html#numfield">numfield</A>         /* numbers */
+};
+
+
+struct <A NAME="lua_TValue"><SPAN CLASS="definition">lua_TValue</SPAN></A> {
+  <A HREF="lobject.h.html#TValuefields">TValuefields</A>;
+};
+
+
+typedef <A HREF="lobject.h.html#TValue">TValue</A> *<A NAME="StkId"><SPAN CLASS="definition">StkId</SPAN></A>;  /* index to stack elements */
+
+
+
+
+/*
+** Header for string value; string bytes follow the end of this structure
+*/
+typedef union <A NAME="TString"><SPAN CLASS="definition">TString</SPAN></A> {
+  <A HREF="llimits.h.html#L_Umaxalign">L_Umaxalign</A> dummy;  /* ensures maximum alignment for strings */
+  struct {
+    <A HREF="lobject.h.html#CommonHeader">CommonHeader</A>;
+    <A HREF="llimits.h.html#lu_byte">lu_byte</A> extra;  /* reserved words for short strings; "has hash" for longs */
+    unsigned int hash;
+    size_t len;  /* number of characters in string */
+  } tsv;
+} <A HREF="lobject.h.html#TString">TString</A>;
+
+
+/* get the actual string (array of bytes) from a <A HREF="lobject.h.html#TString">TString</A> */
+#define <A NAME="getstr"><SPAN CLASS="definition">getstr</SPAN></A>(ts)      <A HREF="llimits.h.html#cast">cast</A>(const char *, (ts) + 1)
+
+/* get the actual string (array of bytes) from a Lua value */
+#define <A NAME="svalue"><SPAN CLASS="definition">svalue</SPAN></A>(o)       <A HREF="lobject.h.html#getstr">getstr</A>(<A HREF="lobject.h.html#rawtsvalue">rawtsvalue</A>(o))
+
+
+/*
+** Header for userdata; memory area follows the end of this structure
+*/
+typedef union <A NAME="Udata"><SPAN CLASS="definition">Udata</SPAN></A> {
+  <A HREF="llimits.h.html#L_Umaxalign">L_Umaxalign</A> dummy;  /* ensures maximum alignment for `local' udata */
+  struct {
+    <A HREF="lobject.h.html#CommonHeader">CommonHeader</A>;
+    struct <A HREF="lobject.h.html#Table">Table</A> *metatable;
+    struct <A HREF="lobject.h.html#Table">Table</A> *env;
+    size_t len;  /* number of bytes */
+  } uv;
+} <A HREF="lobject.h.html#Udata">Udata</A>;
+
+
+
+/*
+** Description of an upvalue for function prototypes
+*/
+typedef struct <A NAME="Upvaldesc"><SPAN CLASS="definition">Upvaldesc</SPAN></A> {
+  <A HREF="lobject.h.html#TString">TString</A> *name;  /* upvalue name (for debug information) */
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> instack;  /* whether it is in stack */
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> idx;  /* index of upvalue (in stack or in outer function's list) */
+} <A HREF="lobject.h.html#Upvaldesc">Upvaldesc</A>;
+
+
+/*
+** Description of a local variable for function prototypes
+** (used for debug information)
+*/
+typedef struct <A NAME="LocVar"><SPAN CLASS="definition">LocVar</SPAN></A> {
+  <A HREF="lobject.h.html#TString">TString</A> *varname;
+  int startpc;  /* first point where variable is active */
+  int endpc;    /* first point where variable is dead */
+} <A HREF="lobject.h.html#LocVar">LocVar</A>;
+
+
+/*
+** Function Prototypes
+*/
+typedef struct <A NAME="Proto"><SPAN CLASS="definition">Proto</SPAN></A> {
+  <A HREF="lobject.h.html#CommonHeader">CommonHeader</A>;
+  <A HREF="lobject.h.html#TValue">TValue</A> *k;  /* constants used by the function */
+  <A HREF="llimits.h.html#Instruction">Instruction</A> *code;
+  struct <A HREF="lobject.h.html#Proto">Proto</A> **p;  /* functions defined inside the function */
+  int *lineinfo;  /* map from opcodes to source lines (debug information) */
+  <A HREF="lobject.h.html#LocVar">LocVar</A> *locvars;  /* information about local variables (debug information) */
+  <A HREF="lobject.h.html#Upvaldesc">Upvaldesc</A> *upvalues;  /* upvalue information */
+  union <A HREF="lobject.h.html#Closure">Closure</A> *cache;  /* last created closure with this prototype */
+  <A HREF="lobject.h.html#TString">TString</A>  *source;  /* used for debug information */
+  int sizeupvalues;  /* size of 'upvalues' */
+  int sizek;  /* size of `k' */
+  int sizecode;
+  int sizelineinfo;
+  int sizep;  /* size of `p' */
+  int sizelocvars;
+  int linedefined;
+  int lastlinedefined;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *gclist;
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> numparams;  /* number of fixed parameters */
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> is_vararg;
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> maxstacksize;  /* maximum stack used by this function */
+} <A HREF="lobject.h.html#Proto">Proto</A>;
+
+
+
+/*
+** Lua Upvalues
+*/
+typedef struct <A NAME="UpVal"><SPAN CLASS="definition">UpVal</SPAN></A> {
+  <A HREF="lobject.h.html#CommonHeader">CommonHeader</A>;
+  <A HREF="lobject.h.html#TValue">TValue</A> *v;  /* points to stack or to its own value */
+  union {
+    <A HREF="lobject.h.html#TValue">TValue</A> value;  /* the value (when closed) */
+    struct {  /* double linked list (when open) */
+      struct <A HREF="lobject.h.html#UpVal">UpVal</A> *prev;
+      struct <A HREF="lobject.h.html#UpVal">UpVal</A> *next;
+    } l;
+  } u;
+} <A HREF="lobject.h.html#UpVal">UpVal</A>;
+
+
+/*
+** Closures
+*/
+
+#define <A NAME="ClosureHeader"><SPAN CLASS="definition">ClosureHeader</SPAN></A> \
+        <A HREF="lobject.h.html#CommonHeader">CommonHeader</A>; <A HREF="llimits.h.html#lu_byte">lu_byte</A> nupvalues; <A HREF="lobject.h.html#GCObject">GCObject</A> *gclist
+
+typedef struct <A NAME="CClosure"><SPAN CLASS="definition">CClosure</SPAN></A> {
+  <A HREF="lobject.h.html#ClosureHeader">ClosureHeader</A>;
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> f;
+  <A HREF="lobject.h.html#TValue">TValue</A> upvalue[1];  /* list of upvalues */
+} <A HREF="lobject.h.html#CClosure">CClosure</A>;
+
+
+typedef struct <A NAME="LClosure"><SPAN CLASS="definition">LClosure</SPAN></A> {
+  <A HREF="lobject.h.html#ClosureHeader">ClosureHeader</A>;
+  struct <A HREF="lobject.h.html#Proto">Proto</A> *p;
+  <A HREF="lobject.h.html#UpVal">UpVal</A> *upvals[1];  /* list of upvalues */
+} <A HREF="lobject.h.html#LClosure">LClosure</A>;
+
+
+typedef union <A NAME="Closure"><SPAN CLASS="definition">Closure</SPAN></A> {
+  <A HREF="lobject.h.html#CClosure">CClosure</A> c;
+  <A HREF="lobject.h.html#LClosure">LClosure</A> l;
+} <A HREF="lobject.h.html#Closure">Closure</A>;
+
+
+#define <A NAME="isLfunction"><SPAN CLASS="definition">isLfunction</SPAN></A>(o)  <A HREF="lobject.h.html#ttisLclosure">ttisLclosure</A>(o)
+
+#define <A NAME="getproto"><SPAN CLASS="definition">getproto</SPAN></A>(o)     (<A HREF="lobject.h.html#clLvalue">clLvalue</A>(o)-&gt;p)
+
+
+/*
+** Tables
+*/
+
+typedef union <A NAME="TKey"><SPAN CLASS="definition">TKey</SPAN></A> {
+  struct {
+    <A HREF="lobject.h.html#TValuefields">TValuefields</A>;
+    struct <A HREF="lobject.h.html#Node">Node</A> *next;  /* for chaining */
+  } nk;
+  <A HREF="lobject.h.html#TValue">TValue</A> tvk;
+} <A HREF="lobject.h.html#TKey">TKey</A>;
+
+
+typedef struct <A NAME="Node"><SPAN CLASS="definition">Node</SPAN></A> {
+  <A HREF="lobject.h.html#TValue">TValue</A> i_val;
+  <A HREF="lobject.h.html#TKey">TKey</A> i_key;
+} <A HREF="lobject.h.html#Node">Node</A>;
+
+
+typedef struct <A NAME="Table"><SPAN CLASS="definition">Table</SPAN></A> {
+  <A HREF="lobject.h.html#CommonHeader">CommonHeader</A>;
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> flags;  /* 1&lt;&lt;p means tagmethod(p) is not present */
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> lsizenode;  /* log2 of size of `node' array */
+  int sizearray;  /* size of `array' array */
+  <A HREF="lobject.h.html#TValue">TValue</A> *array;  /* array part */
+  <A HREF="lobject.h.html#Node">Node</A> *node;
+  <A HREF="lobject.h.html#Node">Node</A> *lastfree;  /* any free position is before this position */
+  struct <A HREF="lobject.h.html#Table">Table</A> *metatable;
+  <A HREF="lobject.h.html#GCObject">GCObject</A> *gclist;
+} <A HREF="lobject.h.html#Table">Table</A>;
+
+
+
+/*
+** `module' operation for hashing (size is always a power of 2)
+*/
+#define <A NAME="lmod"><SPAN CLASS="definition">lmod</SPAN></A>(s,size) \
+        (<A HREF="llimits.h.html#check_exp">check_exp</A>((size&amp;(size-1))==0, (<A HREF="llimits.h.html#cast">cast</A>(int, (s) &amp; ((size)-1)))))
+
+
+#define <A NAME="twoto"><SPAN CLASS="definition">twoto</SPAN></A>(x)        (1&lt;&lt;(x))
+#define <A NAME="sizenode"><SPAN CLASS="definition">sizenode</SPAN></A>(t)     (<A HREF="lobject.h.html#twoto">twoto</A>((t)-&gt;lsizenode))
+
+
+/*
+** (address of) a fixed nil value
+*/
+#define <A NAME="luaO_nilobject"><SPAN CLASS="definition">luaO_nilobject</SPAN></A>          (&amp;<A HREF="lobject.c.html#luaO_nilobject_">luaO_nilobject_</A>)
+
+
+<A HREF="luaconf.h.html#LUAI_DDEC">LUAI_DDEC</A> const <A HREF="lobject.h.html#TValue">TValue</A> <A HREF="lobject.c.html#luaO_nilobject_">luaO_nilobject_</A>;
+
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lobject.c.html#luaO_int2fb">luaO_int2fb</A> (unsigned int x);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lobject.c.html#luaO_fb2int">luaO_fb2int</A> (int x);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lobject.c.html#luaO_ceillog2">luaO_ceillog2</A> (unsigned int x);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="lua.h.html#lua_Number">lua_Number</A> <A HREF="lobject.c.html#luaO_arith">luaO_arith</A> (int op, <A HREF="lua.h.html#lua_Number">lua_Number</A> v1, <A HREF="lua.h.html#lua_Number">lua_Number</A> v2);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lobject.c.html#luaO_str2d">luaO_str2d</A> (const char *s, size_t len, <A HREF="lua.h.html#lua_Number">lua_Number</A> *result);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> int <A HREF="lobject.c.html#luaO_hexavalue">luaO_hexavalue</A> (int c);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const char *<A HREF="lobject.c.html#luaO_pushvfstring">luaO_pushvfstring</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt,
+                                                       va_list argp);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> const char *<A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void <A HREF="lobject.c.html#luaO_chunkid">luaO_chunkid</A> (char *out, const char *source, size_t len);
+
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:15:40 2016
+</P>
+
+</BODY>
+</HTML>

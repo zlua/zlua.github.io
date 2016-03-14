@@ -1,0 +1,104 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - lmem.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lmem.h
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lmem.h,v 1.43 2014/12/19 17:26:14 roberto Exp $
+** Interface to Memory Manager
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lmem.h.html#lmem_h">lmem_h</A>
+#define <A NAME="lmem_h"><SPAN CLASS="definition">lmem_h</SPAN></A>
+
+
+#include &lt;stddef.h&gt;
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+/*
+** This macro reallocs a vector 'b' from 'on' to 'n' elements, where
+** each element has size 'e'. In case of arithmetic overflow of the
+** product 'n'*'e', it raises an error (calling '<A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>'). Because
+** 'e' is always constant, it avoids the runtime division MAX_SIZET/(e).
+**
+** (The macro is somewhat complex to avoid warnings:  The 'sizeof'
+** comparison avoids a runtime comparison when overflow cannot occur.
+** The compiler should be able to optimize the real test by itself, but
+** when it does it, it may give a warning about "comparison is always
+** false due to limited range of data type"; the +1 tricks the compiler,
+** avoiding this warning but also this optimization.)
+*/
+#define <A NAME="luaM_reallocv"><SPAN CLASS="definition">luaM_reallocv</SPAN></A>(L,b,on,n,e) \
+  (((sizeof(n) &gt;= sizeof(size_t) &amp;&amp; <A HREF="llimits.h.html#cast">cast</A>(size_t, (n)) + 1 &gt; MAX_SIZET/(e)) \
+      ? <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A>(L) : <A HREF="llimits.h.html#cast_void">cast_void</A>(0)) , \
+   <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, (b), (on)*(e), (n)*(e)))
+
+/*
+** Arrays of chars do not need any test
+*/
+#define <A NAME="luaM_reallocvchar"><SPAN CLASS="definition">luaM_reallocvchar</SPAN></A>(L,b,on,n)  \
+    <A HREF="llimits.h.html#cast">cast</A>(char *, <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, (b), (on)*sizeof(char), (n)*sizeof(char)))
+
+#define <A NAME="luaM_freemem"><SPAN CLASS="definition">luaM_freemem</SPAN></A>(L, b, s)   <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, (b), (s), 0)
+#define <A NAME="luaM_free"><SPAN CLASS="definition">luaM_free</SPAN></A>(L, b)         <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, (b), sizeof(*(b)), 0)
+#define <A NAME="luaM_freearray"><SPAN CLASS="definition">luaM_freearray</SPAN></A>(L, b, n)   <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, (b), (n)*sizeof(*(b)), 0)
+
+#define <A NAME="luaM_malloc"><SPAN CLASS="definition">luaM_malloc</SPAN></A>(L,s)        <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, NULL, 0, (s))
+#define <A NAME="luaM_new"><SPAN CLASS="definition">luaM_new</SPAN></A>(L,t)           <A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.h.html#luaM_malloc">luaM_malloc</A>(L, sizeof(t)))
+#define <A NAME="luaM_newvector"><SPAN CLASS="definition">luaM_newvector</SPAN></A>(L,n,t) \
+                <A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.h.html#luaM_reallocv">luaM_reallocv</A>(L, NULL, 0, n, sizeof(t)))
+
+#define <A NAME="luaM_newobject"><SPAN CLASS="definition">luaM_newobject</SPAN></A>(L,tag,s) <A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A>(L, NULL, tag, (s))
+
+#define <A NAME="luaM_growvector"><SPAN CLASS="definition">luaM_growvector</SPAN></A>(L,v,nelems,size,t,limit,e) \
+          if ((nelems)+1 &gt; (size)) \
+            ((v)=<A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.c.html#luaM_growaux_">luaM_growaux_</A>(L,v,&amp;(size),sizeof(t),limit,e)))
+
+#define <A NAME="luaM_reallocvector"><SPAN CLASS="definition">luaM_reallocvector</SPAN></A>(L, v,oldn,n,t) \
+   ((v)=<A HREF="llimits.h.html#cast">cast</A>(t *, <A HREF="lmem.h.html#luaM_reallocv">luaM_reallocv</A>(L, v, oldn, n, sizeof(t))))
+
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> <A HREF="llimits.h.html#l_noret">l_noret</A> <A HREF="lmem.c.html#luaM_toobig">luaM_toobig</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+/* not to be called directly */
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void *<A HREF="lmem.c.html#luaM_realloc_">luaM_realloc_</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, size_t oldsize,
+                                                          size_t size);
+<A HREF="luaconf.h.html#LUAI_FUNC">LUAI_FUNC</A> void *<A HREF="lmem.c.html#luaM_growaux_">luaM_growaux_</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *block, int *size,
+                               size_t size_elem, int limit,
+                               const char *what);
+
+#endif
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:15 2015
+</P>
+
+</BODY>
+</HTML>

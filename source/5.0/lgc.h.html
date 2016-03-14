@@ -1,0 +1,60 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lgc.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lgc.h
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lgc.h,v 1.19a 2003/02/28 19:45:15 roberto Exp $
+** Garbage Collector
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lgc.h.html#lgc_h">lgc_h</A>
+#define <A NAME="lgc_h"><SPAN CLASS="definition">lgc_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+
+
+#define <A NAME="luaC_checkGC"><SPAN CLASS="definition">luaC_checkGC</SPAN></A>(L) { <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!(L-&gt;ci-&gt;state &amp; <A HREF="lstate.h.html#CI_CALLING">CI_CALLING</A>)); \
+        if (<A HREF="lstate.h.html#G">G</A>(L)-&gt;nblocks &gt;= <A HREF="lstate.h.html#G">G</A>(L)-&gt;GCthreshold) <A HREF="lgc.c.html#luaC_collectgarbage">luaC_collectgarbage</A>(L); }
+
+
+size_t <A HREF="lgc.c.html#luaC_separateudata">luaC_separateudata</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+void <A HREF="lgc.c.html#luaC_callGCTM">luaC_callGCTM</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+void <A HREF="lgc.c.html#luaC_sweep">luaC_sweep</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int all);
+void <A HREF="lgc.c.html#luaC_collectgarbage">luaC_collectgarbage</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+void <A HREF="lgc.c.html#luaC_link">luaC_link</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#GCObject">GCObject</A> *o, <A HREF="llimits.h.html#lu_byte">lu_byte</A> tt);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

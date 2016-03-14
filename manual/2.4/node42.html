@@ -1,0 +1,50 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE> Incompatibilities with version 2.2</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node43.html"> Incompatibilities with version </A>
+<B>Up:</B> <A HREF="node41.html">Incompatibilities with Previous </A>
+<B> Previous:</B> <A HREF="node41.html">Incompatibilities with Previous </A>
+<BR> <HR>
+<H2><A NAME=S1010> Incompatibilities with version 2.2</A></H2>
+<P>
+<UL><LI>
+Functions <TT><B>date</B></TT>
+ and <TT><B>time</B></TT>
+ (from <TT><B>iolib</B></TT>
+)
+have been superseded by the new version of function <TT><B>date</B></TT>
+.
+<LI>
+Function <TT><B>append</B></TT>
+ (from <TT><B>iolib</B></TT>
+) now returns 1 whenever it succeeds,
+whether the file is new or not.
+<LI>
+Function <TT><B>int2str</B></TT>
+ (from <TT><B>strlib</B></TT>
+) has been superseded by new
+function <TT><B>format</B></TT>
+, with parameter <TT><B>"%c"</B></TT>
+.
+<LI>
+The API lock mechanism has been superseded by the reference mechanism.
+However, <TT><B>lua.h</B></TT>
+ provides compatibility macros,
+so there is no need to change programs.
+<LI>
+API function <TT><B>lua_pushliteral</B></TT>
+ now is just a macro to
+<TT><B>lua_pushstring</B></TT>
+.
+</UL>
+<HR>
+<B> Next:</B> <A HREF="node43.html"> Incompatibilities with version </A>
+<B>Up:</B> <A HREF="node41.html">Incompatibilities with Previous </A>
+<B> Previous:</B> <A HREF="node41.html">Incompatibilities with Previous </A>
+<BR> <HR>

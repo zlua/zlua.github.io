@@ -1,0 +1,146 @@
+<HEAD>
+<TITLE>6.4 I/O Facilities</TITLE>
+</HEAD>
+<BODY>
+<HR>
+<B> Next:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_3.html>6.3 Mathematical Functions</A>
+<HR>
+<H2><A NAME=S0640>6.4 I/O Facilities</A></H2>
+ <A NAME=libio></A>
+<P>
+All I/O operations in Lua are done over two <I>current</I> files,
+one for reading and one for writing.
+Initially, the current input file is <TT><B>stdin</B></TT>,
+and the current output file is <TT><B>stdout</B></TT>.
+<P>
+Unless otherwise stated,
+all I/O functions return 1 on success and <B>nil</B> on failure.
+<P>
+<H3><A NAME=S0641> <TT><B>readfrom (filename)</B></TT></A></H3>
+
+<P>
+This function opens a file named <TT><B>filename</B></TT> and sets it as the
+<I>current</I> input file.
+When called without parameters,
+this function closes the current input file,
+and restores <TT><B>stdin</B></TT> as the current input file.
+<P>
+<I>System dependent:</I> if <TT><B>filename</B></TT> starts with a <TT><B>|</B></TT>,
+then a piped input is open, via function <TT><B>popen</B></TT>.
+<P>
+<H3><A NAME=S0642> <TT><B>writeto (filename)</B></TT></A></H3>
+
+<P>
+This function opens a file named <TT><B>filename</B></TT> and sets it as the
+<I>current</I> output file.
+Notice that, if the file already exists, it is completely erased with this
+operation.
+When called without parameters,
+this function closes the current output file,
+and restores <TT><B>stdout</B></TT> as the current output file.
+
+<P>
+<I>System dependent:</I> if <TT><B>filename</B></TT> starts with a <TT><B>|</B></TT>,
+then a piped output is open, via function <TT><B>popen</B></TT>.
+<P>
+<H3><A NAME=S0643> <TT><B>appendto (filename)</B></TT></A></H3>
+
+<P>
+This function opens a file named <TT><B>filename</B></TT> and sets it as the
+<I>current</I> output file.
+Unlike the <TT><B>writeto</B></TT> operation,
+this function does not erase any previous content of the file.
+This function returns 2 if the file already exists,
+1 if it creates a new file, and <B>nil</B> on failure.
+<P>
+<H3><A NAME=S0644> <TT><B>remove (filename)</B></TT></A></H3>
+
+<P>
+This function deletes the file with the given name.
+<P>
+<H3><A NAME=S0645> <TT><B>read ([format])</B></TT></A></H3>
+
+<P>
+This function returns a value read from the current input.
+An optional string argument specifies the way the input is interpreted.
+<P>
+Without a format argument, <TT><B>read</B></TT> first skips blanks, tabs and newlines.
+Then it checks whether the current character is <TT><B>"</B></TT> or <TT><B>'</B></TT>.
+If so, it reads a string up to the ending quotation mark,
+and returns this string, without the quotation marks.
+Otherwise it reads up to a blank, tab or newline.
+<P>
+The format string can have the following format:
+<TT><B><PRE>
+   ?[n]</PRE></B></TT>
+where <TT><B>?</B></TT> can be:
+<DL ><DT>'s' or 'S'
+<DD> to read a string;
+<DT>'f' or 'F'
+<DD> to read a real number;
+<DT>'i' or 'I'
+<DD> to read an integer.
+<P>
+ </DL>
+The optional <TT><B>n</B></TT> is a number which specifies how many characters
+must be read to compose the input value.
+Particularly, the format <TT><B>"s1"</B></TT> reads a single character.
+<P>
+<H3><A NAME=S0646> <TT><B>readuntil (char)</B></TT></A></H3>
+
+<P>
+Reads the current input until the first ocurrence of the given character.
+Returns the string read.
+The character itself is not read.
+<P>
+<H3><A NAME=S0647> <TT><B>write (value, [format])</B></TT></A></H3>
+
+<P>
+This function writes the value of its first argument to the current output.
+An optional second argument specifies the format to be used.
+This format is given as a string, composed of four parts.
+The first part is the only one not optional, and must be one of the
+following characters:
+<DL ><DT>'s' or 'S'
+<DD> to write strings;
+<DT>'f' or 'F'
+<DD> to write floats;
+<DT>'i' or 'I'
+<DD> to write integers.
+<P>
+ </DL>
+These characters can be followed by
+<TT><B><PRE>
+   [?][m][.n]</PRE></B></TT>
+where:
+<DL ><DT><TT><B>?</B></TT>
+<DD> indicates justification inside the field.
+<UL><DT>'<TT><B><</B></TT>'
+<DD> right justification (default);
+<DT>'<TT><B>></B></TT>'
+<DD> left justification;
+<DT>'<TT><B>|</B></TT>'
+<DD> center justification.
+</UL>
+<DT><TT><B>m</B></TT>
+<DD> Indicates the field size in characters.
+<DT><TT><B>.n</B></TT>
+<DD> For reals, indicates the number of digital places.
+For integers, it is the minimum number of digits.
+This option has no meaning for strings.
+<P>
+ </DL>
+<P>
+When called without a format string,
+this function writes numbers using the <TT><B>%g</B></TT> format
+and strings with <TT><B>%s</B></TT>.
+<P>
+<HR>
+<B> Next:</B> <A HREF=section3_7.html>7 Some Examples</A>
+<B>Up:</B> <A HREF=section3_6.html>6 Predefined Functions and </A>
+<B> Previous:</B> <A HREF=subsection3_6_3.html>6.3 Mathematical Functions</A>
+<HR>
+
+</BODY>

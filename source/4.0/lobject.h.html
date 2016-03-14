@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lobject.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lobject.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lobject.h,v 1.82 2000/10/30 17:49:19 roberto Exp $
+** Type definitions for Lua objects
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lobject.h.html#lobject_h">lobject_h</A>
+#define <A NAME="lobject_h"><SPAN CLASS="definition">lobject_h</SPAN></A>
+
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+
+#ifdef LUA_DEBUG
+#undef <A NAME="NDEBUG"><SPAN CLASS="definition">NDEBUG</SPAN></A>
+#include &lt;assert.h&gt;
+#define <A HREF="lobject.h.html#LUA_INTERNALERROR">LUA_INTERNALERROR</A>(s)    assert(((void)s,0))
+#define <A HREF="lobject.h.html#LUA_ASSERT">LUA_ASSERT</A>(c,s)         assert(((void)s,(c)))
+#else
+#define <A NAME="LUA_INTERNALERROR"><SPAN CLASS="definition">LUA_INTERNALERROR</SPAN></A>(s)    /* empty */
+#define <A NAME="LUA_ASSERT"><SPAN CLASS="definition">LUA_ASSERT</SPAN></A>(c,s)         /* empty */
+#endif
+
+
+#ifdef LUA_DEBUG
+/* to avoid warnings, and make sure value is really unused */
+#define <A HREF="lobject.h.html#UNUSED">UNUSED</A>(x)       (x=0, (void)(x))
+#else
+#define <A NAME="UNUSED"><SPAN CLASS="definition">UNUSED</SPAN></A>(x)       ((void)(x))     /* to avoid warnings */
+#endif
+
+
+/* mark for closures active in the stack */
+#define <A NAME="LUA_TMARK"><SPAN CLASS="definition">LUA_TMARK</SPAN></A>       6
+
+
+/* tags for values visible from Lua == first user-created tag */
+#define <A NAME="NUM_TAGS"><SPAN CLASS="definition">NUM_TAGS</SPAN></A>        6
+
+
+/* check whether `t' is a mark */
+#define <A NAME="is_T_MARK"><SPAN CLASS="definition">is_T_MARK</SPAN></A>(t)    ((t) == <A HREF="lobject.h.html#LUA_TMARK">LUA_TMARK</A>)
+
+
+typedef union {
+  struct <A HREF="lobject.h.html#TString">TString</A> *ts;   /* <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>, <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A> */
+  struct <A HREF="lobject.h.html#Closure">Closure</A> *cl;   /* <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A> */
+  struct <A HREF="lobject.h.html#Hash">Hash</A> *a;       /* <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A> */
+  struct <A HREF="lobject.h.html#CallInfo">CallInfo</A> *i;   /* LUA_TLMARK */
+  <A HREF="llimits.h.html#Number">Number</A> n;             /* <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A> */
+} <A NAME="Value"><SPAN CLASS="definition">Value</SPAN></A>;
+
+
+/* Macros to access values */
+#define <A NAME="ttype"><SPAN CLASS="definition">ttype</SPAN></A>(o)        ((o)-&gt;<A NAME="ttype"><SPAN CLASS="definition">ttype</SPAN></A>)
+#define <A NAME="nvalue"><SPAN CLASS="definition">nvalue</SPAN></A>(o)       ((o)-&gt;value.n)
+#define <A NAME="tsvalue"><SPAN CLASS="definition">tsvalue</SPAN></A>(o)      ((o)-&gt;value.ts)
+#define <A NAME="clvalue"><SPAN CLASS="definition">clvalue</SPAN></A>(o)      ((o)-&gt;value.cl)
+#define <A NAME="hvalue"><SPAN CLASS="definition">hvalue</SPAN></A>(o)       ((o)-&gt;value.a)
+#define <A NAME="infovalue"><SPAN CLASS="definition">infovalue</SPAN></A>(o)    ((o)-&gt;value.i)
+#define <A NAME="svalue"><SPAN CLASS="definition">svalue</SPAN></A>(o)       (<A HREF="lobject.h.html#tsvalue">tsvalue</A>(o)-&gt;str)
+
+
+typedef struct <A NAME="lua_TObject"><SPAN CLASS="definition">lua_TObject</SPAN></A> {
+  int <A HREF="lobject.h.html#ttype">ttype</A>;
+  <A HREF="lobject.h.html#Value">Value</A> value;
+} <A NAME="TObject"><SPAN CLASS="definition">TObject</SPAN></A>;
+
+
+/*
+** String headers for string table
+*/
+
+/*
+** most `malloc' libraries allocate memory in blocks of 8 bytes. <A HREF="lobject.h.html#TSPACK">TSPACK</A>
+** tries to make sizeof(<A HREF="lobject.h.html#TString">TString</A>) a multiple of this granularity, to reduce
+** waste of space.
+*/
+#define <A NAME="TSPACK"><SPAN CLASS="definition">TSPACK</SPAN></A>  ((int)sizeof(int))
+
+typedef struct <A NAME="TString"><SPAN CLASS="definition">TString</SPAN></A> {
+  union {
+    struct {  /* for strings */
+      unsigned long hash;
+      int constindex;  /* hint to reuse constants */
+    } s;
+    struct {  /* for userdata */
+      int tag;
+      void *value;
+    } d;
+  } u;
+  size_t len;
+  struct <A HREF="lobject.h.html#TString">TString</A> *nexthash;  /* chain for hash table */
+  int marked;
+  char str[<A HREF="lobject.h.html#TSPACK">TSPACK</A>];   /* variable length string!! must be the last field! */
+} <A HREF="lobject.h.html#TString">TString</A>;
+
+
+/*
+** Function Prototypes
+*/
+typedef struct <A NAME="Proto"><SPAN CLASS="definition">Proto</SPAN></A> {
+  <A HREF="llimits.h.html#Number">Number</A> *knum;  /* <A HREF="llimits.h.html#Number">Number</A> numbers used by the function */
+  int nknum;  /* size of `knum' */
+  struct <A HREF="lobject.h.html#TString">TString</A> **kstr;  /* strings used by the function */
+  int nkstr;  /* size of `kstr' */
+  struct <A HREF="lobject.h.html#Proto">Proto</A> **kproto;  /* functions defined inside the function */
+  int nkproto;  /* size of `kproto' */
+  <A HREF="llimits.h.html#Instruction">Instruction</A> *code;
+  int ncode;  /* size of `code'; when 0 means an incomplete `<A HREF="lobject.h.html#Proto">Proto</A>' */
+  short numparams;
+  short is_vararg;
+  short maxstacksize;
+  short marked;
+  struct <A HREF="lobject.h.html#Proto">Proto</A> *next;
+  /* debug information */
+  int *lineinfo;  /* map from opcodes to source lines */
+  int nlineinfo;  /* size of `lineinfo' */
+  int nlocvars;
+  struct <A HREF="lobject.h.html#LocVar">LocVar</A> *locvars;  /* information about local variables */
+  int lineDefined;
+  <A HREF="lobject.h.html#TString">TString</A>  *source;
+} <A HREF="lobject.h.html#Proto">Proto</A>;
+
+
+typedef struct <A NAME="LocVar"><SPAN CLASS="definition">LocVar</SPAN></A> {
+  <A HREF="lobject.h.html#TString">TString</A> *varname;
+  int startpc;  /* first point where variable is active */
+  int endpc;    /* first point where variable is dead */
+} <A HREF="lobject.h.html#LocVar">LocVar</A>;
+
+
+/*
+** Closures
+*/
+typedef struct <A NAME="Closure"><SPAN CLASS="definition">Closure</SPAN></A> {
+  union {
+    <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> c;  /* C functions */
+    struct <A HREF="lobject.h.html#Proto">Proto</A> *l;  /* Lua functions */
+  } f;
+  struct <A HREF="lobject.h.html#Closure">Closure</A> *next;
+  struct <A HREF="lobject.h.html#Closure">Closure</A> *mark;  /* marked closures (point to itself when not marked) */
+  short isC;  /* 0 for Lua functions, 1 for C functions */
+  short nupvalues;
+  <A HREF="lobject.h.html#TObject">TObject</A> upvalue[1];
+} <A HREF="lobject.h.html#Closure">Closure</A>;
+
+
+#define <A NAME="iscfunction"><SPAN CLASS="definition">iscfunction</SPAN></A>(o)  (<A HREF="lobject.h.html#ttype">ttype</A>(o) == <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A> &amp;&amp; <A HREF="lobject.h.html#clvalue">clvalue</A>(o)-&gt;isC)
+
+
+typedef struct <A NAME="Node"><SPAN CLASS="definition">Node</SPAN></A> {
+  <A HREF="lobject.h.html#TObject">TObject</A> <A HREF="ltable.h.html#key">key</A>;
+  <A HREF="lobject.h.html#TObject">TObject</A> <A HREF="ltable.h.html#val">val</A>;
+  struct <A HREF="lobject.h.html#Node">Node</A> *next;  /* for chaining */
+} <A HREF="lobject.h.html#Node">Node</A>;
+
+typedef struct <A NAME="Hash"><SPAN CLASS="definition">Hash</SPAN></A> {
+  <A HREF="lobject.h.html#Node">Node</A> *<A HREF="ltable.h.html#node">node</A>;
+  int htag;
+  int size;
+  <A HREF="lobject.h.html#Node">Node</A> *firstfree;  /* this position is free; all positions after it are full */
+  struct <A HREF="lobject.h.html#Hash">Hash</A> *next;
+  struct <A HREF="lobject.h.html#Hash">Hash</A> *mark;  /* marked tables (point to itself when not marked) */
+} <A HREF="lobject.h.html#Hash">Hash</A>;
+
+
+/* unmarked tables and closures are represented by pointing `mark' to
+** themselves
+*/
+#define <A NAME="ismarked"><SPAN CLASS="definition">ismarked</SPAN></A>(x)     ((x)-&gt;mark != (x))
+
+
+/*
+** informations about a call (for debugging)
+*/
+typedef struct <A NAME="CallInfo"><SPAN CLASS="definition">CallInfo</SPAN></A> {
+  struct <A HREF="lobject.h.html#Closure">Closure</A> *func;  /* function being called */
+  const <A HREF="llimits.h.html#Instruction">Instruction</A> **pc;  /* current pc of called function */
+  int lastpc;  /* last pc traced */
+  int line;  /* current line */
+  int refi;  /* current index in `lineinfo' */
+} <A HREF="lobject.h.html#CallInfo">CallInfo</A>;
+
+
+extern const <A HREF="lobject.h.html#TObject">TObject</A> <A HREF="lobject.c.html#luaO_nilobject">luaO_nilobject</A>;
+extern const char *const <A HREF="lobject.c.html#luaO_typenames">luaO_typenames</A>[];
+
+
+#define <A NAME="luaO_typename"><SPAN CLASS="definition">luaO_typename</SPAN></A>(o)        (<A HREF="lobject.c.html#luaO_typenames">luaO_typenames</A>[<A HREF="lobject.h.html#ttype">ttype</A>(o)])
+
+
+<A HREF="llimits.h.html#lint32">lint32</A> <A HREF="lobject.c.html#luaO_power2">luaO_power2</A> (<A HREF="llimits.h.html#lint32">lint32</A> n);
+char *<A HREF="lobject.c.html#luaO_openspace">luaO_openspace</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t n);
+
+int <A HREF="lobject.c.html#luaO_equalObj">luaO_equalObj</A> (const <A HREF="lobject.h.html#TObject">TObject</A> *t1, const <A HREF="lobject.h.html#TObject">TObject</A> *t2);
+int <A HREF="lobject.c.html#luaO_str2d">luaO_str2d</A> (const char *s, <A HREF="llimits.h.html#Number">Number</A> *result);
+
+void <A HREF="lobject.c.html#luaO_verror">luaO_verror</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...);
+void <A HREF="lobject.c.html#luaO_chunkid">luaO_chunkid</A> (char *out, const char *source, int len);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

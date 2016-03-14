@@ -1,0 +1,252 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - print.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+print.c
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: print.c,v 1.44 2003/04/07 20:34:20 lhf Exp $
+** print bytecodes
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;stdio.h&gt;
+
+#if 0
+#define DEBUG_PRINT
+#endif
+
+#ifndef <A HREF="print.c.html#LUA_OPNAMES">LUA_OPNAMES</A>
+#define <A NAME="LUA_OPNAMES"><SPAN CLASS="definition">LUA_OPNAMES</SPAN></A>
+#endif
+
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+
+#define <A NAME="Sizeof"><SPAN CLASS="definition">Sizeof</SPAN></A>(x)       ((int)sizeof(x))
+#define <A NAME="VOID"><SPAN CLASS="definition">VOID</SPAN></A>(p)         ((const void*)(p))
+
+static void <A NAME="PrintString"><SPAN CLASS="definition">PrintString</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f, int n)
+{
+ const char* s=<A HREF="lobject.h.html#svalue">svalue</A>(&amp;f-&gt;k[n]);
+ putchar('"');
+ for (; *s; s++)
+ {
+  switch (*s)
+  {
+   case '"': printf("\\\""); break;
+   case '\a': printf("\\a"); break;
+   case '\b': printf("\\b"); break;
+   case '\f': printf("\\f"); break;
+   case '\n': printf("\\n"); break;
+   case '\r': printf("\\r"); break;
+   case '\t': printf("\\t"); break;
+   case '\v': printf("\\v"); break;
+   default: putchar(*s); break;
+  }
+ }
+ putchar('"');
+}
+
+static void <A NAME="PrintConstant"><SPAN CLASS="definition">PrintConstant</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f, int i)
+{
+ const <A HREF="lobject.h.html#TObject">TObject</A>* o=&amp;f-&gt;k[i];
+ switch (<A HREF="lobject.h.html#ttype">ttype</A>(o))
+ {
+  case <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A>:
+        printf(<A HREF="lua.h.html#LUA_NUMBER_FMT">LUA_NUMBER_FMT</A>,<A HREF="lobject.h.html#nvalue">nvalue</A>(o));
+        break;
+  case <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A>:
+        <A HREF="print.c.html#PrintString">PrintString</A>(f,i);
+        break;
+  case <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>:
+        printf("nil");
+        break;
+  default:                              /* cannot happen */
+        printf("? type=%d",<A HREF="lobject.h.html#ttype">ttype</A>(o));
+        break;
+ }
+}
+
+static void <A NAME="PrintCode"><SPAN CLASS="definition">PrintCode</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ const <A HREF="llimits.h.html#Instruction">Instruction</A>* code=f-&gt;code;
+ int pc,n=f-&gt;sizecode;
+ for (pc=0; pc&lt;n; pc++)
+ {
+  <A HREF="llimits.h.html#Instruction">Instruction</A> i=code[pc];
+  <A HREF="lopcodes.h.html#OpCode">OpCode</A> o=<A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(i);
+  int a=<A HREF="lopcodes.h.html#GETARG_A">GETARG_A</A>(i);
+  int b=<A HREF="lopcodes.h.html#GETARG_B">GETARG_B</A>(i);
+  int c=<A HREF="lopcodes.h.html#GETARG_C">GETARG_C</A>(i);
+  int bc=<A HREF="lopcodes.h.html#GETARG_Bx">GETARG_Bx</A>(i);
+  int sbc=<A HREF="lopcodes.h.html#GETARG_sBx">GETARG_sBx</A>(i);
+  int line=<A HREF="ldebug.h.html#getline">getline</A>(f,pc);
+#if 0
+  printf("%0*lX",<A HREF="print.c.html#Sizeof">Sizeof</A>(i)*2,i);
+#endif
+  printf("\t%d\t",pc+1);
+  if (line&gt;0) printf("[%d]\t",line); else printf("[-]\t");
+  printf("%-9s\t",<A HREF="lopcodes.c.html#luaP_opnames">luaP_opnames</A>[o]);
+  switch (<A HREF="lopcodes.h.html#getOpMode">getOpMode</A>(o))
+  {
+   case <A HREF="lopcodes.h.html#iABC">iABC</A>:   printf("%d %d %d",a,b,c); break;
+   case <A HREF="lopcodes.h.html#iABx">iABx</A>:   printf("%d %d",a,bc); break;
+   case <A HREF="lopcodes.h.html#iAsBx">iAsBx</A>:  printf("%d %d",a,sbc); break;
+  }
+  switch (o)
+  {
+   case <A HREF="lopcodes.h.html#OP_LOADK">OP_LOADK</A>:
+    printf("\t; "); <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,bc);
+    break;
+   case <A HREF="lopcodes.h.html#OP_GETUPVAL">OP_GETUPVAL</A>:
+   case <A HREF="lopcodes.h.html#OP_SETUPVAL">OP_SETUPVAL</A>:
+    printf("\t; %s", (f-&gt;sizeupvalues&gt;0) ? <A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;upvalues[b]) : "-");
+    break;
+   case <A HREF="lopcodes.h.html#OP_GETGLOBAL">OP_GETGLOBAL</A>:
+   case <A HREF="lopcodes.h.html#OP_SETGLOBAL">OP_SETGLOBAL</A>:
+    printf("\t; %s",<A HREF="lobject.h.html#svalue">svalue</A>(&amp;f-&gt;k[bc]));
+    break;
+   case <A HREF="lopcodes.h.html#OP_GETTABLE">OP_GETTABLE</A>:
+   case <A HREF="lopcodes.h.html#OP_SELF">OP_SELF</A>:
+    if (c&gt;=<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>) { printf("\t; "); <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,c-<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>); }
+    break;
+   case <A HREF="lopcodes.h.html#OP_SETTABLE">OP_SETTABLE</A>:
+   case <A HREF="lopcodes.h.html#OP_ADD">OP_ADD</A>:
+   case <A HREF="lopcodes.h.html#OP_SUB">OP_SUB</A>:
+   case <A HREF="lopcodes.h.html#OP_MUL">OP_MUL</A>:
+   case <A HREF="lopcodes.h.html#OP_DIV">OP_DIV</A>:
+   case <A HREF="lopcodes.h.html#OP_POW">OP_POW</A>:
+   case <A HREF="lopcodes.h.html#OP_EQ">OP_EQ</A>:
+   case <A HREF="lopcodes.h.html#OP_LT">OP_LT</A>:
+   case <A HREF="lopcodes.h.html#OP_LE">OP_LE</A>:
+    if (b&gt;=<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A> || c&gt;=<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>)
+    {
+     printf("\t; ");
+     if (b&gt;=<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>) <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,b-<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>); else printf("-");
+     printf(" ");
+     if (c&gt;=<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>) <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,c-<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>);
+    }
+    break;
+   case <A HREF="lopcodes.h.html#OP_JMP">OP_JMP</A>:
+   case <A HREF="lopcodes.h.html#OP_FORLOOP">OP_FORLOOP</A>:
+   case <A HREF="lopcodes.h.html#OP_TFORPREP">OP_TFORPREP</A>:
+    printf("\t; to %d",sbc+pc+2);
+    break;
+   case <A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A>:
+    printf("\t; %p",<A HREF="print.c.html#VOID">VOID</A>(f-&gt;p[bc]));
+    break;
+   default:
+    break;
+  }
+  printf("\n");
+ }
+}
+
+static const char* <A NAME="Source"><SPAN CLASS="definition">Source</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ const char* s=<A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;source);
+ if (*s=='@' || *s=='=')
+  return s+1;
+ else if (*s==<A HREF="lundump.h.html#LUA_SIGNATURE">LUA_SIGNATURE</A>[0])
+  return "(bstring)";
+ else
+  return "(string)";
+}
+
+#define <A NAME="IsMain"><SPAN CLASS="definition">IsMain</SPAN></A>(f)       (f-&gt;lineDefined==0)
+
+#define <A NAME="SS"><SPAN CLASS="definition">SS</SPAN></A>(x)   (x==1)?"":"s"
+#define <A NAME="S"><SPAN CLASS="definition">S</SPAN></A>(x)    x,<A HREF="print.c.html#SS">SS</A>(x)
+
+static void <A NAME="PrintHeader"><SPAN CLASS="definition">PrintHeader</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ printf("\n%s &lt;%s:%d&gt; (%d instruction%s, %d bytes at %p)\n",
+        <A HREF="print.c.html#IsMain">IsMain</A>(f)?"<A HREF="lua.c.html#main">main</A>":"function",<A HREF="print.c.html#Source">Source</A>(f),f-&gt;lineDefined,
+        <A HREF="print.c.html#S">S</A>(f-&gt;sizecode),f-&gt;sizecode*<A HREF="print.c.html#Sizeof">Sizeof</A>(<A HREF="llimits.h.html#Instruction">Instruction</A>),<A HREF="print.c.html#VOID">VOID</A>(f));
+ printf("%d%s param%s, %d stack%s, %d upvalue%s, ",
+        f-&gt;numparams,f-&gt;is_vararg?"+":"",<A HREF="print.c.html#SS">SS</A>(f-&gt;numparams),<A HREF="print.c.html#S">S</A>(f-&gt;maxstacksize),
+        <A HREF="print.c.html#S">S</A>(f-&gt;nups));
+ printf("%d local%s, %d constant%s, %d function%s\n",
+        <A HREF="print.c.html#S">S</A>(f-&gt;sizelocvars),<A HREF="print.c.html#S">S</A>(f-&gt;sizek),<A HREF="print.c.html#S">S</A>(f-&gt;sizep));
+}
+
+#ifdef DEBUG_PRINT
+static void <A NAME="PrintConstants"><SPAN CLASS="definition">PrintConstants</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n=f-&gt;sizek;
+ printf("constants (%d) for %p:\n",n,<A HREF="print.c.html#VOID">VOID</A>(f));
+ for (i=0; i&lt;n; i++)
+ {
+  printf("\t%d\t",i);
+  <A HREF="print.c.html#PrintConstant">PrintConstant</A>(f,i);
+  printf("\n");
+ }
+}
+
+static void <A NAME="PrintLocals"><SPAN CLASS="definition">PrintLocals</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n=f-&gt;sizelocvars;
+ printf("locals (%d) for %p:\n",n,<A HREF="print.c.html#VOID">VOID</A>(f));
+ for (i=0; i&lt;n; i++)
+ {
+  printf("\t%d\t%s\t%d\t%d\n",
+  i,<A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;locvars[i].varname),f-&gt;locvars[i].startpc,f-&gt;locvars[i].endpc);
+ }
+}
+
+static void <A NAME="PrintUpvalues"><SPAN CLASS="definition">PrintUpvalues</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n=f-&gt;sizeupvalues;
+ printf("upvalues (%d) for %p:\n",n,<A HREF="print.c.html#VOID">VOID</A>(f));
+ if (f-&gt;upvalues==NULL) return;
+ for (i=0; i&lt;n; i++)
+ {
+  printf("\t%d\t%s\n",i,<A HREF="lobject.h.html#getstr">getstr</A>(f-&gt;upvalues[i]));
+ }
+}
+#endif
+
+void <A NAME="luaU_print"><SPAN CLASS="definition">luaU_print</SPAN></A>(const <A HREF="lobject.h.html#Proto">Proto</A>* f)
+{
+ int i,n=f-&gt;sizep;
+ <A HREF="print.c.html#PrintHeader">PrintHeader</A>(f);
+ <A HREF="print.c.html#PrintCode">PrintCode</A>(f);
+#ifdef DEBUG_PRINT
+ <A HREF="print.c.html#PrintConstants">PrintConstants</A>(f);
+ <A HREF="print.c.html#PrintLocals">PrintLocals</A>(f);
+ <A HREF="print.c.html#PrintUpvalues">PrintUpvalues</A>(f);
+#endif
+ for (i=0; i&lt;n; i++) <A HREF="print.c.html#luaU_print">luaU_print</A>(f-&gt;p[i]);
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

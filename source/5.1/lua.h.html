@@ -1,0 +1,423 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - lua.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lua.h
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lua.h,v 1.218.1.7 2012/01/13 20:36:20 roberto Exp $
+** Lua - An Extensible Extension Language
+** Lua.org, PUC-Rio, Brazil (http://www.lua.org)
+** See Copyright Notice at the end of this file
+*/
+
+
+#ifndef <A HREF="lua.h.html#lua_h">lua_h</A>
+#define <A NAME="lua_h"><SPAN CLASS="definition">lua_h</SPAN></A>
+
+#include &lt;stdarg.h&gt;
+#include &lt;stddef.h&gt;
+
+
+#include "<A HREF="luaconf.h.html">luaconf.h</A>"
+
+
+#define <A NAME="LUA_VERSION"><SPAN CLASS="definition">LUA_VERSION</SPAN></A>     "Lua 5.1"
+#define <A NAME="LUA_RELEASE"><SPAN CLASS="definition">LUA_RELEASE</SPAN></A>     "Lua 5.1.5"
+#define <A NAME="LUA_VERSION_NUM"><SPAN CLASS="definition">LUA_VERSION_NUM</SPAN></A> 501
+#define <A NAME="LUA_COPYRIGHT"><SPAN CLASS="definition">LUA_COPYRIGHT</SPAN></A>   "Copyright (C) 1994-2012 Lua.org, PUC-Rio"
+#define <A NAME="LUA_AUTHORS"><SPAN CLASS="definition">LUA_AUTHORS</SPAN></A>     "R. Ierusalimschy, L. H. de Figueiredo &amp; W. Celes"
+
+
+/* mark for precompiled code (`&lt;esc&gt;Lua') */
+#define <A NAME="LUA_SIGNATURE"><SPAN CLASS="definition">LUA_SIGNATURE</SPAN></A>   "\033Lua"
+
+/* option for multiple returns in `<A HREF="lapi.c.html#lua_pcall">lua_pcall</A>' and `<A HREF="lapi.c.html#lua_call">lua_call</A>' */
+#define <A NAME="LUA_MULTRET"><SPAN CLASS="definition">LUA_MULTRET</SPAN></A>     (-1)
+
+
+/*
+** pseudo-indices
+*/
+#define <A NAME="LUA_REGISTRYINDEX"><SPAN CLASS="definition">LUA_REGISTRYINDEX</SPAN></A>       (-10000)
+#define <A NAME="LUA_ENVIRONINDEX"><SPAN CLASS="definition">LUA_ENVIRONINDEX</SPAN></A>        (-10001)
+#define <A NAME="LUA_GLOBALSINDEX"><SPAN CLASS="definition">LUA_GLOBALSINDEX</SPAN></A>        (-10002)
+#define <A NAME="lua_upvalueindex"><SPAN CLASS="definition">lua_upvalueindex</SPAN></A>(i)     (<A HREF="lua.h.html#LUA_GLOBALSINDEX">LUA_GLOBALSINDEX</A>-(i))
+
+
+/* thread status; 0 is OK */
+#define <A NAME="LUA_YIELD"><SPAN CLASS="definition">LUA_YIELD</SPAN></A>       1
+#define <A NAME="LUA_ERRRUN"><SPAN CLASS="definition">LUA_ERRRUN</SPAN></A>      2
+#define <A NAME="LUA_ERRSYNTAX"><SPAN CLASS="definition">LUA_ERRSYNTAX</SPAN></A>   3
+#define <A NAME="LUA_ERRMEM"><SPAN CLASS="definition">LUA_ERRMEM</SPAN></A>      4
+#define <A NAME="LUA_ERRERR"><SPAN CLASS="definition">LUA_ERRERR</SPAN></A>      5
+
+
+typedef struct <A HREF="lstate.h.html#lua_State">lua_State</A> <A HREF="lstate.h.html#lua_State">lua_State</A>;
+
+typedef int (*<A NAME="lua_CFunction"><SPAN CLASS="definition">lua_CFunction</SPAN></A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+
+/*
+** functions that read/write blocks when loading/dumping Lua chunks
+*/
+typedef const char * (*<A NAME="lua_Reader"><SPAN CLASS="definition">lua_Reader</SPAN></A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud, size_t *sz);
+
+typedef int (*<A NAME="lua_Writer"><SPAN CLASS="definition">lua_Writer</SPAN></A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const void* p, size_t sz, void* ud);
+
+
+/*
+** prototype for memory-allocation functions
+*/
+typedef void * (*<A NAME="lua_Alloc"><SPAN CLASS="definition">lua_Alloc</SPAN></A>) (void *ud, void *ptr, size_t osize, size_t nsize);
+
+
+/*
+** basic types
+*/
+#define <A NAME="LUA_TNONE"><SPAN CLASS="definition">LUA_TNONE</SPAN></A>               (-1)
+
+#define <A NAME="LUA_TNIL"><SPAN CLASS="definition">LUA_TNIL</SPAN></A>                0
+#define <A NAME="LUA_TBOOLEAN"><SPAN CLASS="definition">LUA_TBOOLEAN</SPAN></A>            1
+#define <A NAME="LUA_TLIGHTUSERDATA"><SPAN CLASS="definition">LUA_TLIGHTUSERDATA</SPAN></A>      2
+#define <A NAME="LUA_TNUMBER"><SPAN CLASS="definition">LUA_TNUMBER</SPAN></A>             3
+#define <A NAME="LUA_TSTRING"><SPAN CLASS="definition">LUA_TSTRING</SPAN></A>             4
+#define <A NAME="LUA_TTABLE"><SPAN CLASS="definition">LUA_TTABLE</SPAN></A>              5
+#define <A NAME="LUA_TFUNCTION"><SPAN CLASS="definition">LUA_TFUNCTION</SPAN></A>           6
+#define <A NAME="LUA_TUSERDATA"><SPAN CLASS="definition">LUA_TUSERDATA</SPAN></A>           7
+#define <A NAME="LUA_TTHREAD"><SPAN CLASS="definition">LUA_TTHREAD</SPAN></A>             8
+
+
+
+/* minimum Lua stack available to a C function */
+#define <A NAME="LUA_MINSTACK"><SPAN CLASS="definition">LUA_MINSTACK</SPAN></A>    20
+
+
+/*
+** generic extra include file
+*/
+#if defined(LUA_USER_H)
+#include LUA_USER_H
+#endif
+
+
+/* type of numbers in Lua */
+typedef <A HREF="luaconf.h.html#LUA_NUMBER">LUA_NUMBER</A> <A NAME="lua_Number"><SPAN CLASS="definition">lua_Number</SPAN></A>;
+
+
+/* type for integer functions */
+typedef <A HREF="luaconf.h.html#LUA_INTEGER">LUA_INTEGER</A> <A NAME="lua_Integer"><SPAN CLASS="definition">lua_Integer</SPAN></A>;
+
+
+
+/*
+** state manipulation
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lstate.h.html#lua_State">lua_State</A> *(<A HREF="lstate.c.html#lua_newstate">lua_newstate</A>) (<A HREF="lua.h.html#lua_Alloc">lua_Alloc</A> f, void *ud);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void       (<A HREF="lstate.c.html#lua_close">lua_close</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lstate.h.html#lua_State">lua_State</A> *(<A HREF="lapi.c.html#lua_newthread">lua_newthread</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> (<A HREF="lapi.c.html#lua_atpanic">lua_atpanic</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> panicf);
+
+
+/*
+** basic stack manipulation
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_gettop">lua_gettop</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_settop">lua_settop</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_remove">lua_remove</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_insert">lua_insert</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_replace">lua_replace</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_checkstack">lua_checkstack</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int sz);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_xmove">lua_xmove</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *from, <A HREF="lstate.h.html#lua_State">lua_State</A> *to, int n);
+
+
+/*
+** access functions (stack -&gt; C)
+*/
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int             (<A HREF="lapi.c.html#lua_isnumber">lua_isnumber</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int             (<A HREF="lapi.c.html#lua_isstring">lua_isstring</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int             (<A HREF="lapi.c.html#lua_iscfunction">lua_iscfunction</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int             (<A HREF="lapi.c.html#lua_isuserdata">lua_isuserdata</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int             (<A HREF="lapi.c.html#lua_type">lua_type</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char     *(<A HREF="lapi.c.html#lua_typename">lua_typename</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int tp);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int            (<A HREF="lapi.c.html#lua_equal">lua_equal</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx1, int idx2);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int            (<A HREF="lapi.c.html#lua_rawequal">lua_rawequal</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx1, int idx2);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int            (<A HREF="lapi.c.html#lua_lessthan">lua_lessthan</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx1, int idx2);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_Number">lua_Number</A>      (<A HREF="lapi.c.html#lua_tonumber">lua_tonumber</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_Integer">lua_Integer</A>     (<A HREF="lapi.c.html#lua_tointeger">lua_tointeger</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int             (<A HREF="lapi.c.html#lua_toboolean">lua_toboolean</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char     *(<A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, size_t *len);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> size_t          (<A HREF="lapi.c.html#lua_objlen">lua_objlen</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A>   (<A HREF="lapi.c.html#lua_tocfunction">lua_tocfunction</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void           *(<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lstate.h.html#lua_State">lua_State</A>      *(<A HREF="lapi.c.html#lua_tothread">lua_tothread</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const void     *(<A HREF="lapi.c.html#lua_topointer">lua_topointer</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+
+
+/*
+** push functions (C -&gt; stack)
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushnumber">lua_pushnumber</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Number">lua_Number</A> n);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Integer">lua_Integer</A> n);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s, size_t l);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *s);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *(<A HREF="lapi.c.html#lua_pushvfstring">lua_pushvfstring</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt,
+                                                      va_list argp);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *(<A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *fmt, ...);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushcclosure">lua_pushcclosure</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> fn, int n);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int b);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_pushlightuserdata">lua_pushlightuserdata</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *p);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_pushthread">lua_pushthread</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+
+/*
+** get functions (Lua -&gt; stack)
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_gettable">lua_gettable</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_getfield">lua_getfield</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, const char *k);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_rawget">lua_rawget</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_rawgeti">lua_rawgeti</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, int n);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_createtable">lua_createtable</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narr, int nrec);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void *(<A HREF="lapi.c.html#lua_newuserdata">lua_newuserdata</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, size_t sz);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_getmetatable">lua_getmetatable</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int objindex);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_getfenv">lua_getfenv</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+
+
+/*
+** set functions (stack -&gt; Lua)
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_settable">lua_settable</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_setfield">lua_setfield</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, const char *k);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_rawset">lua_rawset</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_rawseti">lua_rawseti</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx, int n);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_setmetatable">lua_setmetatable</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int objindex);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_setfenv">lua_setfenv</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+
+
+/*
+** `load' and `call' functions (load and run Lua code)
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_call">lua_call</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nargs, int nresults);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_pcall">lua_pcall</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nargs, int nresults, int errfunc);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_cpcall">lua_cpcall</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> func, void *ud);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_load">lua_load</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Reader">lua_Reader</A> reader, void *dt,
+                                        const char *chunkname);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int (<A HREF="lapi.c.html#lua_dump">lua_dump</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Writer">lua_Writer</A> writer, void *data);
+
+
+/*
+** coroutine functions
+*/
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int  (<A HREF="ldo.c.html#lua_yield">lua_yield</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nresults);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int  (<A HREF="ldo.c.html#lua_resume">lua_resume</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int narg);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int  (<A HREF="lapi.c.html#lua_status">lua_status</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+/*
+** garbage-collection function and options
+*/
+
+#define <A NAME="LUA_GCSTOP"><SPAN CLASS="definition">LUA_GCSTOP</SPAN></A>              0
+#define <A NAME="LUA_GCRESTART"><SPAN CLASS="definition">LUA_GCRESTART</SPAN></A>           1
+#define <A NAME="LUA_GCCOLLECT"><SPAN CLASS="definition">LUA_GCCOLLECT</SPAN></A>           2
+#define <A NAME="LUA_GCCOUNT"><SPAN CLASS="definition">LUA_GCCOUNT</SPAN></A>             3
+#define <A NAME="LUA_GCCOUNTB"><SPAN CLASS="definition">LUA_GCCOUNTB</SPAN></A>            4
+#define <A NAME="LUA_GCSTEP"><SPAN CLASS="definition">LUA_GCSTEP</SPAN></A>              5
+#define <A NAME="LUA_GCSETPAUSE"><SPAN CLASS="definition">LUA_GCSETPAUSE</SPAN></A>          6
+#define <A NAME="LUA_GCSETSTEPMUL"><SPAN CLASS="definition">LUA_GCSETSTEPMUL</SPAN></A>        7
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int (<A HREF="lapi.c.html#lua_gc">lua_gc</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int what, int data);
+
+
+/*
+** miscellaneous functions
+*/
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_error">lua_error</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int   (<A HREF="lapi.c.html#lua_next">lua_next</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int idx);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void  (<A HREF="lapi.c.html#lua_concat">lua_concat</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_Alloc">lua_Alloc</A> (<A HREF="lapi.c.html#lua_getallocf">lua_getallocf</A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void **ud);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A HREF="lapi.c.html#lua_setallocf">lua_setallocf</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Alloc">lua_Alloc</A> f, void *ud);
+
+
+
+/* 
+** ===============================================================
+** some useful macros
+** ===============================================================
+*/
+
+#define <A NAME="lua_pop"><SPAN CLASS="definition">lua_pop</SPAN></A>(L,n)            <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, -(n)-1)
+
+#define <A NAME="lua_newtable"><SPAN CLASS="definition">lua_newtable</SPAN></A>(L)         <A HREF="lapi.c.html#lua_createtable">lua_createtable</A>(L, 0, 0)
+
+#define <A NAME="lua_register"><SPAN CLASS="definition">lua_register</SPAN></A>(L,n,f) (<A HREF="lua.h.html#lua_pushcfunction">lua_pushcfunction</A>(L, (f)), <A HREF="lua.h.html#lua_setglobal">lua_setglobal</A>(L, (n)))
+
+#define <A NAME="lua_pushcfunction"><SPAN CLASS="definition">lua_pushcfunction</SPAN></A>(L,f)  <A HREF="lapi.c.html#lua_pushcclosure">lua_pushcclosure</A>(L, (f), 0)
+
+#define <A NAME="lua_strlen"><SPAN CLASS="definition">lua_strlen</SPAN></A>(L,i)         <A HREF="lapi.c.html#lua_objlen">lua_objlen</A>(L, (i))
+
+#define <A NAME="lua_isfunction"><SPAN CLASS="definition">lua_isfunction</SPAN></A>(L,n)     (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, (n)) == <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>)
+#define <A NAME="lua_istable"><SPAN CLASS="definition">lua_istable</SPAN></A>(L,n)        (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, (n)) == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>)
+#define <A NAME="lua_islightuserdata"><SPAN CLASS="definition">lua_islightuserdata</SPAN></A>(L,n)        (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, (n)) == <A HREF="lua.h.html#LUA_TLIGHTUSERDATA">LUA_TLIGHTUSERDATA</A>)
+#define <A NAME="lua_isnil"><SPAN CLASS="definition">lua_isnil</SPAN></A>(L,n)          (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, (n)) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>)
+#define <A NAME="lua_isboolean"><SPAN CLASS="definition">lua_isboolean</SPAN></A>(L,n)      (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, (n)) == <A HREF="lua.h.html#LUA_TBOOLEAN">LUA_TBOOLEAN</A>)
+#define <A NAME="lua_isthread"><SPAN CLASS="definition">lua_isthread</SPAN></A>(L,n)       (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, (n)) == <A HREF="lua.h.html#LUA_TTHREAD">LUA_TTHREAD</A>)
+#define <A NAME="lua_isnone"><SPAN CLASS="definition">lua_isnone</SPAN></A>(L,n)         (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, (n)) == <A HREF="lua.h.html#LUA_TNONE">LUA_TNONE</A>)
+#define <A NAME="lua_isnoneornil"><SPAN CLASS="definition">lua_isnoneornil</SPAN></A>(L, n)   (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, (n)) &lt;= 0)
+
+#define <A NAME="lua_pushliteral"><SPAN CLASS="definition">lua_pushliteral</SPAN></A>(L, s)   \
+        <A HREF="lapi.c.html#lua_pushlstring">lua_pushlstring</A>(L, "" s, (sizeof(s)/sizeof(char))-1)
+
+#define <A NAME="lua_setglobal"><SPAN CLASS="definition">lua_setglobal</SPAN></A>(L,s)      <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, <A HREF="lua.h.html#LUA_GLOBALSINDEX">LUA_GLOBALSINDEX</A>, (s))
+#define <A NAME="lua_getglobal"><SPAN CLASS="definition">lua_getglobal</SPAN></A>(L,s)      <A HREF="lapi.c.html#lua_getfield">lua_getfield</A>(L, <A HREF="lua.h.html#LUA_GLOBALSINDEX">LUA_GLOBALSINDEX</A>, (s))
+
+#define <A NAME="lua_tostring"><SPAN CLASS="definition">lua_tostring</SPAN></A>(L,i)       <A HREF="lapi.c.html#lua_tolstring">lua_tolstring</A>(L, (i), NULL)
+
+
+
+/*
+** compatibility macros and functions
+*/
+
+#define <A NAME="lua_open"><SPAN CLASS="definition">lua_open</SPAN></A>()      <A HREF="lauxlib.c.html#luaL_newstate">luaL_newstate</A>()
+
+#define <A NAME="lua_getregistry"><SPAN CLASS="definition">lua_getregistry</SPAN></A>(L)      <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>)
+
+#define <A NAME="lua_getgccount"><SPAN CLASS="definition">lua_getgccount</SPAN></A>(L)       <A HREF="lapi.c.html#lua_gc">lua_gc</A>(L, <A HREF="lua.h.html#LUA_GCCOUNT">LUA_GCCOUNT</A>, 0)
+
+#define <A NAME="lua_Chunkreader"><SPAN CLASS="definition">lua_Chunkreader</SPAN></A>         <A HREF="lua.h.html#lua_Reader">lua_Reader</A>
+#define <A NAME="lua_Chunkwriter"><SPAN CLASS="definition">lua_Chunkwriter</SPAN></A>         <A HREF="lua.h.html#lua_Writer">lua_Writer</A>
+
+
+/* hack */
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> void <A HREF="lapi.c.html#lua_setlevel">lua_setlevel</A>       (<A HREF="lstate.h.html#lua_State">lua_State</A> *from, <A HREF="lstate.h.html#lua_State">lua_State</A> *to);
+
+
+/*
+** {======================================================================
+** Debug API
+** =======================================================================
+*/
+
+
+/*
+** Event codes
+*/
+#define <A NAME="LUA_HOOKCALL"><SPAN CLASS="definition">LUA_HOOKCALL</SPAN></A>    0
+#define <A NAME="LUA_HOOKRET"><SPAN CLASS="definition">LUA_HOOKRET</SPAN></A>     1
+#define <A NAME="LUA_HOOKLINE"><SPAN CLASS="definition">LUA_HOOKLINE</SPAN></A>    2
+#define <A NAME="LUA_HOOKCOUNT"><SPAN CLASS="definition">LUA_HOOKCOUNT</SPAN></A>   3
+#define <A NAME="LUA_HOOKTAILRET"><SPAN CLASS="definition">LUA_HOOKTAILRET</SPAN></A> 4
+
+
+/*
+** Event masks
+*/
+#define <A NAME="LUA_MASKCALL"><SPAN CLASS="definition">LUA_MASKCALL</SPAN></A>    (1 &lt;&lt; <A HREF="lua.h.html#LUA_HOOKCALL">LUA_HOOKCALL</A>)
+#define <A NAME="LUA_MASKRET"><SPAN CLASS="definition">LUA_MASKRET</SPAN></A>     (1 &lt;&lt; <A HREF="lua.h.html#LUA_HOOKRET">LUA_HOOKRET</A>)
+#define <A NAME="LUA_MASKLINE"><SPAN CLASS="definition">LUA_MASKLINE</SPAN></A>    (1 &lt;&lt; <A HREF="lua.h.html#LUA_HOOKLINE">LUA_HOOKLINE</A>)
+#define <A NAME="LUA_MASKCOUNT"><SPAN CLASS="definition">LUA_MASKCOUNT</SPAN></A>   (1 &lt;&lt; <A HREF="lua.h.html#LUA_HOOKCOUNT">LUA_HOOKCOUNT</A>)
+
+typedef struct <A HREF="lua.h.html#lua_Debug">lua_Debug</A> <A HREF="lua.h.html#lua_Debug">lua_Debug</A>;  /* activation record */
+
+
+/* Functions to be called by the debuger in specific events */
+typedef void (*<A NAME="lua_Hook"><SPAN CLASS="definition">lua_Hook</SPAN></A>) (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Debug">lua_Debug</A> *ar);
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A HREF="ldebug.c.html#lua_getstack">lua_getstack</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int level, <A HREF="lua.h.html#lua_Debug">lua_Debug</A> *ar);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *what, <A HREF="lua.h.html#lua_Debug">lua_Debug</A> *ar);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A HREF="ldebug.c.html#lua_getlocal">lua_getlocal</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lua.h.html#lua_Debug">lua_Debug</A> *ar, int n);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A HREF="ldebug.c.html#lua_setlocal">lua_setlocal</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lua.h.html#lua_Debug">lua_Debug</A> *ar, int n);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A HREF="lapi.c.html#lua_getupvalue">lua_getupvalue</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int funcindex, int n);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> const char *<A HREF="lapi.c.html#lua_setupvalue">lua_setupvalue</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int funcindex, int n);
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A HREF="ldebug.c.html#lua_sethook">lua_sethook</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Hook">lua_Hook</A> func, int mask, int count);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> <A HREF="lua.h.html#lua_Hook">lua_Hook</A> <A HREF="ldebug.c.html#lua_gethook">lua_gethook</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A HREF="ldebug.c.html#lua_gethookmask">lua_gethookmask</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A HREF="ldebug.c.html#lua_gethookcount">lua_gethookcount</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+
+
+struct <A NAME="lua_Debug"><SPAN CLASS="definition">lua_Debug</SPAN></A> {
+  int event;
+  const char *name;     /* (n) */
+  const char *namewhat; /* (n) `global', `local', `field', `method' */
+  const char *what;     /* (S) `Lua', `C', `<A HREF="lua.c.html#main">main</A>', `tail' */
+  const char *source;   /* (S) */
+  int currentline;      /* (l) */
+  int nups;             /* (u) number of upvalues */
+  int linedefined;      /* (S) */
+  int lastlinedefined;  /* (S) */
+  char short_src[<A HREF="luaconf.h.html#LUA_IDSIZE">LUA_IDSIZE</A>]; /* (S) */
+  /* private part */
+  int i_ci;  /* active function */
+};
+
+/* }====================================================================== */
+
+
+/******************************************************************************
+* Copyright (C) 1994-2012 Lua.org, PUC-Rio.  All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining
+* a copy of this software and associated documentation files (the
+* "Software"), to deal in the Software without restriction, including
+* without limitation the rights to use, copy, modify, merge, publish,
+* distribute, sublicense, and/or sell copies of the Software, and to
+* permit persons to whom the Software is furnished to do so, subject to
+* the following conditions:
+*
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+******************************************************************************/
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:56 2016
+</P>
+
+</BODY>
+</HTML>

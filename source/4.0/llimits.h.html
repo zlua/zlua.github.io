@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - llimits.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+llimits.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: llimits.h,v 1.19 2000/10/26 12:47:05 roberto Exp $
+** Limits, basic types, and some other "installation-dependent" definitions
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="llimits.h.html#llimits_h">llimits_h</A>
+#define <A NAME="llimits_h"><SPAN CLASS="definition">llimits_h</SPAN></A>
+
+
+#include &lt;limits.h&gt;
+#include &lt;stddef.h&gt;
+
+
+
+/*
+** try to find number of bits in an integer
+*/
+#ifndef <A HREF="llimits.h.html#BITS_INT">BITS_INT</A>
+/* avoid overflows in comparison */
+#if INT_MAX-20 &lt; 32760
+#define <A HREF="llimits.h.html#BITS_INT">BITS_INT</A>        16
+#else
+#if INT_MAX &gt; 2147483640L
+/* machine has at least 32 bits */
+#define <A NAME="BITS_INT"><SPAN CLASS="definition">BITS_INT</SPAN></A>        32
+#else
+#error "you must define <A HREF="llimits.h.html#BITS_INT">BITS_INT</A> with number of bits in an integer"
+#endif
+#endif
+#endif
+
+
+/*
+** Define the type `number' of Lua
+** GREP LUA_NUMBER to change that
+*/
+#ifndef <A HREF="llimits.h.html#LUA_NUM_TYPE">LUA_NUM_TYPE</A>
+#define <A NAME="LUA_NUM_TYPE"><SPAN CLASS="definition">LUA_NUM_TYPE</SPAN></A> double
+#endif
+
+typedef <A HREF="llimits.h.html#LUA_NUM_TYPE">LUA_NUM_TYPE</A> <A NAME="Number"><SPAN CLASS="definition">Number</SPAN></A>;
+
+/* function to convert a <A HREF="llimits.h.html#Number">Number</A> to a string */
+#define <A NAME="NUMBER_FMT"><SPAN CLASS="definition">NUMBER_FMT</SPAN></A>      "%.16g"         /* LUA_NUMBER */
+#define <A NAME="lua_number2str"><SPAN CLASS="definition">lua_number2str</SPAN></A>(s,n)     sprintf((s), <A HREF="llimits.h.html#NUMBER_FMT">NUMBER_FMT</A>, (n))
+
+/* function to convert a string to a <A HREF="llimits.h.html#Number">Number</A> */
+#define <A NAME="lua_str2number"><SPAN CLASS="definition">lua_str2number</SPAN></A>(s,p)     strtod((s), (p))
+
+
+
+typedef unsigned long <A NAME="lint32"><SPAN CLASS="definition">lint32</SPAN></A>;  /* unsigned int with at least 32 bits */
+
+
+#define <A NAME="MAX_SIZET"><SPAN CLASS="definition">MAX_SIZET</SPAN></A>       ((size_t)(~(size_t)0)-2)
+
+
+#define <A NAME="MAX_INT"><SPAN CLASS="definition">MAX_INT</SPAN></A> (INT_MAX-2)  /* maximum value of an int (-2 for safety) */
+
+/*
+** conversion of pointer to int (for hashing only)
+** (the shift removes bits that are usually 0 because of alignment)
+*/
+#define <A NAME="IntPoint"><SPAN CLASS="definition">IntPoint</SPAN></A>(p)  (((unsigned long)(p)) &gt;&gt; 3)
+
+
+
+#define <A NAME="MINPOWER2"><SPAN CLASS="definition">MINPOWER2</SPAN></A>       4       /* minimum size for "growing" vectors */
+
+
+
+#ifndef <A HREF="llimits.h.html#DEFAULT_STACK_SIZE">DEFAULT_STACK_SIZE</A>
+#define <A NAME="DEFAULT_STACK_SIZE"><SPAN CLASS="definition">DEFAULT_STACK_SIZE</SPAN></A>      1024
+#endif
+
+
+
+/* type to ensure maximum alignment */
+union <A NAME="L_Umaxalign"><SPAN CLASS="definition">L_Umaxalign</SPAN></A> { double d; char *s; long l; };
+
+
+
+/*
+** type for virtual-machine instructions
+** must be an unsigned with (at least) 4 bytes (see details in lopcodes.h)
+** For a very small machine, you may change that to 2 bytes (and adjust
+** the following limits accordingly)
+*/
+typedef unsigned long <A NAME="Instruction"><SPAN CLASS="definition">Instruction</SPAN></A>;
+
+
+/*
+** size and position of opcode arguments.
+** For an instruction with 2 bytes, size is 16, and size_b can be 5
+** (accordingly, size_u will be 10, and size_a will be 5)
+*/
+#define <A NAME="SIZE_INSTRUCTION"><SPAN CLASS="definition">SIZE_INSTRUCTION</SPAN></A>        32
+#define <A NAME="SIZE_B"><SPAN CLASS="definition">SIZE_B</SPAN></A>          9
+
+#define <A NAME="SIZE_OP"><SPAN CLASS="definition">SIZE_OP</SPAN></A>         6
+#define <A NAME="SIZE_U"><SPAN CLASS="definition">SIZE_U</SPAN></A>          (<A HREF="llimits.h.html#SIZE_INSTRUCTION">SIZE_INSTRUCTION</A>-<A HREF="llimits.h.html#SIZE_OP">SIZE_OP</A>)
+#define <A NAME="POS_U"><SPAN CLASS="definition">POS_U</SPAN></A>           <A HREF="llimits.h.html#SIZE_OP">SIZE_OP</A>
+#define <A NAME="POS_B"><SPAN CLASS="definition">POS_B</SPAN></A>           <A HREF="llimits.h.html#SIZE_OP">SIZE_OP</A>
+#define <A NAME="SIZE_A"><SPAN CLASS="definition">SIZE_A</SPAN></A>          (<A HREF="llimits.h.html#SIZE_INSTRUCTION">SIZE_INSTRUCTION</A>-(<A HREF="llimits.h.html#SIZE_OP">SIZE_OP</A>+<A HREF="llimits.h.html#SIZE_B">SIZE_B</A>))
+#define <A NAME="POS_A"><SPAN CLASS="definition">POS_A</SPAN></A>           (<A HREF="llimits.h.html#SIZE_OP">SIZE_OP</A>+<A HREF="llimits.h.html#SIZE_B">SIZE_B</A>)
+
+
+/*
+** limits for opcode arguments.
+** we use (signed) int to manipulate most arguments,
+** so they must fit in <A HREF="llimits.h.html#BITS_INT">BITS_INT</A>-1 bits (-1 for sign)
+*/
+#if <A HREF="llimits.h.html#SIZE_U">SIZE_U</A> &lt; <A HREF="llimits.h.html#BITS_INT">BITS_INT</A>-1
+#define <A HREF="llimits.h.html#MAXARG_U">MAXARG_U</A>        ((1&lt;&lt;<A HREF="llimits.h.html#SIZE_U">SIZE_U</A>)-1)
+#define <A HREF="llimits.h.html#MAXARG_S">MAXARG_S</A>        (<A HREF="llimits.h.html#MAXARG_U">MAXARG_U</A>&gt;&gt;1)           /* `S' is signed */
+#else
+#define <A NAME="MAXARG_U"><SPAN CLASS="definition">MAXARG_U</SPAN></A>        <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>
+#define <A NAME="MAXARG_S"><SPAN CLASS="definition">MAXARG_S</SPAN></A>        <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>
+#endif
+
+#if <A HREF="llimits.h.html#SIZE_A">SIZE_A</A> &lt; <A HREF="llimits.h.html#BITS_INT">BITS_INT</A>-1
+#define <A HREF="llimits.h.html#MAXARG_A">MAXARG_A</A>        ((1&lt;&lt;<A HREF="llimits.h.html#SIZE_A">SIZE_A</A>)-1)
+#else
+#define <A NAME="MAXARG_A"><SPAN CLASS="definition">MAXARG_A</SPAN></A>        <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>
+#endif
+
+#if <A HREF="llimits.h.html#SIZE_B">SIZE_B</A> &lt; <A HREF="llimits.h.html#BITS_INT">BITS_INT</A>-1
+#define <A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>        ((1&lt;&lt;<A HREF="llimits.h.html#SIZE_B">SIZE_B</A>)-1)
+#else
+#define <A NAME="MAXARG_B"><SPAN CLASS="definition">MAXARG_B</SPAN></A>        <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>
+#endif
+
+
+/* maximum stack size in a function */
+#ifndef <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>
+#define <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>        250
+#endif
+
+#if <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A> &gt; <A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>
+#undef <A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>
+#define <A NAME="MAXSTACK"><SPAN CLASS="definition">MAXSTACK</SPAN></A>        <A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>
+#endif
+
+
+/* maximum number of local variables */
+#ifndef <A HREF="llimits.h.html#MAXLOCALS">MAXLOCALS</A>
+#define <A HREF="llimits.h.html#MAXLOCALS">MAXLOCALS</A> 200           /* arbitrary limit (&lt;<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>) */
+#endif
+#if <A HREF="llimits.h.html#MAXLOCALS">MAXLOCALS</A>&gt;=<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>
+#undef <A HREF="llimits.h.html#MAXLOCALS">MAXLOCALS</A>
+#define <A NAME="MAXLOCALS"><SPAN CLASS="definition">MAXLOCALS</SPAN></A>       (<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>-1)
+#endif
+
+
+/* maximum number of upvalues */
+#ifndef <A HREF="llimits.h.html#MAXUPVALUES">MAXUPVALUES</A>
+#define <A HREF="llimits.h.html#MAXUPVALUES">MAXUPVALUES</A> 32          /* arbitrary limit (&lt;=<A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>) */
+#endif
+#if <A HREF="llimits.h.html#MAXUPVALUES">MAXUPVALUES</A>&gt;<A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>
+#undef <A HREF="llimits.h.html#MAXUPVALUES">MAXUPVALUES</A>
+#define <A NAME="MAXUPVALUES"><SPAN CLASS="definition">MAXUPVALUES</SPAN></A>     <A HREF="llimits.h.html#MAXARG_B">MAXARG_B</A>
+#endif
+
+
+/* maximum number of variables in the left side of an assignment */
+#ifndef <A HREF="llimits.h.html#MAXVARSLH">MAXVARSLH</A>
+#define <A HREF="llimits.h.html#MAXVARSLH">MAXVARSLH</A> 100           /* arbitrary limit (&lt;<A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>) */
+#endif
+#if <A HREF="llimits.h.html#MAXVARSLH">MAXVARSLH</A>&gt;=<A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>
+#undef <A HREF="llimits.h.html#MAXVARSLH">MAXVARSLH</A>
+#define <A NAME="MAXVARSLH"><SPAN CLASS="definition">MAXVARSLH</SPAN></A>       (<A HREF="lopcodes.h.html#MULT_RET">MULT_RET</A>-1)
+#endif
+
+
+/* maximum number of parameters in a function */
+#ifndef <A HREF="llimits.h.html#MAXPARAMS">MAXPARAMS</A>
+#define <A HREF="llimits.h.html#MAXPARAMS">MAXPARAMS</A> 100           /* arbitrary limit (&lt;<A HREF="llimits.h.html#MAXLOCALS">MAXLOCALS</A>) */
+#endif
+#if <A HREF="llimits.h.html#MAXPARAMS">MAXPARAMS</A>&gt;=<A HREF="llimits.h.html#MAXLOCALS">MAXLOCALS</A>
+#undef <A HREF="llimits.h.html#MAXPARAMS">MAXPARAMS</A>
+#define <A NAME="MAXPARAMS"><SPAN CLASS="definition">MAXPARAMS</SPAN></A>       (<A HREF="llimits.h.html#MAXLOCALS">MAXLOCALS</A>-1)
+#endif
+
+
+/* number of list items to accumulate before a SETLIST instruction */
+#define <A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>       64
+#if <A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>&gt;(<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>/4)
+#undef <A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>
+#define <A NAME="LFIELDS_PER_FLUSH"><SPAN CLASS="definition">LFIELDS_PER_FLUSH</SPAN></A>       (<A HREF="llimits.h.html#MAXSTACK">MAXSTACK</A>/4)
+#endif
+
+/* number of record items to accumulate before a SETMAP instruction */
+/* (each item counts 2 elements on the stack: an index and a value) */
+#define <A NAME="RFIELDS_PER_FLUSH"><SPAN CLASS="definition">RFIELDS_PER_FLUSH</SPAN></A>       (<A HREF="llimits.h.html#LFIELDS_PER_FLUSH">LFIELDS_PER_FLUSH</A>/2)
+
+
+/* maximum lookback to find a real constant (for code generation) */
+#ifndef <A HREF="llimits.h.html#LOOKBACKNUMS">LOOKBACKNUMS</A>
+#define <A NAME="LOOKBACKNUMS"><SPAN CLASS="definition">LOOKBACKNUMS</SPAN></A>    20      /* arbitrary constant */
+#endif
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>

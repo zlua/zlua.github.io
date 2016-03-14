@@ -1,0 +1,235 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.1.5 source code - luac.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+luac.c
+<SPAN CLASS="note">(5.1.5)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: luac.c,v 1.54 2006/06/02 17:37:11 lhf Exp $
+** Lua compiler (saves bytecodes to files; also list bytecodes)
+** See Copyright Notice in lua.h
+*/
+
+#include &lt;errno.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#define <A NAME="luac_c"><SPAN CLASS="definition">luac_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+
+#define <A NAME="PROGNAME"><SPAN CLASS="definition">PROGNAME</SPAN></A>        "luac"          /* default program name */
+#define <A NAME="OUTPUT"><SPAN CLASS="definition">OUTPUT</SPAN></A>          <A HREF="luac.c.html#PROGNAME">PROGNAME</A> ".out" /* default <A HREF="luac.c.html#output">output</A> file */
+
+static int <A NAME="listing"><SPAN CLASS="definition">listing</SPAN></A>=0;                   /* list bytecodes? */
+static int <A NAME="dumping"><SPAN CLASS="definition">dumping</SPAN></A>=1;                   /* dump bytecodes? */
+static int <A NAME="stripping"><SPAN CLASS="definition">stripping</SPAN></A>=0;                 /* strip debug information? */
+static char <A NAME="Output"><SPAN CLASS="definition">Output</SPAN></A>[]={ <A HREF="luac.c.html#OUTPUT">OUTPUT</A> };        /* default <A HREF="luac.c.html#output">output</A> file name */
+static const char* <A NAME="output"><SPAN CLASS="definition">output</SPAN></A>=<A HREF="luac.c.html#Output">Output</A>;       /* actual <A NAME="output"><SPAN CLASS="definition">output</SPAN></A> file name */
+static const char* <A NAME="progname"><SPAN CLASS="definition">progname</SPAN></A>=<A HREF="luac.c.html#PROGNAME">PROGNAME</A>;   /* actual program name */
+
+static void <A NAME="fatal"><SPAN CLASS="definition">fatal</SPAN></A>(const char* message)
+{
+ fprintf(stderr,"%s: %s\n",<A HREF="luac.c.html#progname">progname</A>,message);
+ exit(EXIT_FAILURE);
+}
+
+static void <A NAME="cannot"><SPAN CLASS="definition">cannot</SPAN></A>(const char* what)
+{
+ fprintf(stderr,"%s: <A HREF="luac.c.html#cannot">cannot</A> %s %s: %s\n",<A HREF="luac.c.html#progname">progname</A>,what,<A HREF="luac.c.html#output">output</A>,strerror(errno));
+ exit(EXIT_FAILURE);
+}
+
+static void <A NAME="usage"><SPAN CLASS="definition">usage</SPAN></A>(const char* message)
+{
+ if (*message=='-')
+  fprintf(stderr,"%s: unrecognized option " <A HREF="luaconf.h.html#LUA_QS">LUA_QS</A> "\n",<A HREF="luac.c.html#progname">progname</A>,message);
+ else
+  fprintf(stderr,"%s: %s\n",<A HREF="luac.c.html#progname">progname</A>,message);
+ fprintf(stderr,
+ "<A HREF="luac.c.html#usage">usage</A>: %s [options] [filenames].\n"
+ "Available options are:\n"
+ "  -        process stdin\n"
+ "  -l       list\n"
+ "  -o name  <A HREF="luac.c.html#output">output</A> to file " <A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("name") " (default is \"%s\")\n"
+ "  -p       parse only\n"
+ "  -s       strip debug information\n"
+ "  -v       show version information\n"
+ "  --       stop handling options\n",
+ <A HREF="luac.c.html#progname">progname</A>,<A HREF="luac.c.html#Output">Output</A>);
+ exit(EXIT_FAILURE);
+}
+
+#define <A NAME="IS"><SPAN CLASS="definition">IS</SPAN></A>(s)   (strcmp(argv[i],s)==0)
+
+static int <A NAME="doargs"><SPAN CLASS="definition">doargs</SPAN></A>(int argc, char* argv[])
+{
+ int i;
+ int version=0;
+ if (argv[0]!=NULL &amp;&amp; *argv[0]!=0) <A HREF="luac.c.html#progname">progname</A>=argv[0];
+ for (i=1; i&lt;argc; i++)
+ {
+  if (*argv[i]!='-')                    /* end of options; keep it */
+   break;
+  else if (<A HREF="luac.c.html#IS">IS</A>("--"))                    /* end of options; skip it */
+  {
+   ++i;
+   if (version) ++version;
+   break;
+  }
+  else if (<A HREF="luac.c.html#IS">IS</A>("-"))                     /* end of options; use stdin */
+   break;
+  else if (<A HREF="luac.c.html#IS">IS</A>("-l"))                    /* list */
+   ++<A HREF="luac.c.html#listing">listing</A>;
+  else if (<A HREF="luac.c.html#IS">IS</A>("-o"))                    /* <A HREF="luac.c.html#output">output</A> file */
+  {
+   <A HREF="luac.c.html#output">output</A>=argv[++i];
+   if (<A HREF="luac.c.html#output">output</A>==NULL || *<A HREF="luac.c.html#output">output</A>==0) <A HREF="luac.c.html#usage">usage</A>(<A HREF="luaconf.h.html#LUA_QL">LUA_QL</A>("-o") " needs argument");
+   if (<A HREF="luac.c.html#IS">IS</A>("-")) <A HREF="luac.c.html#output">output</A>=NULL;
+  }
+  else if (<A HREF="luac.c.html#IS">IS</A>("-p"))                    /* parse only */
+   <A HREF="luac.c.html#dumping">dumping</A>=0;
+  else if (<A HREF="luac.c.html#IS">IS</A>("-s"))                    /* strip debug information */
+   <A HREF="luac.c.html#stripping">stripping</A>=1;
+  else if (<A HREF="luac.c.html#IS">IS</A>("-v"))                    /* show version */
+   ++version;
+  else                                  /* unknown option */
+   <A HREF="luac.c.html#usage">usage</A>(argv[i]);
+ }
+ if (i==argc &amp;&amp; (<A HREF="luac.c.html#listing">listing</A> || !<A HREF="luac.c.html#dumping">dumping</A>))
+ {
+  <A HREF="luac.c.html#dumping">dumping</A>=0;
+  argv[--i]=<A HREF="luac.c.html#Output">Output</A>;
+ }
+ if (version)
+ {
+  printf("%s  %s\n",<A HREF="lua.h.html#LUA_RELEASE">LUA_RELEASE</A>,<A HREF="lua.h.html#LUA_COPYRIGHT">LUA_COPYRIGHT</A>);
+  if (version==argc-1) exit(EXIT_SUCCESS);
+ }
+ return i;
+}
+
+#define <A NAME="toproto"><SPAN CLASS="definition">toproto</SPAN></A>(L,i) (<A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top+(i))-&gt;l.p)
+
+static const <A HREF="lobject.h.html#Proto">Proto</A>* <A NAME="combine"><SPAN CLASS="definition">combine</SPAN></A>(<A HREF="lstate.h.html#lua_State">lua_State</A>* L, int n)
+{
+ if (n==1)
+  return <A HREF="luac.c.html#toproto">toproto</A>(L,-1);
+ else
+ {
+  int i,pc;
+  <A HREF="lobject.h.html#Proto">Proto</A>* f=<A HREF="lfunc.c.html#luaF_newproto">luaF_newproto</A>(L);
+  <A HREF="lobject.h.html#setptvalue2s">setptvalue2s</A>(L,L-&gt;top,f); <A HREF="ldo.h.html#incr_top">incr_top</A>(L);
+  f-&gt;source=<A HREF="lstring.h.html#luaS_newliteral">luaS_newliteral</A>(L,"=(" <A HREF="luac.c.html#PROGNAME">PROGNAME</A> ")");
+  f-&gt;maxstacksize=1;
+  pc=2*n+1;
+  f-&gt;code=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L,pc,<A HREF="llimits.h.html#Instruction">Instruction</A>);
+  f-&gt;sizecode=pc;
+  f-&gt;p=<A HREF="lmem.h.html#luaM_newvector">luaM_newvector</A>(L,n,<A HREF="lobject.h.html#Proto">Proto</A>*);
+  f-&gt;sizep=n;
+  pc=0;
+  for (i=0; i&lt;n; i++)
+  {
+   f-&gt;p[i]=<A HREF="luac.c.html#toproto">toproto</A>(L,i-n-1);
+   f-&gt;code[pc++]=<A HREF="lopcodes.h.html#CREATE_ABx">CREATE_ABx</A>(<A HREF="lopcodes.h.html#OP_CLOSURE">OP_CLOSURE</A>,0,i);
+   f-&gt;code[pc++]=<A HREF="lopcodes.h.html#CREATE_ABC">CREATE_ABC</A>(<A HREF="lopcodes.h.html#OP_CALL">OP_CALL</A>,0,1,1);
+  }
+  f-&gt;code[pc++]=<A HREF="lopcodes.h.html#CREATE_ABC">CREATE_ABC</A>(<A HREF="lopcodes.h.html#OP_RETURN">OP_RETURN</A>,0,1,0);
+  return f;
+ }
+}
+
+static int <A NAME="writer"><SPAN CLASS="definition">writer</SPAN></A>(<A HREF="lstate.h.html#lua_State">lua_State</A>* L, const void* p, size_t size, void* u)
+{
+ <A HREF="llimits.h.html#UNUSED">UNUSED</A>(L);
+ return (fwrite(p,size,1,(FILE*)u)!=1) &amp;&amp; (size!=0);
+}
+
+struct <A NAME="Smain"><SPAN CLASS="definition">Smain</SPAN></A> {
+ int argc;
+ char** argv;
+};
+
+static int <A NAME="pmain"><SPAN CLASS="definition">pmain</SPAN></A>(<A HREF="lstate.h.html#lua_State">lua_State</A>* L)
+{
+ struct <A HREF="luac.c.html#Smain">Smain</A>* s = (struct <A HREF="luac.c.html#Smain">Smain</A>*)<A HREF="lapi.c.html#lua_touserdata">lua_touserdata</A>(L, 1);
+ int argc=s-&gt;argc;
+ char** argv=s-&gt;argv;
+ const <A HREF="lobject.h.html#Proto">Proto</A>* f;
+ int i;
+ if (!<A HREF="lapi.c.html#lua_checkstack">lua_checkstack</A>(L,argc)) <A HREF="luac.c.html#fatal">fatal</A>("too many input files");
+ for (i=0; i&lt;argc; i++)
+ {
+  const char* filename=<A HREF="luac.c.html#IS">IS</A>("-") ? NULL : argv[i];
+  if (<A HREF="lauxlib.c.html#luaL_loadfile">luaL_loadfile</A>(L,filename)!=0) <A HREF="luac.c.html#fatal">fatal</A>(<A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L,-1));
+ }
+ f=<A HREF="luac.c.html#combine">combine</A>(L,argc);
+ if (<A HREF="luac.c.html#listing">listing</A>) luaU_print(f,<A HREF="luac.c.html#listing">listing</A>&gt;1);
+ if (<A HREF="luac.c.html#dumping">dumping</A>)
+ {
+  FILE* D= (<A HREF="luac.c.html#output">output</A>==NULL) ? stdout : fopen(<A HREF="luac.c.html#output">output</A>,"wb");
+  if (D==NULL) <A HREF="luac.c.html#cannot">cannot</A>("open");
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="ldump.c.html#luaU_dump">luaU_dump</A>(L,f,<A HREF="luac.c.html#writer">writer</A>,D,<A HREF="luac.c.html#stripping">stripping</A>);
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  if (ferror(D)) <A HREF="luac.c.html#cannot">cannot</A>("write");
+  if (fclose(D)) <A HREF="luac.c.html#cannot">cannot</A>("close");
+ }
+ return 0;
+}
+
+int <A NAME="main"><SPAN CLASS="definition">main</SPAN></A>(int argc, char* argv[])
+{
+ <A HREF="lstate.h.html#lua_State">lua_State</A>* L;
+ struct <A HREF="luac.c.html#Smain">Smain</A> s;
+ int i=<A HREF="luac.c.html#doargs">doargs</A>(argc,argv);
+ argc-=i; argv+=i;
+ if (argc&lt;=0) <A HREF="luac.c.html#usage">usage</A>("no input files given");
+ L=<A HREF="lua.h.html#lua_open">lua_open</A>();
+ if (L==NULL) <A HREF="luac.c.html#fatal">fatal</A>("not enough memory for state");
+ s.argc=argc;
+ s.argv=argv;
+ if (<A HREF="lapi.c.html#lua_cpcall">lua_cpcall</A>(L,<A HREF="luac.c.html#pmain">pmain</A>,&amp;s)!=0) <A HREF="luac.c.html#fatal">fatal</A>(<A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L,-1));
+ <A HREF="lstate.c.html#lua_close">lua_close</A>(L);
+ return EXIT_SUCCESS;
+}
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:19:56 2016
+</P>
+
+</BODY>
+</HTML>

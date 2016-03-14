@@ -1,0 +1,198 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - ltm.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ltm.c
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ltm.c,v 1.56 2000/10/31 13:10:24 roberto Exp $
+** Tag methods
+** See Copyright Notice in lua.h
+*/
+
+
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+
+
+const char *const <A NAME="luaT_eventname"><SPAN CLASS="definition">luaT_eventname</SPAN></A>[] = {  /* ORDER <A HREF="ltm.h.html#TM">TM</A> */
+  "gettable", "settable", "index", "getglobal", "setglobal", "add", "sub",
+  "mul", "div", "pow", "unm", "lt", "concat", "gc", "function",
+  "le", "gt", "ge",  /* deprecated options!! */
+  NULL
+};
+
+
+static int <A NAME="findevent"><SPAN CLASS="definition">findevent</SPAN></A> (const char *name) {
+  int i;
+  for (i=0; <A HREF="ltm.c.html#luaT_eventname">luaT_eventname</A>[i]; i++)
+    if (strcmp(<A HREF="ltm.c.html#luaT_eventname">luaT_eventname</A>[i], name) == 0)
+      return i;
+  return -1;  /* name not found */
+}
+
+
+static int <A NAME="luaI_checkevent"><SPAN CLASS="definition">luaI_checkevent</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *name, int t) {
+  int e = <A HREF="ltm.c.html#findevent">findevent</A>(name);
+  if (e &gt;= <A HREF="ltm.h.html#TM_N">TM_N</A>)
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "event `%.50s' is deprecated", name);
+  if (e == <A HREF="ltm.h.html#TM_GC">TM_GC</A> &amp;&amp; t == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>)
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "event `gc' for tables is deprecated");
+  if (e &lt; 0)
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "`%.50s' is not a valid event name", name);
+  return e;
+}
+
+
+
+/* events in <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A> are all allowed, since this is used as a
+*  'placeholder' for "default" fallbacks
+*/
+/* ORDER LUA_T, ORDER <A HREF="ltm.h.html#TM">TM</A> */
+static const char <A NAME="luaT_validevents"><SPAN CLASS="definition">luaT_validevents</SPAN></A>[<A HREF="lobject.h.html#NUM_TAGS">NUM_TAGS</A>][<A HREF="ltm.h.html#TM_N">TM_N</A>] = {
+  {1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1},  /* <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A> */
+  {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},  /* <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A> */
+  {1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},  /* <A HREF="lua.h.html#LUA_TNUMBER">LUA_TNUMBER</A> */
+  {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},  /* <A HREF="lua.h.html#LUA_TSTRING">LUA_TSTRING</A> */
+  {0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1},  /* <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A> */
+  {1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0}   /* <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A> */
+};
+
+int <A NAME="luaT_validevent"><SPAN CLASS="definition">luaT_validevent</SPAN></A> (int t, int e) {  /* ORDER LUA_T */
+  return (t &gt;= <A HREF="lobject.h.html#NUM_TAGS">NUM_TAGS</A>) ?  1 : <A HREF="ltm.c.html#luaT_validevents">luaT_validevents</A>[t][e];
+}
+
+
+static void <A NAME="init_entry"><SPAN CLASS="definition">init_entry</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int tag) {
+  int i;
+  for (i=0; i&lt;<A HREF="ltm.h.html#TM_N">TM_N</A>; i++)
+    <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, tag, i) = NULL;
+  L-&gt;TMtable[tag].collected = NULL;
+}
+
+
+void <A NAME="luaT_init"><SPAN CLASS="definition">luaT_init</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int t;
+  <A HREF="lmem.h.html#luaM_growvector">luaM_growvector</A>(L, L-&gt;TMtable, 0, <A HREF="lobject.h.html#NUM_TAGS">NUM_TAGS</A>, struct <A HREF="ltm.h.html#TM">TM</A>, "", <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>);
+  L-&gt;nblocks += <A HREF="lobject.h.html#NUM_TAGS">NUM_TAGS</A>*sizeof(struct <A HREF="ltm.h.html#TM">TM</A>);
+  L-&gt;last_tag = <A HREF="lobject.h.html#NUM_TAGS">NUM_TAGS</A>-1;
+  for (t=0; t&lt;=L-&gt;last_tag; t++)
+    <A HREF="ltm.c.html#init_entry">init_entry</A>(L, t);
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A NAME="lua_newtag"><SPAN CLASS="definition">lua_newtag</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lmem.h.html#luaM_growvector">luaM_growvector</A>(L, L-&gt;TMtable, L-&gt;last_tag, 1, struct <A HREF="ltm.h.html#TM">TM</A>,
+                  "tag table overflow", <A HREF="llimits.h.html#MAX_INT">MAX_INT</A>);
+  L-&gt;nblocks += sizeof(struct <A HREF="ltm.h.html#TM">TM</A>);
+  L-&gt;last_tag++;
+  <A HREF="ltm.c.html#init_entry">init_entry</A>(L, L-&gt;last_tag);
+  return L-&gt;last_tag;
+}
+
+
+static void <A NAME="checktag"><SPAN CLASS="definition">checktag</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int tag) {
+  if (!(0 &lt;= tag &amp;&amp; tag &lt;= L-&gt;last_tag))
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "%d is not a valid tag", tag);
+}
+
+void <A NAME="luaT_realtag"><SPAN CLASS="definition">luaT_realtag</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int tag) {
+  if (!<A HREF="ltm.h.html#validtag">validtag</A>(tag))
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "tag %d was not created by `newtag'", tag);
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> int <A NAME="lua_copytagmethods"><SPAN CLASS="definition">lua_copytagmethods</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int tagto, int tagfrom) {
+  int e;
+  <A HREF="ltm.c.html#checktag">checktag</A>(L, tagto);
+  <A HREF="ltm.c.html#checktag">checktag</A>(L, tagfrom);
+  for (e=0; e&lt;<A HREF="ltm.h.html#TM_N">TM_N</A>; e++) {
+    if (<A HREF="ltm.c.html#luaT_validevent">luaT_validevent</A>(tagto, e))
+      <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, tagto, e) = <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, tagfrom, e);
+  }
+  return tagto;
+}
+
+
+int <A NAME="luaT_tag"><SPAN CLASS="definition">luaT_tag</SPAN></A> (const <A HREF="lobject.h.html#TObject">TObject</A> *o) {
+  int t = <A HREF="lobject.h.html#ttype">ttype</A>(o);
+  switch (t) {
+    case <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>: return <A HREF="lobject.h.html#tsvalue">tsvalue</A>(o)-&gt;u.d.tag;
+    case <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>:    return <A HREF="lobject.h.html#hvalue">hvalue</A>(o)-&gt;htag;
+    default:            return t;
+  }
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> void <A NAME="lua_gettagmethod"><SPAN CLASS="definition">lua_gettagmethod</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int t, const char *event) {
+  int e;
+  e = <A HREF="ltm.c.html#luaI_checkevent">luaI_checkevent</A>(L, event, t);
+  <A HREF="ltm.c.html#checktag">checktag</A>(L, t);
+  if (<A HREF="ltm.c.html#luaT_validevent">luaT_validevent</A>(t, e) &amp;&amp; <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, t, e)) {
+    <A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top) = <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, t, e);
+    <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) = <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>;
+  }
+  else
+    <A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top) = <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>;
+  <A HREF="ldo.h.html#incr_top">incr_top</A>;
+}
+
+
+<A HREF="lua.h.html#LUA_API">LUA_API</A> void <A NAME="lua_settagmethod"><SPAN CLASS="definition">lua_settagmethod</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int t, const char *event) {
+  int e = <A HREF="ltm.c.html#luaI_checkevent">luaI_checkevent</A>(L, event, t);
+  <A HREF="ltm.c.html#checktag">checktag</A>(L, t);
+  if (!<A HREF="ltm.c.html#luaT_validevent">luaT_validevent</A>(t, e))
+    <A HREF="lobject.c.html#luaO_verror">luaO_verror</A>(L, "cannot change `%.20s' tag method for type `%.20s'%.20s",
+                <A HREF="ltm.c.html#luaT_eventname">luaT_eventname</A>[e], <A HREF="lobject.c.html#luaO_typenames">luaO_typenames</A>[t],
+                (t == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A> || t == <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>) ?
+                   " with default tag" : "");
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(L-&gt;top - 1)) {
+    case <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>:
+      <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, t, e) = NULL;
+      break;
+    case <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>:
+      <A HREF="ltm.h.html#luaT_gettm">luaT_gettm</A>(L, t, e) = <A HREF="lobject.h.html#clvalue">clvalue</A>(L-&gt;top - 1);
+      break;
+    default:
+      <A HREF="ldo.c.html#lua_error">lua_error</A>(L, "tag method must be a function (or nil)");
+  }
+  L-&gt;top--;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:31 2016
+</P>
+
+</BODY>
+</HTML>

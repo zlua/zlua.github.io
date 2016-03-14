@@ -1,0 +1,106 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.0.3 source code - lparser.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lparser.h
+<SPAN CLASS="note">(5.0.3)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lparser.h,v 1.47 2003/02/11 10:46:24 roberto Exp $
+** Lua Parser
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lparser.h.html#lparser_h">lparser_h</A>
+#define <A NAME="lparser_h"><SPAN CLASS="definition">lparser_h</SPAN></A>
+
+#include "<A HREF="llimits.h.html">llimits.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+/*
+** Expression descriptor
+*/
+
+typedef enum {
+  <A NAME="VVOID"><SPAN CLASS="definition">VVOID</SPAN></A>,        /* no value */
+  <A NAME="VNIL"><SPAN CLASS="definition">VNIL</SPAN></A>,
+  <A NAME="VTRUE"><SPAN CLASS="definition">VTRUE</SPAN></A>,
+  <A NAME="VFALSE"><SPAN CLASS="definition">VFALSE</SPAN></A>,
+  <A NAME="VK"><SPAN CLASS="definition">VK</SPAN></A>,           /* info = index of constant in `k' */
+  <A NAME="VLOCAL"><SPAN CLASS="definition">VLOCAL</SPAN></A>,       /* info = local register */
+  <A NAME="VUPVAL"><SPAN CLASS="definition">VUPVAL</SPAN></A>,       /* info = index of upvalue in `upvalues' */
+  <A NAME="VGLOBAL"><SPAN CLASS="definition">VGLOBAL</SPAN></A>,      /* info = index of table; aux = index of global name in `k' */
+  <A NAME="VINDEXED"><SPAN CLASS="definition">VINDEXED</SPAN></A>,     /* info = table register; aux = index register (or `k') */
+  <A NAME="VJMP"><SPAN CLASS="definition">VJMP</SPAN></A>,         /* info = instruction pc */
+  <A NAME="VRELOCABLE"><SPAN CLASS="definition">VRELOCABLE</SPAN></A>,   /* info = instruction pc */
+  <A NAME="VNONRELOC"><SPAN CLASS="definition">VNONRELOC</SPAN></A>,    /* info = result register */
+  <A NAME="VCALL"><SPAN CLASS="definition">VCALL</SPAN></A>         /* info = result register */
+} <A NAME="expkind"><SPAN CLASS="definition">expkind</SPAN></A>;
+
+typedef struct <A NAME="expdesc"><SPAN CLASS="definition">expdesc</SPAN></A> {
+  <A HREF="lparser.h.html#expkind">expkind</A> k;
+  int info, aux;
+  int t;  /* patch list of `exit when true' */
+  int f;  /* patch list of `exit when false' */
+} <A HREF="lparser.h.html#expdesc">expdesc</A>;
+
+
+struct BlockCnt;  /* defined in lparser.c */
+
+
+/* state needed to generate code for a given function */
+typedef struct <A NAME="FuncState"><SPAN CLASS="definition">FuncState</SPAN></A> {
+  <A HREF="lobject.h.html#Proto">Proto</A> *f;  /* current function header */
+  <A HREF="lobject.h.html#Table">Table</A> *h;  /* table to find (and reuse) elements in `k' */
+  struct <A HREF="lparser.h.html#FuncState">FuncState</A> *prev;  /* enclosing function */
+  struct <A HREF="llex.h.html#LexState">LexState</A> *ls;  /* lexical state */
+  struct <A HREF="lstate.h.html#lua_State">lua_State</A> *L;  /* copy of the Lua state */
+  struct BlockCnt *bl;  /* chain of current blocks */
+  int pc;  /* next position to code (equivalent to `ncode') */
+  int lasttarget;   /* `pc' of last `jump target' */
+  int jpc;  /* list of pending jumps to `pc' */
+  int freereg;  /* first free register */
+  int nk;  /* number of elements in `k' */
+  int np;  /* number of elements in `p' */
+  int nlocvars;  /* number of elements in `locvars' */
+  int nactvar;  /* number of active local variables */
+  <A HREF="lparser.h.html#expdesc">expdesc</A> upvalues[<A HREF="llimits.h.html#MAXUPVALUES">MAXUPVALUES</A>];  /* upvalues */
+  int actvar[<A HREF="llimits.h.html#MAXVARS">MAXVARS</A>];  /* declared-variable stack */
+} <A HREF="lparser.h.html#FuncState">FuncState</A>;
+
+
+<A HREF="lobject.h.html#Proto">Proto</A> *<A HREF="lparser.c.html#luaY_parser">luaY_parser</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lzio.h.html#ZIO">ZIO</A> *z, <A HREF="lzio.h.html#Mbuffer">Mbuffer</A> *buff);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:25:24 2016
+</P>
+
+</BODY>
+</HTML>

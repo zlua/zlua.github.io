@@ -1,0 +1,491 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - ldblib.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldblib.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldblib.c,v 1.151 2015/11/23 11:29:43 roberto Exp $
+** Interface from Lua to its debug API
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="ldblib_c"><SPAN CLASS="definition">ldblib_c</SPAN></A>
+#define <A NAME="LUA_LIB"><SPAN CLASS="definition">LUA_LIB</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lauxlib.h.html">lauxlib.h</A>"
+#include "<A HREF="lualib.h.html">lualib.h</A>"
+
+
+/*
+** The hook table at registry[&amp;<A HREF="ldblib.c.html#HOOKKEY">HOOKKEY</A>] maps threads to their current
+** hook function. (We only need the unique address of '<A HREF="ldblib.c.html#HOOKKEY">HOOKKEY</A>'.)
+*/
+static const int <A NAME="HOOKKEY"><SPAN CLASS="definition">HOOKKEY</SPAN></A> = 0;
+
+
+/*
+** If L1 != L, L1 can be in any state, and therefore there are no
+** guarantees about its stack space; any push in L1 must be
+** checked.
+*/
+static void <A NAME="checkstack"><SPAN CLASS="definition">checkstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#lua_State">lua_State</A> *L1, int n) {
+  if (L != L1 &amp;&amp; !<A HREF="lapi.c.html#lua_checkstack">lua_checkstack</A>(L1, n))
+    <A HREF="lauxlib.c.html#luaL_error">luaL_error</A>(L, "stack overflow");
+}
+
+
+static int <A NAME="db_getregistry"><SPAN CLASS="definition">db_getregistry</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>);
+  return 1;
+}
+
+
+static int <A NAME="db_getmetatable"><SPAN CLASS="definition">db_getmetatable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 1);
+  if (!<A HREF="lapi.c.html#lua_getmetatable">lua_getmetatable</A>(L, 1)) {
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);  /* no metatable */
+  }
+  return 1;
+}
+
+
+static int <A NAME="db_setmetatable"><SPAN CLASS="definition">db_setmetatable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int t = <A HREF="lapi.c.html#lua_type">lua_type</A>(L, 2);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, t == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A> || t == <A HREF="lua.h.html#LUA_TTABLE">LUA_TTABLE</A>, 2,
+                    "nil or table expected");
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 2);
+  <A HREF="lapi.c.html#lua_setmetatable">lua_setmetatable</A>(L, 1);
+  return 1;  /* return 1st argument */
+}
+
+
+static int <A NAME="db_getuservalue"><SPAN CLASS="definition">db_getuservalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  if (<A HREF="lapi.c.html#lua_type">lua_type</A>(L, 1) != <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>)
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+  else
+    <A HREF="lapi.c.html#lua_getuservalue">lua_getuservalue</A>(L, 1);
+  return 1;
+}
+
+
+static int <A NAME="db_setuservalue"><SPAN CLASS="definition">db_setuservalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TUSERDATA">LUA_TUSERDATA</A>);
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 2);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 2);
+  <A HREF="lapi.c.html#lua_setuservalue">lua_setuservalue</A>(L, 1);
+  return 1;
+}
+
+
+/*
+** Auxiliary function used by several library functions: check for
+** an optional thread as function's first argument and set 'arg' with
+** 1 if this argument is present (so that functions can skip it to
+** access their other arguments)
+*/
+static <A HREF="lstate.h.html#lua_State">lua_State</A> *<A NAME="getthread"><SPAN CLASS="definition">getthread</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int *arg) {
+  if (<A HREF="lua.h.html#lua_isthread">lua_isthread</A>(L, 1)) {
+    *arg = 1;
+    return <A HREF="lapi.c.html#lua_tothread">lua_tothread</A>(L, 1);
+  }
+  else {
+    *arg = 0;
+    return L;  /* function will operate over current thread */
+  }
+}
+
+
+/*
+** Variations of '<A HREF="lapi.c.html#lua_settable">lua_settable</A>', used by '<A HREF="ldblib.c.html#db_getinfo">db_getinfo</A>' to put results
+** from '<A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>' into result table. Key is always a string;
+** value can be a string, an int, or a boolean.
+*/
+static void <A NAME="settabss"><SPAN CLASS="definition">settabss</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *k, const char *v) {
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, v);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, k);
+}
+
+static void <A NAME="settabsi"><SPAN CLASS="definition">settabsi</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *k, int v) {
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, v);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, k);
+}
+
+static void <A NAME="settabsb"><SPAN CLASS="definition">settabsb</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *k, int v) {
+  <A HREF="lapi.c.html#lua_pushboolean">lua_pushboolean</A>(L, v);
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, k);
+}
+
+
+/*
+** In function '<A HREF="ldblib.c.html#db_getinfo">db_getinfo</A>', the call to '<A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>' may push
+** results on the stack; later it creates the result table to put
+** these objects. Function '<A HREF="ldblib.c.html#treatstackoption">treatstackoption</A>' puts the result from
+** '<A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>' on top of the result table so that it can call
+** '<A HREF="lapi.c.html#lua_setfield">lua_setfield</A>'.
+*/
+static void <A NAME="treatstackoption"><SPAN CLASS="definition">treatstackoption</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#lua_State">lua_State</A> *L1, const char *fname) {
+  if (L == L1)
+    <A HREF="lapi.c.html#lua_rotate">lua_rotate</A>(L, -2, 1);  /* exchange object and table */
+  else
+    <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(L1, L, 1);  /* move object to the "<A HREF="lua.c.html#main">main</A>" stack */
+  <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, fname);  /* put object into table */
+}
+
+
+/*
+** Calls '<A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>' and collects all results in a new table.
+** L1 needs stack space for an optional input (function) plus
+** two optional outputs (function and line table) from function
+** '<A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>'.
+*/
+static int <A NAME="db_getinfo"><SPAN CLASS="definition">db_getinfo</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lua.h.html#lua_Debug">lua_Debug</A> ar;
+  int arg;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L1 = <A HREF="ldblib.c.html#getthread">getthread</A>(L, &amp;arg);
+  const char *options = <A HREF="lauxlib.h.html#luaL_optstring">luaL_optstring</A>(L, arg+2, "flnStu");
+  <A HREF="ldblib.c.html#checkstack">checkstack</A>(L, L1, 3);
+  if (<A HREF="lua.h.html#lua_isfunction">lua_isfunction</A>(L, arg + 1)) {  /* info about a function? */
+    options = <A HREF="lapi.c.html#lua_pushfstring">lua_pushfstring</A>(L, "&gt;%s", options);  /* add '&gt;' to 'options' */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, arg + 1);  /* move function to 'L1' stack */
+    <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(L, L1, 1);
+  }
+  else {  /* stack level */
+    if (!<A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(L1, (int)<A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, arg + 1), &amp;ar)) {
+      <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);  /* level out of range */
+      return 1;
+    }
+  }
+  if (!<A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>(L1, options, &amp;ar))
+    return <A HREF="lauxlib.c.html#luaL_argerror">luaL_argerror</A>(L, arg+2, "invalid option");
+  <A HREF="lua.h.html#lua_newtable">lua_newtable</A>(L);  /* table to collect results */
+  if (strchr(options, 'S')) {
+    <A HREF="ldblib.c.html#settabss">settabss</A>(L, "source", ar.source);
+    <A HREF="ldblib.c.html#settabss">settabss</A>(L, "short_src", ar.short_src);
+    <A HREF="ldblib.c.html#settabsi">settabsi</A>(L, "linedefined", ar.linedefined);
+    <A HREF="ldblib.c.html#settabsi">settabsi</A>(L, "lastlinedefined", ar.lastlinedefined);
+    <A HREF="ldblib.c.html#settabss">settabss</A>(L, "what", ar.what);
+  }
+  if (strchr(options, 'l'))
+    <A HREF="ldblib.c.html#settabsi">settabsi</A>(L, "currentline", ar.currentline);
+  if (strchr(options, 'u')) {
+    <A HREF="ldblib.c.html#settabsi">settabsi</A>(L, "nups", ar.nups);
+    <A HREF="ldblib.c.html#settabsi">settabsi</A>(L, "nparams", ar.nparams);
+    <A HREF="ldblib.c.html#settabsb">settabsb</A>(L, "isvararg", ar.isvararg);
+  }
+  if (strchr(options, 'n')) {
+    <A HREF="ldblib.c.html#settabss">settabss</A>(L, "name", ar.name);
+    <A HREF="ldblib.c.html#settabss">settabss</A>(L, "namewhat", ar.namewhat);
+  }
+  if (strchr(options, 't'))
+    <A HREF="ldblib.c.html#settabsb">settabsb</A>(L, "istailcall", ar.istailcall);
+  if (strchr(options, 'L'))
+    <A HREF="ldblib.c.html#treatstackoption">treatstackoption</A>(L, L1, "activelines");
+  if (strchr(options, 'f'))
+    <A HREF="ldblib.c.html#treatstackoption">treatstackoption</A>(L, L1, "func");
+  return 1;  /* return table */
+}
+
+
+static int <A NAME="db_getlocal"><SPAN CLASS="definition">db_getlocal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int arg;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L1 = <A HREF="ldblib.c.html#getthread">getthread</A>(L, &amp;arg);
+  <A HREF="lua.h.html#lua_Debug">lua_Debug</A> ar;
+  const char *name;
+  int nvar = (int)<A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, arg + 2);  /* local-variable index */
+  if (<A HREF="lua.h.html#lua_isfunction">lua_isfunction</A>(L, arg + 1)) {  /* function argument? */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, arg + 1);  /* push function */
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, <A HREF="ldebug.c.html#lua_getlocal">lua_getlocal</A>(L, NULL, nvar));  /* push local name */
+    return 1;  /* return only name (there is no value) */
+  }
+  else {  /* stack-level argument */
+    int level = (int)<A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, arg + 1);
+    if (!<A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(L1, level, &amp;ar))  /* out of range? */
+      return <A HREF="lauxlib.c.html#luaL_argerror">luaL_argerror</A>(L, arg+1, "level out of range");
+    <A HREF="ldblib.c.html#checkstack">checkstack</A>(L, L1, 1);
+    name = <A HREF="ldebug.c.html#lua_getlocal">lua_getlocal</A>(L1, &amp;ar, nvar);
+    if (name) {
+      <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(L1, L, 1);  /* move local value */
+      <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, name);  /* push name */
+      <A HREF="lapi.c.html#lua_rotate">lua_rotate</A>(L, -2, 1);  /* re-order */
+      return 2;
+    }
+    else {
+      <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);  /* no name (nor value) */
+      return 1;
+    }
+  }
+}
+
+
+static int <A NAME="db_setlocal"><SPAN CLASS="definition">db_setlocal</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int arg;
+  const char *name;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L1 = <A HREF="ldblib.c.html#getthread">getthread</A>(L, &amp;arg);
+  <A HREF="lua.h.html#lua_Debug">lua_Debug</A> ar;
+  int level = (int)<A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, arg + 1);
+  int nvar = (int)<A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, arg + 2);
+  if (!<A HREF="ldebug.c.html#lua_getstack">lua_getstack</A>(L1, level, &amp;ar))  /* out of range? */
+    return <A HREF="lauxlib.c.html#luaL_argerror">luaL_argerror</A>(L, arg+1, "level out of range");
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, arg+3);
+  <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, arg+3);
+  <A HREF="ldblib.c.html#checkstack">checkstack</A>(L, L1, 1);
+  <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(L, L1, 1);
+  name = <A HREF="ldebug.c.html#lua_setlocal">lua_setlocal</A>(L1, &amp;ar, nvar);
+  if (name == NULL)
+    <A HREF="lua.h.html#lua_pop">lua_pop</A>(L1, 1);  /* pop value (if not popped by '<A HREF="ldebug.c.html#lua_setlocal">lua_setlocal</A>') */
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, name);
+  return 1;
+}
+
+
+/*
+** get (if 'get' is true) or set an upvalue from a closure
+*/
+static int <A NAME="auxupvalue"><SPAN CLASS="definition">auxupvalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int get) {
+  const char *name;
+  int n = (int)<A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, 2);  /* upvalue index */
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, 1, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);  /* closure */
+  name = get ? <A HREF="lapi.c.html#lua_getupvalue">lua_getupvalue</A>(L, 1, n) : <A HREF="lapi.c.html#lua_setupvalue">lua_setupvalue</A>(L, 1, n);
+  if (name == NULL) return 0;
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, name);
+  <A HREF="lua.h.html#lua_insert">lua_insert</A>(L, -(get+1));  /* no-op if get is false */
+  return get + 1;
+}
+
+
+static int <A NAME="db_getupvalue"><SPAN CLASS="definition">db_getupvalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return <A HREF="ldblib.c.html#auxupvalue">auxupvalue</A>(L, 1);
+}
+
+
+static int <A NAME="db_setupvalue"><SPAN CLASS="definition">db_setupvalue</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.c.html#luaL_checkany">luaL_checkany</A>(L, 3);
+  return <A HREF="ldblib.c.html#auxupvalue">auxupvalue</A>(L, 0);
+}
+
+
+/*
+** Check whether a given upvalue from a given closure exists and
+** returns its index
+*/
+static int <A NAME="checkupval"><SPAN CLASS="definition">checkupval</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int argf, int argnup) {
+  int nup = (int)<A HREF="lauxlib.c.html#luaL_checkinteger">luaL_checkinteger</A>(L, argnup);  /* upvalue index */
+  <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, argf, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);  /* closure */
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, (<A HREF="lapi.c.html#lua_getupvalue">lua_getupvalue</A>(L, argf, nup) != NULL), argnup,
+                   "invalid upvalue index");
+  return nup;
+}
+
+
+static int <A NAME="db_upvalueid"><SPAN CLASS="definition">db_upvalueid</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n = <A HREF="ldblib.c.html#checkupval">checkupval</A>(L, 1, 2);
+  <A HREF="lapi.c.html#lua_pushlightuserdata">lua_pushlightuserdata</A>(L, <A HREF="lapi.c.html#lua_upvalueid">lua_upvalueid</A>(L, 1, n));
+  return 1;
+}
+
+
+static int <A NAME="db_upvaluejoin"><SPAN CLASS="definition">db_upvaluejoin</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int n1 = <A HREF="ldblib.c.html#checkupval">checkupval</A>(L, 1, 2);
+  int n2 = <A HREF="ldblib.c.html#checkupval">checkupval</A>(L, 3, 4);
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, !<A HREF="lapi.c.html#lua_iscfunction">lua_iscfunction</A>(L, 1), 1, "Lua function expected");
+  <A HREF="lauxlib.h.html#luaL_argcheck">luaL_argcheck</A>(L, !<A HREF="lapi.c.html#lua_iscfunction">lua_iscfunction</A>(L, 3), 3, "Lua function expected");
+  <A HREF="lapi.c.html#lua_upvaluejoin">lua_upvaluejoin</A>(L, 1, n1, 3, n2);
+  return 0;
+}
+
+
+/*
+** Call hook function registered at hook table for the current
+** thread (if there is one)
+*/
+static void <A NAME="hookf"><SPAN CLASS="definition">hookf</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lua.h.html#lua_Debug">lua_Debug</A> *ar) {
+  static const char *const hooknames[] =
+    {"call", "return", "line", "count", "tail call"};
+  <A HREF="lapi.c.html#lua_rawgetp">lua_rawgetp</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, &amp;<A HREF="ldblib.c.html#HOOKKEY">HOOKKEY</A>);
+  <A HREF="lapi.c.html#lua_pushthread">lua_pushthread</A>(L);
+  if (<A HREF="lapi.c.html#lua_rawget">lua_rawget</A>(L, -2) == <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>) {  /* is there a hook function? */
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, hooknames[(int)ar-&gt;event]);  /* push event name */
+    if (ar-&gt;currentline &gt;= 0)
+      <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, ar-&gt;currentline);  /* push current line */
+    else <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(<A HREF="ldebug.c.html#lua_getinfo">lua_getinfo</A>(L, "lS", ar));
+    <A HREF="lua.h.html#lua_call">lua_call</A>(L, 2, 0);  /* call hook function */
+  }
+}
+
+
+/*
+** Convert a string mask (for 'sethook') into a bit mask
+*/
+static int <A NAME="makemask"><SPAN CLASS="definition">makemask</SPAN></A> (const char *smask, int count) {
+  int mask = 0;
+  if (strchr(smask, 'c')) mask |= <A HREF="lua.h.html#LUA_MASKCALL">LUA_MASKCALL</A>;
+  if (strchr(smask, 'r')) mask |= <A HREF="lua.h.html#LUA_MASKRET">LUA_MASKRET</A>;
+  if (strchr(smask, 'l')) mask |= <A HREF="lua.h.html#LUA_MASKLINE">LUA_MASKLINE</A>;
+  if (count &gt; 0) mask |= <A HREF="lua.h.html#LUA_MASKCOUNT">LUA_MASKCOUNT</A>;
+  return mask;
+}
+
+
+/*
+** Convert a bit mask (for 'gethook') into a string mask
+*/
+static char *<A NAME="unmakemask"><SPAN CLASS="definition">unmakemask</SPAN></A> (int mask, char *smask) {
+  int i = 0;
+  if (mask &amp; <A HREF="lua.h.html#LUA_MASKCALL">LUA_MASKCALL</A>) smask[i++] = 'c';
+  if (mask &amp; <A HREF="lua.h.html#LUA_MASKRET">LUA_MASKRET</A>) smask[i++] = 'r';
+  if (mask &amp; <A HREF="lua.h.html#LUA_MASKLINE">LUA_MASKLINE</A>) smask[i++] = 'l';
+  smask[i] = '\0';
+  return smask;
+}
+
+
+static int <A NAME="db_sethook"><SPAN CLASS="definition">db_sethook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int arg, mask, count;
+  <A HREF="lua.h.html#lua_Hook">lua_Hook</A> func;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L1 = <A HREF="ldblib.c.html#getthread">getthread</A>(L, &amp;arg);
+  if (<A HREF="lua.h.html#lua_isnoneornil">lua_isnoneornil</A>(L, arg+1)) {  /* no hook? */
+    <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, arg+1);
+    func = NULL; mask = 0; count = 0;  /* turn off hooks */
+  }
+  else {
+    const char *smask = <A HREF="lauxlib.h.html#luaL_checkstring">luaL_checkstring</A>(L, arg+2);
+    <A HREF="lauxlib.c.html#luaL_checktype">luaL_checktype</A>(L, arg+1, <A HREF="lua.h.html#LUA_TFUNCTION">LUA_TFUNCTION</A>);
+    count = (int)<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, arg + 3, 0);
+    func = <A HREF="ldblib.c.html#hookf">hookf</A>; mask = <A HREF="ldblib.c.html#makemask">makemask</A>(smask, count);
+  }
+  if (<A HREF="lapi.c.html#lua_rawgetp">lua_rawgetp</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, &amp;<A HREF="ldblib.c.html#HOOKKEY">HOOKKEY</A>) == <A HREF="lua.h.html#LUA_TNIL">LUA_TNIL</A>) {
+    <A HREF="lapi.c.html#lua_createtable">lua_createtable</A>(L, 0, 2);  /* create a hook table */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+    <A HREF="lapi.c.html#lua_rawsetp">lua_rawsetp</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, &amp;<A HREF="ldblib.c.html#HOOKKEY">HOOKKEY</A>);  /* set it in position */
+    <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, "k");
+    <A HREF="lapi.c.html#lua_setfield">lua_setfield</A>(L, -2, "__mode");  /** hooktable.__mode = "k" */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, -1);
+    <A HREF="lapi.c.html#lua_setmetatable">lua_setmetatable</A>(L, -2);  /* setmetatable(hooktable) = hooktable */
+  }
+  <A HREF="ldblib.c.html#checkstack">checkstack</A>(L, L1, 1);
+  <A HREF="lapi.c.html#lua_pushthread">lua_pushthread</A>(L1); <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(L1, L, 1);  /* key (thread) */
+  <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, arg + 1);  /* value (hook function) */
+  <A HREF="lapi.c.html#lua_rawset">lua_rawset</A>(L, -3);  /* hooktable[L1] = new Lua hook */
+  <A HREF="ldebug.c.html#lua_sethook">lua_sethook</A>(L1, func, mask, count);
+  return 0;
+}
+
+
+static int <A NAME="db_gethook"><SPAN CLASS="definition">db_gethook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int arg;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L1 = <A HREF="ldblib.c.html#getthread">getthread</A>(L, &amp;arg);
+  char buff[5];
+  int mask = <A HREF="ldebug.c.html#lua_gethookmask">lua_gethookmask</A>(L1);
+  <A HREF="lua.h.html#lua_Hook">lua_Hook</A> hook = <A HREF="ldebug.c.html#lua_gethook">lua_gethook</A>(L1);
+  if (hook == NULL)  /* no hook? */
+    <A HREF="lapi.c.html#lua_pushnil">lua_pushnil</A>(L);
+  else if (hook != <A HREF="ldblib.c.html#hookf">hookf</A>)  /* external hook? */
+    <A HREF="lua.h.html#lua_pushliteral">lua_pushliteral</A>(L, "external hook");
+  else {  /* hook table must exist */
+    <A HREF="lapi.c.html#lua_rawgetp">lua_rawgetp</A>(L, <A HREF="lua.h.html#LUA_REGISTRYINDEX">LUA_REGISTRYINDEX</A>, &amp;<A HREF="ldblib.c.html#HOOKKEY">HOOKKEY</A>);
+    <A HREF="ldblib.c.html#checkstack">checkstack</A>(L, L1, 1);
+    <A HREF="lapi.c.html#lua_pushthread">lua_pushthread</A>(L1); <A HREF="lapi.c.html#lua_xmove">lua_xmove</A>(L1, L, 1);
+    <A HREF="lapi.c.html#lua_rawget">lua_rawget</A>(L, -2);   /* 1st result = hooktable[L1] */
+    <A HREF="lua.h.html#lua_remove">lua_remove</A>(L, -2);  /* remove hook table */
+  }
+  <A HREF="lapi.c.html#lua_pushstring">lua_pushstring</A>(L, <A HREF="ldblib.c.html#unmakemask">unmakemask</A>(mask, buff));  /* 2nd result = mask */
+  <A HREF="lapi.c.html#lua_pushinteger">lua_pushinteger</A>(L, <A HREF="ldebug.c.html#lua_gethookcount">lua_gethookcount</A>(L1));  /* 3rd result = count */
+  return 3;
+}
+
+
+static int <A NAME="db_debug"><SPAN CLASS="definition">db_debug</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  for (;;) {
+    char buffer[250];
+    <A HREF="lauxlib.h.html#lua_writestringerror">lua_writestringerror</A>("%s", "lua_debug&gt; ");
+    if (fgets(buffer, sizeof(buffer), stdin) == 0 ||
+        strcmp(buffer, "cont\n") == 0)
+      return 0;
+    if (<A HREF="lauxlib.h.html#luaL_loadbuffer">luaL_loadbuffer</A>(L, buffer, strlen(buffer), "=(debug command)") ||
+        <A HREF="lua.h.html#lua_pcall">lua_pcall</A>(L, 0, 0, 0))
+      <A HREF="lauxlib.h.html#lua_writestringerror">lua_writestringerror</A>("%s\n", <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, -1));
+    <A HREF="lapi.c.html#lua_settop">lua_settop</A>(L, 0);  /* remove eventual returns */
+  }
+}
+
+
+static int <A NAME="db_traceback"><SPAN CLASS="definition">db_traceback</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int arg;
+  <A HREF="lstate.h.html#lua_State">lua_State</A> *L1 = <A HREF="ldblib.c.html#getthread">getthread</A>(L, &amp;arg);
+  const char *msg = <A HREF="lua.h.html#lua_tostring">lua_tostring</A>(L, arg + 1);
+  if (msg == NULL &amp;&amp; !<A HREF="lua.h.html#lua_isnoneornil">lua_isnoneornil</A>(L, arg + 1))  /* non-string 'msg'? */
+    <A HREF="lapi.c.html#lua_pushvalue">lua_pushvalue</A>(L, arg + 1);  /* return it untouched */
+  else {
+    int level = (int)<A HREF="lauxlib.c.html#luaL_optinteger">luaL_optinteger</A>(L, arg + 2, (L == L1) ? 1 : 0);
+    <A HREF="lauxlib.c.html#luaL_traceback">luaL_traceback</A>(L, L1, msg, level);
+  }
+  return 1;
+}
+
+
+static const <A HREF="lauxlib.h.html#luaL_Reg">luaL_Reg</A> <A NAME="dblib"><SPAN CLASS="definition">dblib</SPAN></A>[] = {
+  {"debug", <A HREF="ldblib.c.html#db_debug">db_debug</A>},
+  {"<A HREF="lobject.h.html#getuservalue">getuservalue</A>", <A HREF="ldblib.c.html#db_getuservalue">db_getuservalue</A>},
+  {"gethook", <A HREF="ldblib.c.html#db_gethook">db_gethook</A>},
+  {"getinfo", <A HREF="ldblib.c.html#db_getinfo">db_getinfo</A>},
+  {"getlocal", <A HREF="ldblib.c.html#db_getlocal">db_getlocal</A>},
+  {"getregistry", <A HREF="ldblib.c.html#db_getregistry">db_getregistry</A>},
+  {"getmetatable", <A HREF="ldblib.c.html#db_getmetatable">db_getmetatable</A>},
+  {"getupvalue", <A HREF="ldblib.c.html#db_getupvalue">db_getupvalue</A>},
+  {"upvaluejoin", <A HREF="ldblib.c.html#db_upvaluejoin">db_upvaluejoin</A>},
+  {"upvalueid", <A HREF="ldblib.c.html#db_upvalueid">db_upvalueid</A>},
+  {"<A HREF="lobject.h.html#setuservalue">setuservalue</A>", <A HREF="ldblib.c.html#db_setuservalue">db_setuservalue</A>},
+  {"sethook", <A HREF="ldblib.c.html#db_sethook">db_sethook</A>},
+  {"setlocal", <A HREF="ldblib.c.html#db_setlocal">db_setlocal</A>},
+  {"setmetatable", <A HREF="ldblib.c.html#db_setmetatable">db_setmetatable</A>},
+  {"setupvalue", <A HREF="ldblib.c.html#db_setupvalue">db_setupvalue</A>},
+  {"traceback", <A HREF="ldblib.c.html#db_traceback">db_traceback</A>},
+  {NULL, NULL}
+};
+
+
+<A HREF="luaconf.h.html#LUAMOD_API">LUAMOD_API</A> int <A NAME="luaopen_debug"><SPAN CLASS="definition">luaopen_debug</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lauxlib.h.html#luaL_newlib">luaL_newlib</A>(L, <A HREF="ldblib.c.html#dblib">dblib</A>);
+  return 1;
+}
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

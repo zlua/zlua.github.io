@@ -1,0 +1,33 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE>4.2 Coercion</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node7.html">4.3 Adjustment</A>
+<B>Up:</B> <A HREF="node4.html">4 The Language</A>
+<B> Previous:</B> <A HREF="node5.html">4.1 Lexical Conventions</A>
+<BR> <HR>
+<H2><A NAME=S420>4.2 Coercion</A></H2>
+ <A NAME=coercion></A>
+<P>
+Lua provides some automatic conversions.
+Any arithmetic operation applied to a string tries to convert
+that string to a number, following the usual rules.
+Conversely, whenever a number is used when a string is expected,
+that number is converted to a string, according to the following rule:
+if the number is an integer, it is written without exponent or decimal point;
+otherwise, it is formatted following the ``<TT><B>%g</B></TT>
+''
+conversion specification of the standard <TT><B>printf</B></TT>
+ C function.
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node7.html">4.3 Adjustment</A>
+<B>Up:</B> <A HREF="node4.html">4 The Language</A>
+<B> Previous:</B> <A HREF="node5.html">4.1 Lexical Conventions</A>
+<BR> <HR>

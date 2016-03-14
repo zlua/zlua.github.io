@@ -1,0 +1,33 @@
+<!DOCTYPE HTML PUBLIC "-//W3O//DTD W3 HTML 2.0//EN">
+<!Converted with LaTeX2HTML 95 (Thu Jan 19 1995) by Nikos Drakos (nikos@cbl.leeds.ac.uk), CBLU, University of Leeds >
+<HEAD>
+<TITLE> Incompatibilities with version 2.1</TITLE>
+</HEAD>
+<BODY>
+<P>
+
+<HR>
+<B> Next:</B> <A HREF="node44.html"> Incompatibilities with version </A>
+<B>Up:</B> <A HREF="node41.html">Incompatibilities with Previous </A>
+<B> Previous:</B> <A HREF="node42.html"> Incompatibilities with version </A>
+<BR> <HR>
+<H2><A NAME=S1020> Incompatibilities with version 2.1</A></H2>
+<P>
+<UL><LI>
+The function <TT><B>type</B></TT>
+ now returns the string <TT><B>"function"</B></TT>
+
+both for C and Lua functions.
+Because Lua functions and C functions are compatible,
+this behavior is usually more useful.
+When needed, the second result of function <TT><B> type</B></TT> may be used
+to distinguish between Lua and C functions.
+<LI>
+A function definition only assigns the function value to the
+given variable at execution time.
+</UL>
+<HR>
+<B> Next:</B> <A HREF="node44.html"> Incompatibilities with version </A>
+<B>Up:</B> <A HREF="node41.html">Incompatibilities with Previous </A>
+<B> Previous:</B> <A HREF="node42.html"> Incompatibilities with version </A>
+<BR> <HR>

@@ -1,0 +1,830 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 5.3.2 source code - ldo.c</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+ldo.c
+<SPAN CLASS="note">(5.3.2)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: ldo.c,v 2.150 2015/11/19 19:16:22 roberto Exp $
+** Stack and Call structure of Lua
+** See Copyright Notice in lua.h
+*/
+
+#define <A NAME="ldo_c"><SPAN CLASS="definition">ldo_c</SPAN></A>
+#define <A NAME="LUA_CORE"><SPAN CLASS="definition">LUA_CORE</SPAN></A>
+
+#include "<A HREF="lprefix.h.html">lprefix.h</A>"
+
+
+#include &lt;setjmp.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+
+#include "<A HREF="lua.h.html">lua.h</A>"
+
+#include "<A HREF="lapi.h.html">lapi.h</A>"
+#include "<A HREF="ldebug.h.html">ldebug.h</A>"
+#include "<A HREF="ldo.h.html">ldo.h</A>"
+#include "<A HREF="lfunc.h.html">lfunc.h</A>"
+#include "<A HREF="lgc.h.html">lgc.h</A>"
+#include "<A HREF="lmem.h.html">lmem.h</A>"
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+#include "<A HREF="lopcodes.h.html">lopcodes.h</A>"
+#include "<A HREF="lparser.h.html">lparser.h</A>"
+#include "<A HREF="lstate.h.html">lstate.h</A>"
+#include "<A HREF="lstring.h.html">lstring.h</A>"
+#include "<A HREF="ltable.h.html">ltable.h</A>"
+#include "<A HREF="ltm.h.html">ltm.h</A>"
+#include "<A HREF="lundump.h.html">lundump.h</A>"
+#include "<A HREF="lvm.h.html">lvm.h</A>"
+#include "<A HREF="lzio.h.html">lzio.h</A>"
+
+
+
+#define <A NAME="errorstatus"><SPAN CLASS="definition">errorstatus</SPAN></A>(s)  ((s) &gt; <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>)
+
+
+/*
+** {======================================================
+** Error-recovery functions
+** =======================================================
+*/
+
+/*
+** <A HREF="ldo.c.html#LUAI_THROW">LUAI_THROW</A>/<A HREF="ldo.c.html#LUAI_TRY">LUAI_TRY</A> define how Lua does exception handling. By
+** default, Lua handles errors with exceptions when compiling as
+** C++ code, with _longjmp/_setjmp when asked to use them, and with
+** longjmp/setjmp otherwise.
+*/
+#if !defined(<A HREF="ldo.c.html#LUAI_THROW">LUAI_THROW</A>)                                /* { */
+
+#if defined(__cplusplus) &amp;&amp; !defined(LUA_USE_LONGJMP)   /* { */
+
+/* C++ exceptions */
+#define <A HREF="ldo.c.html#LUAI_THROW">LUAI_THROW</A>(L,c)         throw(c)
+#define <A HREF="ldo.c.html#LUAI_TRY">LUAI_TRY</A>(L,c,a) \
+        try { a } catch(...) { if ((c)-&gt;status == 0) (c)-&gt;status = -1; }
+#define <A HREF="ldo.c.html#luai_jmpbuf">luai_jmpbuf</A>             int  /* dummy variable */
+
+#elif defined(<A HREF="luaconf.h.html#LUA_USE_POSIX">LUA_USE_POSIX</A>)                            /* }{ */
+
+/* in POSIX, try _longjmp/_setjmp (more efficient) */
+#define <A HREF="ldo.c.html#LUAI_THROW">LUAI_THROW</A>(L,c)         _longjmp((c)-&gt;b, 1)
+#define <A HREF="ldo.c.html#LUAI_TRY">LUAI_TRY</A>(L,c,a)         if (_setjmp((c)-&gt;b) == 0) { a }
+#define <A HREF="ldo.c.html#luai_jmpbuf">luai_jmpbuf</A>             jmp_buf
+
+#else                                                   /* }{ */
+
+/* ISO C handling with long jumps */
+#define <A NAME="LUAI_THROW"><SPAN CLASS="definition">LUAI_THROW</SPAN></A>(L,c)         longjmp((c)-&gt;b, 1)
+#define <A NAME="LUAI_TRY"><SPAN CLASS="definition">LUAI_TRY</SPAN></A>(L,c,a)         if (setjmp((c)-&gt;b) == 0) { a }
+#define <A NAME="luai_jmpbuf"><SPAN CLASS="definition">luai_jmpbuf</SPAN></A>             jmp_buf
+
+#endif                                                  /* } */
+
+#endif                                                  /* } */
+
+
+
+/* chain list of long jump buffers */
+struct <A NAME="lua_longjmp"><SPAN CLASS="definition">lua_longjmp</SPAN></A> {
+  struct <A HREF="ldo.c.html#lua_longjmp">lua_longjmp</A> *previous;
+  <A HREF="ldo.c.html#luai_jmpbuf">luai_jmpbuf</A> b;
+  volatile int status;  /* error code */
+};
+
+
+static void <A NAME="seterrorobj"><SPAN CLASS="definition">seterrorobj</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int errcode, <A HREF="lobject.h.html#StkId">StkId</A> oldtop) {
+  switch (errcode) {
+    case <A HREF="lua.h.html#LUA_ERRMEM">LUA_ERRMEM</A>: {  /* memory error? */
+      <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, oldtop, <A HREF="lstate.h.html#G">G</A>(L)-&gt;memerrmsg); /* reuse preregistered msg. */
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_ERRERR">LUA_ERRERR</A>: {
+      <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, oldtop, <A HREF="lstring.h.html#luaS_newliteral">luaS_newliteral</A>(L, "error in error handling"));
+      break;
+    }
+    default: {
+      <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, oldtop, L-&gt;top - 1);  /* error message on current top */
+      break;
+    }
+  }
+  L-&gt;top = oldtop + 1;
+}
+
+
+<A HREF="llimits.h.html#l_noret">l_noret</A> <A NAME="luaD_throw"><SPAN CLASS="definition">luaD_throw</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int errcode) {
+  if (L-&gt;errorJmp) {  /* thread has an error handler? */
+    L-&gt;errorJmp-&gt;status = errcode;  /* set status */
+    <A HREF="ldo.c.html#LUAI_THROW">LUAI_THROW</A>(L, L-&gt;errorJmp);  /* jump to it */
+  }
+  else {  /* thread has no error handler */
+    <A HREF="lstate.h.html#global_State">global_State</A> *g = <A HREF="lstate.h.html#G">G</A>(L);
+    L-&gt;status = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(errcode);  /* mark it as dead */
+    if (g-&gt;mainthread-&gt;errorJmp) {  /* <A HREF="lua.c.html#main">main</A> thread has a handler? */
+      <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, g-&gt;mainthread-&gt;top++, L-&gt;top - 1);  /* copy error obj. */
+      <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(g-&gt;mainthread, errcode);  /* re-throw in <A HREF="lua.c.html#main">main</A> thread */
+    }
+    else {  /* no handler at all; abort */
+      if (g-&gt;panic) {  /* panic function? */
+        <A HREF="ldo.c.html#seterrorobj">seterrorobj</A>(L, errcode, L-&gt;top);  /* assume <A HREF="lstate.h.html#EXTRA_STACK">EXTRA_STACK</A> */
+        if (L-&gt;ci-&gt;top &lt; L-&gt;top)
+          L-&gt;ci-&gt;top = L-&gt;top;  /* pushing msg. can break this invariant */
+        <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+        g-&gt;panic(L);  /* call panic function (last chance to jump out) */
+      }
+      abort();
+    }
+  }
+}
+
+
+int <A NAME="luaD_rawrunprotected"><SPAN CLASS="definition">luaD_rawrunprotected</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="ldo.h.html#Pfunc">Pfunc</A> f, void *ud) {
+  unsigned short oldnCcalls = L-&gt;nCcalls;
+  struct <A HREF="ldo.c.html#lua_longjmp">lua_longjmp</A> lj;
+  lj.status = <A HREF="lua.h.html#LUA_OK">LUA_OK</A>;
+  lj.previous = L-&gt;errorJmp;  /* chain new error handler */
+  L-&gt;errorJmp = &amp;lj;
+  <A HREF="ldo.c.html#LUAI_TRY">LUAI_TRY</A>(L, &amp;lj,
+    (*f)(L, ud);
+  );
+  L-&gt;errorJmp = lj.previous;  /* restore old error handler */
+  L-&gt;nCcalls = oldnCcalls;
+  return lj.status;
+}
+
+/* }====================================================== */
+
+
+/*
+** {==================================================================
+** Stack reallocation
+** ===================================================================
+*/
+static void <A NAME="correctstack"><SPAN CLASS="definition">correctstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#TValue">TValue</A> *oldstack) {
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci;
+  <A HREF="lfunc.h.html#UpVal">UpVal</A> *up;
+  L-&gt;top = (L-&gt;top - oldstack) + L-&gt;stack;
+  for (up = L-&gt;openupval; up != NULL; up = up-&gt;u.open.next)
+    up-&gt;v = (up-&gt;v - oldstack) + L-&gt;stack;
+  for (ci = L-&gt;ci; ci != NULL; ci = ci-&gt;previous) {
+    ci-&gt;top = (ci-&gt;top - oldstack) + L-&gt;stack;
+    ci-&gt;func = (ci-&gt;func - oldstack) + L-&gt;stack;
+    if (<A HREF="lstate.h.html#isLua">isLua</A>(ci))
+      ci-&gt;u.l.base = (ci-&gt;u.l.base - oldstack) + L-&gt;stack;
+  }
+}
+
+
+/* some space for error handling */
+#define <A NAME="ERRORSTACKSIZE"><SPAN CLASS="definition">ERRORSTACKSIZE</SPAN></A>  (<A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A> + 200)
+
+
+void <A NAME="luaD_reallocstack"><SPAN CLASS="definition">luaD_reallocstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int newsize) {
+  <A HREF="lobject.h.html#TValue">TValue</A> *oldstack = L-&gt;stack;
+  int lim = L-&gt;stacksize;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(newsize &lt;= <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A> || newsize == <A HREF="ldo.c.html#ERRORSTACKSIZE">ERRORSTACKSIZE</A>);
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;stack_last - L-&gt;stack == L-&gt;stacksize - <A HREF="lstate.h.html#EXTRA_STACK">EXTRA_STACK</A>);
+  <A HREF="lmem.h.html#luaM_reallocvector">luaM_reallocvector</A>(L, L-&gt;stack, L-&gt;stacksize, newsize, <A HREF="lobject.h.html#TValue">TValue</A>);
+  for (; lim &lt; newsize; lim++)
+    <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(L-&gt;stack + lim); /* erase new segment */
+  L-&gt;stacksize = newsize;
+  L-&gt;stack_last = L-&gt;stack + newsize - <A HREF="lstate.h.html#EXTRA_STACK">EXTRA_STACK</A>;
+  <A HREF="ldo.c.html#correctstack">correctstack</A>(L, oldstack);
+}
+
+
+void <A NAME="luaD_growstack"><SPAN CLASS="definition">luaD_growstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int n) {
+  int size = L-&gt;stacksize;
+  if (size &gt; <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A>)  /* error after extra size? */
+    <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, <A HREF="lua.h.html#LUA_ERRERR">LUA_ERRERR</A>);
+  else {
+    int needed = <A HREF="llimits.h.html#cast_int">cast_int</A>(L-&gt;top - L-&gt;stack) + n + <A HREF="lstate.h.html#EXTRA_STACK">EXTRA_STACK</A>;
+    int newsize = 2 * size;
+    if (newsize &gt; <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A>) newsize = <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A>;
+    if (newsize &lt; needed) newsize = needed;
+    if (newsize &gt; <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A>) {  /* stack overflow? */
+      <A HREF="ldo.c.html#luaD_reallocstack">luaD_reallocstack</A>(L, <A HREF="ldo.c.html#ERRORSTACKSIZE">ERRORSTACKSIZE</A>);
+      <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "stack overflow");
+    }
+    else
+      <A HREF="ldo.c.html#luaD_reallocstack">luaD_reallocstack</A>(L, newsize);
+  }
+}
+
+
+static int <A NAME="stackinuse"><SPAN CLASS="definition">stackinuse</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci;
+  <A HREF="lobject.h.html#StkId">StkId</A> lim = L-&gt;top;
+  for (ci = L-&gt;ci; ci != NULL; ci = ci-&gt;previous) {
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ci-&gt;top &lt;= L-&gt;stack_last);
+    if (lim &lt; ci-&gt;top) lim = ci-&gt;top;
+  }
+  return <A HREF="llimits.h.html#cast_int">cast_int</A>(lim - L-&gt;stack) + 1;  /* part of stack in use */
+}
+
+
+void <A NAME="luaD_shrinkstack"><SPAN CLASS="definition">luaD_shrinkstack</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  int inuse = <A HREF="ldo.c.html#stackinuse">stackinuse</A>(L);
+  int goodsize = inuse + (inuse / 8) + 2*<A HREF="lstate.h.html#EXTRA_STACK">EXTRA_STACK</A>;
+  if (goodsize &gt; <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A>) goodsize = <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A>;
+  if (L-&gt;stacksize &gt; <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A>)  /* was handling stack overflow? */
+    <A HREF="lstate.c.html#luaE_freeCI">luaE_freeCI</A>(L);  /* free all CIs (list grew because of an error) */
+  else
+    <A HREF="lstate.c.html#luaE_shrinkCI">luaE_shrinkCI</A>(L);  /* shrink list */
+  if (inuse &lt;= <A HREF="luaconf.h.html#LUAI_MAXSTACK">LUAI_MAXSTACK</A> &amp;&amp;  /* not handling stack overflow? */
+      goodsize &lt; L-&gt;stacksize)  /* trying to shrink? */
+    <A HREF="ldo.c.html#luaD_reallocstack">luaD_reallocstack</A>(L, goodsize);  /* shrink it */
+  else
+    <A HREF="llimits.h.html#condmovestack">condmovestack</A>(L,,);  /* don't change stack (change only for debugging) */
+}
+
+
+void <A NAME="luaD_inctop"><SPAN CLASS="definition">luaD_inctop</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="ldo.h.html#luaD_checkstack">luaD_checkstack</A>(L, 1);
+  L-&gt;top++;
+}
+
+/* }================================================================== */
+
+
+void <A NAME="luaD_hook"><SPAN CLASS="definition">luaD_hook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int event, int line) {
+  <A HREF="lua.h.html#lua_Hook">lua_Hook</A> hook = L-&gt;hook;
+  if (hook &amp;&amp; L-&gt;allowhook) {
+    <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci;
+    ptrdiff_t top = <A HREF="ldo.h.html#savestack">savestack</A>(L, L-&gt;top);
+    ptrdiff_t ci_top = <A HREF="ldo.h.html#savestack">savestack</A>(L, ci-&gt;top);
+    <A HREF="lua.h.html#lua_Debug">lua_Debug</A> ar;
+    ar.event = event;
+    ar.currentline = line;
+    ar.i_ci = ci;
+    <A HREF="ldo.h.html#luaD_checkstack">luaD_checkstack</A>(L, <A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>);  /* ensure minimum stack size */
+    ci-&gt;top = L-&gt;top + <A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>;
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ci-&gt;top &lt;= L-&gt;stack_last);
+    L-&gt;allowhook = 0;  /* cannot call hooks inside a hook */
+    ci-&gt;callstatus |= <A HREF="lstate.h.html#CIST_HOOKED">CIST_HOOKED</A>;
+    <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+    (*hook)(L, &amp;ar);
+    <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+    <A HREF="llimits.h.html#lua_assert">lua_assert</A>(!L-&gt;allowhook);
+    L-&gt;allowhook = 1;
+    ci-&gt;top = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, ci_top);
+    L-&gt;top = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, top);
+    ci-&gt;callstatus &amp;= ~<A HREF="lstate.h.html#CIST_HOOKED">CIST_HOOKED</A>;
+  }
+}
+
+
+static void <A NAME="callhook"><SPAN CLASS="definition">callhook</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci) {
+  int hook = <A HREF="lua.h.html#LUA_HOOKCALL">LUA_HOOKCALL</A>;
+  ci-&gt;u.l.savedpc++;  /* hooks assume 'pc' is already incremented */
+  if (<A HREF="lstate.h.html#isLua">isLua</A>(ci-&gt;previous) &amp;&amp;
+      <A HREF="lopcodes.h.html#GET_OPCODE">GET_OPCODE</A>(*(ci-&gt;previous-&gt;u.l.savedpc - 1)) == <A HREF="lopcodes.h.html#OP_TAILCALL">OP_TAILCALL</A>) {
+    ci-&gt;callstatus |= <A HREF="lstate.h.html#CIST_TAIL">CIST_TAIL</A>;
+    hook = <A HREF="lua.h.html#LUA_HOOKTAILCALL">LUA_HOOKTAILCALL</A>;
+  }
+  <A HREF="ldo.c.html#luaD_hook">luaD_hook</A>(L, hook, -1);
+  ci-&gt;u.l.savedpc--;  /* correct 'pc' */
+}
+
+
+static <A HREF="lobject.h.html#StkId">StkId</A> <A NAME="adjust_varargs"><SPAN CLASS="definition">adjust_varargs</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *p, int actual) {
+  int i;
+  int nfixargs = p-&gt;numparams;
+  <A HREF="lobject.h.html#StkId">StkId</A> base, fixed;
+  /* move fixed parameters to final position */
+  fixed = L-&gt;top - actual;  /* first fixed argument */
+  base = L-&gt;top;  /* final position of first argument */
+  for (i = 0; i &lt; nfixargs &amp;&amp; i &lt; actual; i++) {
+    <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, L-&gt;top++, fixed + i);
+    <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(fixed + i);  /* erase original copy (for GC) */
+  }
+  for (; i &lt; nfixargs; i++)
+    <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(L-&gt;top++);  /* complete missing arguments */
+  return base;
+}
+
+
+/*
+** Check whether __call metafield of 'func' is a function. If so, put
+** it in stack below original 'func' so that '<A HREF="ldo.c.html#luaD_precall">luaD_precall</A>' can call
+** it. Raise an error if __call metafield is not a function.
+*/
+static void <A NAME="tryfuncTM"><SPAN CLASS="definition">tryfuncTM</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> func) {
+  const <A HREF="lobject.h.html#TValue">TValue</A> *tm = <A HREF="ltm.c.html#luaT_gettmbyobj">luaT_gettmbyobj</A>(L, func, <A HREF="ltm.h.html#TM_CALL">TM_CALL</A>);
+  <A HREF="lobject.h.html#StkId">StkId</A> p;
+  if (!<A HREF="lobject.h.html#ttisfunction">ttisfunction</A>(tm))
+    <A HREF="ldebug.c.html#luaG_typeerror">luaG_typeerror</A>(L, func, "call");
+  /* Open a hole inside the stack at 'func' */
+  for (p = L-&gt;top; p &gt; func; p--)
+    <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, p, p-1);
+  L-&gt;top++;  /* slot ensured by caller */
+  <A HREF="lobject.h.html#setobj2s">setobj2s</A>(L, func, tm);  /* tag method is the new function to be called */
+}
+
+
+
+#define <A NAME="next_ci"><SPAN CLASS="definition">next_ci</SPAN></A>(L) (L-&gt;ci = (L-&gt;ci-&gt;next ? L-&gt;ci-&gt;next : <A HREF="lstate.c.html#luaE_extendCI">luaE_extendCI</A>(L)))
+
+
+/* macro to check stack size, preserving 'p' */
+#define <A NAME="checkstackp"><SPAN CLASS="definition">checkstackp</SPAN></A>(L,n,p)  \
+  <A HREF="ldo.h.html#luaD_checkstackaux">luaD_checkstackaux</A>(L, n, \
+    ptrdiff_t t__ = <A HREF="ldo.h.html#savestack">savestack</A>(L, p);  /* save 'p' */ \
+    <A HREF="lgc.h.html#luaC_checkGC">luaC_checkGC</A>(L),  /* stack grow uses memory */ \
+    p = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, t__))  /* 'pos' part: restore 'p' */
+
+
+/*
+** Prepares a function call: checks the stack, creates a new <A HREF="lstate.h.html#CallInfo">CallInfo</A>
+** entry, fills in the relevant information, calls hook if needed.
+** If function is a C function, does the call, too. (Otherwise, leave
+** the execution ('<A HREF="lvm.c.html#luaV_execute">luaV_execute</A>') to the caller, to allow stackless
+** calls.) Returns true iff function has been executed (C function).
+*/
+int <A NAME="luaD_precall"><SPAN CLASS="definition">luaD_precall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> func, int nresults) {
+  <A HREF="lua.h.html#lua_CFunction">lua_CFunction</A> f;
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci;
+  switch (<A HREF="lobject.h.html#ttype">ttype</A>(func)) {
+    case <A HREF="lobject.h.html#LUA_TCCL">LUA_TCCL</A>:  /* C closure */
+      f = <A HREF="lobject.h.html#clCvalue">clCvalue</A>(func)-&gt;f;
+      goto Cfunc;
+    case <A HREF="lobject.h.html#LUA_TLCF">LUA_TLCF</A>:  /* light C function */
+      f = <A HREF="lobject.h.html#fvalue">fvalue</A>(func);
+     Cfunc: {
+      int n;  /* number of returns */
+      <A HREF="ldo.c.html#checkstackp">checkstackp</A>(L, <A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>, func);  /* ensure minimum stack size */
+      ci = <A HREF="ldo.c.html#next_ci">next_ci</A>(L);  /* now 'enter' new function */
+      ci-&gt;nresults = nresults;
+      ci-&gt;func = func;
+      ci-&gt;top = L-&gt;top + <A HREF="lua.h.html#LUA_MINSTACK">LUA_MINSTACK</A>;
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ci-&gt;top &lt;= L-&gt;stack_last);
+      ci-&gt;callstatus = 0;
+      if (L-&gt;hookmask &amp; <A HREF="lua.h.html#LUA_MASKCALL">LUA_MASKCALL</A>)
+        <A HREF="ldo.c.html#luaD_hook">luaD_hook</A>(L, <A HREF="lua.h.html#LUA_HOOKCALL">LUA_HOOKCALL</A>, -1);
+      <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+      n = (*f)(L);  /* do the actual call */
+      <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+      <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, n);
+      <A HREF="ldo.c.html#luaD_poscall">luaD_poscall</A>(L, ci, L-&gt;top - n, n);
+      return 1;
+    }
+    case <A HREF="lobject.h.html#LUA_TLCL">LUA_TLCL</A>: {  /* Lua function: prepare its call */
+      <A HREF="lobject.h.html#StkId">StkId</A> base;
+      <A HREF="lobject.h.html#Proto">Proto</A> *p = <A HREF="lobject.h.html#clLvalue">clLvalue</A>(func)-&gt;p;
+      int n = <A HREF="llimits.h.html#cast_int">cast_int</A>(L-&gt;top - func) - 1;  /* number of real arguments */
+      int fsize = p-&gt;maxstacksize;  /* frame size */
+      <A HREF="ldo.c.html#checkstackp">checkstackp</A>(L, fsize, func);
+      if (p-&gt;is_vararg != 1) {  /* do not use vararg? */
+        for (; n &lt; p-&gt;numparams; n++)
+          <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(L-&gt;top++);  /* complete missing arguments */
+        base = func + 1;
+      }
+      else
+        base = <A HREF="ldo.c.html#adjust_varargs">adjust_varargs</A>(L, p, n);
+      ci = <A HREF="ldo.c.html#next_ci">next_ci</A>(L);  /* now 'enter' new function */
+      ci-&gt;nresults = nresults;
+      ci-&gt;func = func;
+      ci-&gt;u.l.base = base;
+      L-&gt;top = ci-&gt;top = base + fsize;
+      <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ci-&gt;top &lt;= L-&gt;stack_last);
+      ci-&gt;u.l.savedpc = p-&gt;code;  /* starting point */
+      ci-&gt;callstatus = <A HREF="lstate.h.html#CIST_LUA">CIST_LUA</A>;
+      if (L-&gt;hookmask &amp; <A HREF="lua.h.html#LUA_MASKCALL">LUA_MASKCALL</A>)
+        <A HREF="ldo.c.html#callhook">callhook</A>(L, ci);
+      return 0;
+    }
+    default: {  /* not a function */
+      <A HREF="ldo.c.html#checkstackp">checkstackp</A>(L, 1, func);  /* ensure space for metamethod */
+      <A HREF="ldo.c.html#tryfuncTM">tryfuncTM</A>(L, func);  /* try to get '__call' metamethod */
+      return <A HREF="ldo.c.html#luaD_precall">luaD_precall</A>(L, func, nresults);  /* now it must be a function */
+    }
+  }
+}
+
+
+/*
+** Given 'nres' results at 'firstResult', move 'wanted' of them to 'res'.
+** Handle most typical cases (zero results for commands, one result for
+** expressions, multiple results for tail calls/single parameters)
+** separated.
+*/
+static int <A NAME="moveresults"><SPAN CLASS="definition">moveresults</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const <A HREF="lobject.h.html#TValue">TValue</A> *firstResult, <A HREF="lobject.h.html#StkId">StkId</A> res,
+                                      int nres, int wanted) {
+  switch (wanted) {  /* handle typical cases separately */
+    case 0: break;  /* nothing to move */
+    case 1: {  /* one result needed */
+      if (nres == 0)   /* no results? */
+        firstResult = <A HREF="lobject.h.html#luaO_nilobject">luaO_nilobject</A>;  /* adjust with nil */
+      <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, res, firstResult);  /* move it to proper place */
+      break;
+    }
+    case <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>: {
+      int i;
+      for (i = 0; i &lt; nres; i++)  /* move all results to correct place */
+        <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, res + i, firstResult + i);
+      L-&gt;top = res + nres;
+      return 0;  /* wanted == <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A> */
+    }
+    default: {
+      int i;
+      if (wanted &lt;= nres) {  /* enough results? */
+        for (i = 0; i &lt; wanted; i++)  /* move wanted results to correct place */
+          <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, res + i, firstResult + i);
+      }
+      else {  /* not enough results; use all of them plus nils */
+        for (i = 0; i &lt; nres; i++)  /* move all results to correct place */
+          <A HREF="lobject.h.html#setobjs2s">setobjs2s</A>(L, res + i, firstResult + i);
+        for (; i &lt; wanted; i++)  /* complete wanted number of results */
+          <A HREF="lobject.h.html#setnilvalue">setnilvalue</A>(res + i);
+      }
+      break;
+    }
+  }
+  L-&gt;top = res + wanted;  /* top points after the last result */
+  return 1;
+}
+
+
+/*
+** Finishes a function call: calls hook if necessary, removes <A HREF="lstate.h.html#CallInfo">CallInfo</A>,
+** moves current number of results to proper place; returns 0 iff call
+** wanted multiple (variable number of) results.
+*/
+int <A NAME="luaD_poscall"><SPAN CLASS="definition">luaD_poscall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci, <A HREF="lobject.h.html#StkId">StkId</A> firstResult, int nres) {
+  <A HREF="lobject.h.html#StkId">StkId</A> res;
+  int wanted = ci-&gt;nresults;
+  if (L-&gt;hookmask &amp; (<A HREF="lua.h.html#LUA_MASKRET">LUA_MASKRET</A> | <A HREF="lua.h.html#LUA_MASKLINE">LUA_MASKLINE</A>)) {
+    if (L-&gt;hookmask &amp; <A HREF="lua.h.html#LUA_MASKRET">LUA_MASKRET</A>) {
+      ptrdiff_t fr = <A HREF="ldo.h.html#savestack">savestack</A>(L, firstResult);  /* hook may change stack */
+      <A HREF="ldo.c.html#luaD_hook">luaD_hook</A>(L, <A HREF="lua.h.html#LUA_HOOKRET">LUA_HOOKRET</A>, -1);
+      firstResult = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, fr);
+    }
+    L-&gt;oldpc = ci-&gt;previous-&gt;u.l.savedpc;  /* 'oldpc' for caller function */
+  }
+  res = ci-&gt;func;  /* res == final position of 1st result */
+  L-&gt;ci = ci-&gt;previous;  /* back to caller */
+  /* move results to proper place */
+  return <A HREF="ldo.c.html#moveresults">moveresults</A>(L, firstResult, res, nres, wanted);
+}
+
+
+/*
+** Check appropriate error for stack overflow ("regular" overflow or
+** overflow while handling stack overflow). If 'nCalls' is larger than
+** <A HREF="llimits.h.html#LUAI_MAXCCALLS">LUAI_MAXCCALLS</A> (which means it is handling a "regular" overflow) but
+** smaller than 9/8 of <A HREF="llimits.h.html#LUAI_MAXCCALLS">LUAI_MAXCCALLS</A>, does not report an error (to
+** allow overflow handling to work)
+*/
+static void <A NAME="stackerror"><SPAN CLASS="definition">stackerror</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  if (L-&gt;nCcalls == <A HREF="llimits.h.html#LUAI_MAXCCALLS">LUAI_MAXCCALLS</A>)
+    <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "C stack overflow");
+  else if (L-&gt;nCcalls &gt;= (<A HREF="llimits.h.html#LUAI_MAXCCALLS">LUAI_MAXCCALLS</A> + (<A HREF="llimits.h.html#LUAI_MAXCCALLS">LUAI_MAXCCALLS</A>&gt;&gt;3)))
+    <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, <A HREF="lua.h.html#LUA_ERRERR">LUA_ERRERR</A>);  /* error while handing stack error */
+}
+
+
+/*
+** Call a function (C or Lua). The function to be called is at *func.
+** The arguments are on the stack, right after the function.
+** When returns, all the results are on the stack, starting at the original
+** function position.
+*/
+void <A NAME="luaD_call"><SPAN CLASS="definition">luaD_call</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> func, int nResults) {
+  if (++L-&gt;nCcalls &gt;= <A HREF="llimits.h.html#LUAI_MAXCCALLS">LUAI_MAXCCALLS</A>)
+    <A HREF="ldo.c.html#stackerror">stackerror</A>(L);
+  if (!<A HREF="ldo.c.html#luaD_precall">luaD_precall</A>(L, func, nResults))  /* is a Lua function? */
+    <A HREF="lvm.c.html#luaV_execute">luaV_execute</A>(L);  /* call it */
+  L-&gt;nCcalls--;
+}
+
+
+/*
+** Similar to '<A HREF="ldo.c.html#luaD_call">luaD_call</A>', but does not allow yields during the call
+*/
+void <A NAME="luaD_callnoyield"><SPAN CLASS="definition">luaD_callnoyield</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#StkId">StkId</A> func, int nResults) {
+  L-&gt;nny++;
+  <A HREF="ldo.c.html#luaD_call">luaD_call</A>(L, func, nResults);
+  L-&gt;nny--;
+}
+
+
+/*
+** Completes the execution of an interrupted C function, calling its
+** continuation function.
+*/
+static void <A NAME="finishCcall"><SPAN CLASS="definition">finishCcall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int status) {
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci;
+  int n;
+  /* must have a continuation and must be able to call it */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ci-&gt;u.c.k != NULL &amp;&amp; L-&gt;nny == 0);
+  /* error status can only happen in a protected call */
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>((ci-&gt;callstatus &amp; <A HREF="lstate.h.html#CIST_YPCALL">CIST_YPCALL</A>) || status == <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>);
+  if (ci-&gt;callstatus &amp; <A HREF="lstate.h.html#CIST_YPCALL">CIST_YPCALL</A>) {  /* was inside a pcall? */
+    ci-&gt;callstatus &amp;= ~<A HREF="lstate.h.html#CIST_YPCALL">CIST_YPCALL</A>;  /* finish '<A HREF="lua.h.html#lua_pcall">lua_pcall</A>' */
+    L-&gt;errfunc = ci-&gt;u.c.old_errfunc;
+  }
+  /* finish '<A HREF="lapi.c.html#lua_callk">lua_callk</A>'/'<A HREF="lua.h.html#lua_pcall">lua_pcall</A>'; <A HREF="lstate.h.html#CIST_YPCALL">CIST_YPCALL</A> and 'errfunc' already
+     handled */
+  <A HREF="lapi.h.html#adjustresults">adjustresults</A>(L, ci-&gt;nresults);
+  /* call continuation function */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  n = (*ci-&gt;u.c.k)(L, status, ci-&gt;u.c.ctx);
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, n);
+  /* finish '<A HREF="ldo.c.html#luaD_precall">luaD_precall</A>' */
+  <A HREF="ldo.c.html#luaD_poscall">luaD_poscall</A>(L, ci, L-&gt;top - n, n);
+}
+
+
+/*
+** Executes "full continuation" (everything in the stack) of a
+** previously interrupted coroutine until the stack is empty (or another
+** interruption long-jumps out of the loop). If the coroutine is
+** recovering from an error, 'ud' points to the error status, which must
+** be passed to the first continuation function (otherwise the default
+** status is <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>).
+*/
+static void <A NAME="unroll"><SPAN CLASS="definition">unroll</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  if (ud != NULL)  /* error status? */
+    <A HREF="ldo.c.html#finishCcall">finishCcall</A>(L, *(int *)ud);  /* finish '<A HREF="lapi.c.html#lua_pcallk">lua_pcallk</A>' callee */
+  while (L-&gt;ci != &amp;L-&gt;base_ci) {  /* something in the stack */
+    if (!<A HREF="lstate.h.html#isLua">isLua</A>(L-&gt;ci))  /* C function? */
+      <A HREF="ldo.c.html#finishCcall">finishCcall</A>(L, <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>);  /* complete its execution */
+    else {  /* Lua function */
+      <A HREF="lvm.c.html#luaV_finishOp">luaV_finishOp</A>(L);  /* finish interrupted instruction */
+      <A HREF="lvm.c.html#luaV_execute">luaV_execute</A>(L);  /* execute down to higher C 'boundary' */
+    }
+  }
+}
+
+
+/*
+** Try to find a suspended protected call (a "<A HREF="ldo.c.html#recover">recover</A> point") for the
+** given thread.
+*/
+static <A HREF="lstate.h.html#CallInfo">CallInfo</A> *<A NAME="findpcall"><SPAN CLASS="definition">findpcall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci;
+  for (ci = L-&gt;ci; ci != NULL; ci = ci-&gt;previous) {  /* search for a pcall */
+    if (ci-&gt;callstatus &amp; <A HREF="lstate.h.html#CIST_YPCALL">CIST_YPCALL</A>)
+      return ci;
+  }
+  return NULL;  /* no pending pcall */
+}
+
+
+/*
+** Recovers from an error in a coroutine. Finds a <A HREF="ldo.c.html#recover">recover</A> point (if
+** there is one) and completes the execution of the interrupted
+** '<A HREF="ldo.c.html#luaD_pcall">luaD_pcall</A>'. If there is no <A HREF="ldo.c.html#recover">recover</A> point, returns zero.
+*/
+static int <A NAME="recover"><SPAN CLASS="definition">recover</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int status) {
+  <A HREF="lobject.h.html#StkId">StkId</A> oldtop;
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = <A HREF="ldo.c.html#findpcall">findpcall</A>(L);
+  if (ci == NULL) return 0;  /* no recovery point */
+  /* "finish" <A HREF="ldo.c.html#luaD_pcall">luaD_pcall</A> */
+  oldtop = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, ci-&gt;extra);
+  <A HREF="lfunc.c.html#luaF_close">luaF_close</A>(L, oldtop);
+  <A HREF="ldo.c.html#seterrorobj">seterrorobj</A>(L, status, oldtop);
+  L-&gt;ci = ci;
+  L-&gt;allowhook = <A HREF="lstate.h.html#getoah">getoah</A>(ci-&gt;callstatus);  /* restore original 'allowhook' */
+  L-&gt;nny = 0;  /* should be zero to be yieldable */
+  <A HREF="ldo.c.html#luaD_shrinkstack">luaD_shrinkstack</A>(L);
+  L-&gt;errfunc = ci-&gt;u.c.old_errfunc;
+  return 1;  /* continue running the coroutine */
+}
+
+
+/*
+** signal an error in the call to '<A HREF="ldo.c.html#resume">resume</A>', not in the execution of the
+** coroutine itself. (Such errors should not be handled by any coroutine
+** error handler and should not kill the coroutine.)
+*/
+static <A HREF="llimits.h.html#l_noret">l_noret</A> <A NAME="resume_error"><SPAN CLASS="definition">resume_error</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *msg, <A HREF="lobject.h.html#StkId">StkId</A> firstArg) {
+  L-&gt;top = firstArg;  /* remove args from the stack */
+  <A HREF="lobject.h.html#setsvalue2s">setsvalue2s</A>(L, L-&gt;top, <A HREF="lstring.c.html#luaS_new">luaS_new</A>(L, msg));  /* push error message */
+  <A HREF="lapi.h.html#api_incr_top">api_incr_top</A>(L);
+  <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, -1);  /* jump back to '<A HREF="ldo.c.html#lua_resume">lua_resume</A>' */
+}
+
+
+/*
+** Do the work for '<A HREF="ldo.c.html#lua_resume">lua_resume</A>' in protected mode. Most of the work
+** depends on the status of the coroutine: initial state, suspended
+** inside a hook, or regularly suspended (optionally with a continuation
+** function), plus erroneous cases: non-suspended coroutine or dead
+** coroutine.
+*/
+static void <A NAME="resume"><SPAN CLASS="definition">resume</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  int nCcalls = L-&gt;nCcalls;
+  int n = *(<A HREF="llimits.h.html#cast">cast</A>(int*, ud));  /* number of arguments */
+  <A HREF="lobject.h.html#StkId">StkId</A> firstArg = L-&gt;top - n;  /* first argument */
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci;
+  if (nCcalls &gt;= <A HREF="llimits.h.html#LUAI_MAXCCALLS">LUAI_MAXCCALLS</A>)
+    <A HREF="ldo.c.html#resume_error">resume_error</A>(L, "C stack overflow", firstArg);
+  if (L-&gt;status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) {  /* may be starting a coroutine */
+    if (ci != &amp;L-&gt;base_ci)  /* not in base level? */
+      <A HREF="ldo.c.html#resume_error">resume_error</A>(L, "cannot <A HREF="ldo.c.html#resume">resume</A> non-suspended coroutine", firstArg);
+    /* coroutine is in base level; start running it */
+    if (!<A HREF="ldo.c.html#luaD_precall">luaD_precall</A>(L, firstArg - 1, <A HREF="lua.h.html#LUA_MULTRET">LUA_MULTRET</A>))  /* Lua function? */
+      <A HREF="lvm.c.html#luaV_execute">luaV_execute</A>(L);  /* call it */
+  }
+  else if (L-&gt;status != <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>)
+    <A HREF="ldo.c.html#resume_error">resume_error</A>(L, "cannot <A HREF="ldo.c.html#resume">resume</A> dead coroutine", firstArg);
+  else {  /* resuming from previous yield */
+    L-&gt;status = <A HREF="lua.h.html#LUA_OK">LUA_OK</A>;  /* mark that it is running (again) */
+    ci-&gt;func = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, ci-&gt;extra);
+    if (<A HREF="lstate.h.html#isLua">isLua</A>(ci))  /* yielded inside a hook? */
+      <A HREF="lvm.c.html#luaV_execute">luaV_execute</A>(L);  /* just continue running Lua code */
+    else {  /* 'common' yield */
+      if (ci-&gt;u.c.k != NULL) {  /* does it have a continuation function? */
+        <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+        n = (*ci-&gt;u.c.k)(L, <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>, ci-&gt;u.c.ctx); /* call continuation */
+        <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+        <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, n);
+        firstArg = L-&gt;top - n;  /* yield results come from continuation */
+      }
+      <A HREF="ldo.c.html#luaD_poscall">luaD_poscall</A>(L, ci, firstArg, n);  /* finish '<A HREF="ldo.c.html#luaD_precall">luaD_precall</A>' */
+    }
+    <A HREF="ldo.c.html#unroll">unroll</A>(L, NULL);  /* run continuation */
+  }
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(nCcalls == L-&gt;nCcalls);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_resume"><SPAN CLASS="definition">lua_resume</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lstate.h.html#lua_State">lua_State</A> *from, int nargs) {
+  int status;
+  unsigned short oldnny = L-&gt;nny;  /* save "number of non-yieldable" calls */
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="llimits.h.html#luai_userstateresume">luai_userstateresume</A>(L, nargs);
+  L-&gt;nCcalls = (from) ? from-&gt;nCcalls + 1 : 1;
+  L-&gt;nny = 0;  /* allow yields */
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, (L-&gt;status == <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) ? nargs + 1 : nargs);
+  status = <A HREF="ldo.c.html#luaD_rawrunprotected">luaD_rawrunprotected</A>(L, <A HREF="ldo.c.html#resume">resume</A>, &amp;nargs);
+  if (status == -1)  /* error calling '<A HREF="ldo.c.html#lua_resume">lua_resume</A>'? */
+    status = <A HREF="lua.h.html#LUA_ERRRUN">LUA_ERRRUN</A>;
+  else {  /* continue running after recoverable errors */
+    while (<A HREF="ldo.c.html#errorstatus">errorstatus</A>(status) &amp;&amp; <A HREF="ldo.c.html#recover">recover</A>(L, status)) {
+      /* <A HREF="ldo.c.html#unroll">unroll</A> continuation */
+      status = <A HREF="ldo.c.html#luaD_rawrunprotected">luaD_rawrunprotected</A>(L, <A HREF="ldo.c.html#unroll">unroll</A>, &amp;status);
+    }
+    if (<A HREF="ldo.c.html#errorstatus">errorstatus</A>(status)) {  /* unrecoverable error? */
+      L-&gt;status = <A HREF="llimits.h.html#cast_byte">cast_byte</A>(status);  /* mark thread as 'dead' */
+      <A HREF="ldo.c.html#seterrorobj">seterrorobj</A>(L, status, L-&gt;top);  /* push error message */
+      L-&gt;ci-&gt;top = L-&gt;top;
+    }
+    else <A HREF="llimits.h.html#lua_assert">lua_assert</A>(status == L-&gt;status);  /* normal end or yield */
+  }
+  L-&gt;nny = oldnny;  /* restore 'nny' */
+  L-&gt;nCcalls--;
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(L-&gt;nCcalls == ((from) ? from-&gt;nCcalls : 0));
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return status;
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_isyieldable"><SPAN CLASS="definition">lua_isyieldable</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L) {
+  return (L-&gt;nny == 0);
+}
+
+
+<A HREF="luaconf.h.html#LUA_API">LUA_API</A> int <A NAME="lua_yieldk"><SPAN CLASS="definition">lua_yieldk</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nresults, <A HREF="lua.h.html#lua_KContext">lua_KContext</A> ctx,
+                        <A HREF="lua.h.html#lua_KFunction">lua_KFunction</A> k) {
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *ci = L-&gt;ci;
+  <A HREF="llimits.h.html#luai_userstateyield">luai_userstateyield</A>(L, nresults);
+  <A HREF="llimits.h.html#lua_lock">lua_lock</A>(L);
+  <A HREF="lapi.h.html#api_checknelems">api_checknelems</A>(L, nresults);
+  if (L-&gt;nny &gt; 0) {
+    if (L != <A HREF="lstate.h.html#G">G</A>(L)-&gt;mainthread)
+      <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "attempt to yield across a C-call boundary");
+    else
+      <A HREF="ldebug.c.html#luaG_runerror">luaG_runerror</A>(L, "attempt to yield from outside a coroutine");
+  }
+  L-&gt;status = <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>;
+  ci-&gt;extra = <A HREF="ldo.h.html#savestack">savestack</A>(L, ci-&gt;func);  /* save current 'func' */
+  if (<A HREF="lstate.h.html#isLua">isLua</A>(ci)) {  /* inside a hook? */
+    <A HREF="llimits.h.html#api_check">api_check</A>(L, k == NULL, "hooks cannot continue after yielding");
+  }
+  else {
+    if ((ci-&gt;u.c.k = k) != NULL)  /* is there a continuation? */
+      ci-&gt;u.c.ctx = ctx;  /* save context */
+    ci-&gt;func = L-&gt;top - nresults - 1;  /* protect stack below results */
+    <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, <A HREF="lua.h.html#LUA_YIELD">LUA_YIELD</A>);
+  }
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(ci-&gt;callstatus &amp; <A HREF="lstate.h.html#CIST_HOOKED">CIST_HOOKED</A>);  /* must be inside a hook */
+  <A HREF="llimits.h.html#lua_unlock">lua_unlock</A>(L);
+  return 0;  /* return to '<A HREF="ldo.c.html#luaD_hook">luaD_hook</A>' */
+}
+
+
+int <A NAME="luaD_pcall"><SPAN CLASS="definition">luaD_pcall</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="ldo.h.html#Pfunc">Pfunc</A> func, void *u,
+                ptrdiff_t old_top, ptrdiff_t ef) {
+  int status;
+  <A HREF="lstate.h.html#CallInfo">CallInfo</A> *old_ci = L-&gt;ci;
+  <A HREF="llimits.h.html#lu_byte">lu_byte</A> old_allowhooks = L-&gt;allowhook;
+  unsigned short old_nny = L-&gt;nny;
+  ptrdiff_t old_errfunc = L-&gt;errfunc;
+  L-&gt;errfunc = ef;
+  status = <A HREF="ldo.c.html#luaD_rawrunprotected">luaD_rawrunprotected</A>(L, func, u);
+  if (status != <A HREF="lua.h.html#LUA_OK">LUA_OK</A>) {  /* an error occurred? */
+    <A HREF="lobject.h.html#StkId">StkId</A> oldtop = <A HREF="ldo.h.html#restorestack">restorestack</A>(L, old_top);
+    <A HREF="lfunc.c.html#luaF_close">luaF_close</A>(L, oldtop);  /* close possible pending closures */
+    <A HREF="ldo.c.html#seterrorobj">seterrorobj</A>(L, status, oldtop);
+    L-&gt;ci = old_ci;
+    L-&gt;allowhook = old_allowhooks;
+    L-&gt;nny = old_nny;
+    <A HREF="ldo.c.html#luaD_shrinkstack">luaD_shrinkstack</A>(L);
+  }
+  L-&gt;errfunc = old_errfunc;
+  return status;
+}
+
+
+
+/*
+** Execute a protected parser.
+*/
+struct <A NAME="SParser"><SPAN CLASS="definition">SParser</SPAN></A> {  /* data to '<A HREF="ldo.c.html#f_parser">f_parser</A>' */
+  <A HREF="lzio.h.html#ZIO">ZIO</A> *z;
+  <A HREF="lzio.h.html#Mbuffer">Mbuffer</A> buff;  /* dynamic structure used by the scanner */
+  <A HREF="lparser.h.html#Dyndata">Dyndata</A> dyd;  /* dynamic structures used by the parser */
+  const char *mode;
+  const char *name;
+};
+
+
+static void <A NAME="checkmode"><SPAN CLASS="definition">checkmode</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, const char *mode, const char *x) {
+  if (mode &amp;&amp; strchr(mode, x[0]) == NULL) {
+    <A HREF="lobject.c.html#luaO_pushfstring">luaO_pushfstring</A>(L,
+       "attempt to load a %s chunk (mode is '%s')", x, mode);
+    <A HREF="ldo.c.html#luaD_throw">luaD_throw</A>(L, <A HREF="lua.h.html#LUA_ERRSYNTAX">LUA_ERRSYNTAX</A>);
+  }
+}
+
+
+static void <A NAME="f_parser"><SPAN CLASS="definition">f_parser</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, void *ud) {
+  <A HREF="lobject.h.html#LClosure">LClosure</A> *cl;
+  struct <A HREF="ldo.c.html#SParser">SParser</A> *p = <A HREF="llimits.h.html#cast">cast</A>(struct <A HREF="ldo.c.html#SParser">SParser</A> *, ud);
+  int c = <A HREF="lzio.h.html#zgetc">zgetc</A>(p-&gt;z);  /* read first character */
+  if (c == <A HREF="lua.h.html#LUA_SIGNATURE">LUA_SIGNATURE</A>[0]) {
+    <A HREF="ldo.c.html#checkmode">checkmode</A>(L, p-&gt;mode, "binary");
+    cl = <A HREF="lundump.c.html#luaU_undump">luaU_undump</A>(L, p-&gt;z, p-&gt;name);
+  }
+  else {
+    <A HREF="ldo.c.html#checkmode">checkmode</A>(L, p-&gt;mode, "text");
+    cl = <A HREF="lparser.c.html#luaY_parser">luaY_parser</A>(L, p-&gt;z, &amp;p-&gt;buff, &amp;p-&gt;dyd, p-&gt;name, c);
+  }
+  <A HREF="llimits.h.html#lua_assert">lua_assert</A>(cl-&gt;nupvalues == cl-&gt;p-&gt;sizeupvalues);
+  <A HREF="lfunc.c.html#luaF_initupvals">luaF_initupvals</A>(L, cl);
+}
+
+
+int <A NAME="luaD_protectedparser"><SPAN CLASS="definition">luaD_protectedparser</SPAN></A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lzio.h.html#ZIO">ZIO</A> *z, const char *name,
+                                        const char *mode) {
+  struct <A HREF="ldo.c.html#SParser">SParser</A> p;
+  int status;
+  L-&gt;nny++;  /* cannot yield during parsing */
+  p.z = z; p.name = name; p.mode = mode;
+  p.dyd.actvar.arr = NULL; p.dyd.actvar.size = 0;
+  p.dyd.gt.arr = NULL; p.dyd.gt.size = 0;
+  p.dyd.label.arr = NULL; p.dyd.label.size = 0;
+  <A HREF="lzio.h.html#luaZ_initbuffer">luaZ_initbuffer</A>(L, &amp;p.buff);
+  status = <A HREF="ldo.c.html#luaD_pcall">luaD_pcall</A>(L, <A HREF="ldo.c.html#f_parser">f_parser</A>, &amp;p, <A HREF="ldo.h.html#savestack">savestack</A>(L, L-&gt;top), L-&gt;errfunc);
+  <A HREF="lzio.h.html#luaZ_freebuffer">luaZ_freebuffer</A>(L, &amp;p.buff);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, p.dyd.actvar.arr, p.dyd.actvar.size);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, p.dyd.gt.arr, p.dyd.gt.size);
+  <A HREF="lmem.h.html#luaM_freearray">luaM_freearray</A>(L, p.dyd.label.arr, p.dyd.label.size);
+  L-&gt;nny--;
+  return status;
+}
+
+
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Mon Nov 30 10:09:14 2015
+</P>
+
+</BODY>
+</HTML>

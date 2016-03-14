@@ -1,0 +1,211 @@
+<HTML>
+<HEAD>
+<TITLE>Lua: technical note 5</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../lua.css">
+</HEAD>
+
+<BODY>
+
+<HR>
+<H1>
+<A HREF="../home.html"><IMG SRC="../images/logo.gif" ALT="Lua" BORDER=0></A>
+Technical Note 5
+</H1>
+
+<H2>A template class for binding C++ to Lua</H2>
+by <A HREF="mailto:lpalozzi-NO-SPAM-THANKS@uniserve.com">Lenny Palozzi</A>
+
+<H2>Abstract</H2>
+
+This note explains a method of binding C++ classes to Lua. Lua does not support this directly, but it does provide a low level C API and extension mechanisms that makes it possible. The method I describe makes use of Lua's C API, C++ templates, and Lua's extension mechanisms to build a small and simple, yet effective static template class that provides a class registration service. The method imposes a few restriction on your classes, namely, only class member functions with the signature <code>int(T::*)(lua_State*)</code> can be registered. But as I'll show, this restriction can be overcome. The end result is a clean interface to register classes, and familiar Lua table semantics of classes in Lua. The solution explained here is based on a template class that I wrote called
+<A HREF="http://lua-users.org/files/wiki_insecure/users/lpalozzi/luna.tar.gz">Luna</A>.
+
+<H2>The problem</H2>
+
+Lua's API is not designed to register C++ classes to Lua, only C functions that have the signature <code>int()(lua_State*)</code>, that is, a function that takes an <code>lua_State</code> pointer as an argument and returns an integer. Actually, that is the only C data type that Lua supports in registering. To register any other type you have to use the extension mechanisms that Lua provides, tag methods, closures, etc. In building a solution that allows us to register C++ classes to Lua, we must make use of those extension mechanisms.
+
+<H2>The solution</H2>
+
+There are four components that make the solution, class registration, object instantiation, member function calling, and garbage collection.
+<P>
+Class registration is accomplished by registering a table constructor function with the name of the class. A table constructor function is a static method of the template class that returns a table object.
+<P>
+Note: Static class member functions are compatible with C functions, assuming their signatures are the same, thus we can register them in Lua. The code snippets below are member functions of a template class, 'T' is the class being bound.
+
+<PRE>
+  static void Register(lua_State* L) {
+    lua_pushcfunction(L, &Luna&lt;T&gt;::constructor);
+    lua_setglobal(L, T::className);
+
+    if (otag == 0) {
+      otag = lua_newtag(L);
+      lua_pushcfunction(L, &Luna&lt;T&gt;::gc_obj);
+      lua_settagmethod(L, otag, "gc"); /* tm to release objects */
+    }
+  }
+</PRE>
+
+Object instantiation is accomplished by passing any arguments the user passed to the table constructor function to the constructor of the C++ object, creating a table that represents the object, registering any member functions of the class to that table, and finally returning the table to Lua. The object pointer is stored as a userdata in the table at index 0. The index into the member function map is stored as a closure value for each function. More on the member function map later.
+
+<PRE>
+  static int constructor(lua_State* L) {
+    T* obj= new T(L); /* new T */
+    /* user is expected to remove any values from stack */
+
+    lua_newtable(L); /* new table object */
+    lua_pushnumber(L, 0); /* userdata obj at index 0 */
+    lua_pushusertag(L, obj, otag); /* have gc call tm */
+    lua_settable(L, -3);
+
+    /* register the member functions */
+    for (int i=0; T::Register[i].name; i++) {
+      lua_pushstring(L, T::Register[i].name);
+      lua_pushnumber(L, i);
+      lua_pushcclosure(L, &Luna&lt;T&gt;::thunk, 1);
+      lua_settable(L, -3);
+    }
+    return 1; /* return the table object */
+  }
+</PRE>
+
+Unlike C functions, C++ member functions require an object of the class for the function to be called. Member function calling is accomplished by a function that "thunks" the calls by acquiring the object pointer and member function pointer and making the actual call. The member function pointer is indexed from the member function map by the closure value, the object pointer from the table at index 0. Note that all class functions in Lua are registered with this function.
+
+<PRE>
+  static int thunk(lua_State* L) {
+    /* stack = closure(-1), [args...], 'self' table(1) */
+    int i = static_cast&lt;int&gt;(lua_tonumber(L,-1));
+    lua_pushnumber(L, 0); /* userdata object at index 0 */
+    lua_gettable(L, 1);
+    T* obj = static_cast&lt;T*&gt;(lua_touserdata(L,-1));
+    lua_pop(L, 2); /* pop closure value and obj */
+    return (obj->*(T::Register[i].mfunc))(L);
+  }
+</PRE>
+
+Garbage collection is accomplished by setting a garbage collection tag method for the userdata in the table. When the garbage collector is run the 'gc' tag method will be called which simply deletes the object. The 'gc' tag method is registered during class registration with a new tag. At object instantiation above, the userdata is tagged with the tag value.
+
+<PRE>
+  static int gc_obj(lua_State* L) {
+    T* obj = static_cast&lt;T*&gt;(lua_touserdata(L, -1));
+    delete obj;
+    return 0;
+  }
+</PRE>
+
+With that in mind, there are a few requirements that a class must comply with as you may have noticed:
+<UL>
+  <LI>it must have a public constructor that takes a <code>lua_State*</code>
+  <LI>registered member functions must have the signature <code>int(T::*)(lua_State*)</code>
+  <LI>it must have a <code>public static const char[]</code> member called <code>className</code>
+  <LI>it must have a <code>public static const Luna&lt;T&gt;::RegType[]</code> member called <code>Register</code>
+</UL>
+Note: These requirements are of the design choice I made, you may decide on a different interface; with only a few adjustments to the code.
+<P>
+<code>Luna&lt;T&gt::RegType</code> is a function map. <code>name</code> is the name of the function that the member function <code>mfunc</code> will be registered as.
+
+<PRE>
+  struct RegType {
+    const char* name;
+    const int(T::*mfunc)(lua_State*);
+  };
+</PRE>
+
+Here's an example of how to register a C++ class to Lua. A call to <code>Luna&lt;T&gt;::Register()</code> will register the class; the only public interface of the template class. To use the class in Lua you create an instance of it by calling its table constructor function.
+
+<PRE>
+  class Account {
+    double m_balance;
+   public:
+    Account(lua_State* L) {
+      /* constructor table at top of stack */
+      lua_pushstring(L, "balance");
+      lua_gettable(L, -2);
+      m_balance = lua_tonumber(L, -1);
+      lua_pop(L, 2); /* pop constructor table and balance */
+    }
+
+    int deposit(lua_State* L) {
+      m_balance += lua_tonumber(L, -1);
+      lua_pop(L, 1);
+      return 0;
+    }
+    int withdraw(lua_State* L) {
+      m_balance -= lua_tonumber(L, -1);
+      lua_pop(L, 1);
+      return 0;
+    }
+    int balance(lua_State* L) {
+      lua_pushnumber(L, m_balance);
+      return 1;
+    }
+    static const char[] className;
+    static const Luna&lt;Account&gt;::RegType Register
+  };
+
+  const char[] Account::className = "Account";
+  const Luna&lt;Account&gt;::RegType Account::Register[] = {
+    { "deposit",  &Account::deposit },
+    { "withdraw", &Account::withdraw },
+    { "balance",  &Account::balance },
+    { 0 }
+  };
+
+  [...]
+
+  /* Register the class Account with state L */
+  Luna&lt;Account&gt;::Register(L);
+
+  -- In Lua
+  -- create an Account object
+  local account = Account{ balance = 100 }
+  account:deposit(50)
+  account:withdraw(25)
+  local b = account:balance()
+</PRE>
+
+The table of an Account instance looks like this:
+<PRE>
+  0 = userdata(6): 0x804df80
+  balance = function: 0x804ec10
+  withdraw = function: 0x804ebf0
+  deposit = function: 0x804f9c8
+</PRE>
+
+<H2>Explanation</H2>
+
+Some may not like the use of C++ templates, but their use here fits in well. They offer a quick tight solution to what initially seemed a complex problem. As a result of using templates the class is very type safe; for example its impossible to mix member functions of different classes in the member function map, the compiler will complain. Additionally, the static design of the template class makes it easy to use, there are no template instantiated objects to cleanup when you're done.
+<P>
+The thunk mechanism is the core of the class, as it "thunks" the call. It does so by taking the object pointer from the table the function call is associated to, and indexing the member function map for the member function pointer. (Lua table function calls of <code>table:function()</code> is syntactic sugar for <code>table.function(table)</code>. When the call is made Lua first pushes the table on the stack, then any arguments). The  member function index is a closure value, pushed onto the stack last (after any arguments). Initially I had the object pointer as a closure which meant having 2 closure values, a pointer to object(a void*) and the member function index(an int) for every class instantiated for every function; which seemed rather costly but provided quick access to the object pointer. As well, a userdata object in the table for garbage collection purposes was required. In the end I opted to index the table for the object pointer and save on resources, as a result increasing the function call overhead; a table lookup for the object pointer.
+<P>
+All facts considered, the implementation makes use of only a few of Lua's available extension mechanisms, closures for holding the index to the member function, the 'gc' tag method for garbage collection, and function registration for table constructor and member function calls.
+<P>
+Why allow only member functions with the signature <code>int(T::*)(lua_State*)</code> to be registered? This allows your member functions to interact directly with Lua; retrieving arguments and returning values to Lua, calling any Lua API function, etc. Moreover, it provides an identical interface that C functions have when registered to Lua, making it easier for those wishing to use C++.
+
+<H2>Weaknesses</H2>
+
+This template class solution only binds member functions with a specific signature as described earlier. Thus if you already have classes written, or are intending to use the class in both Lua and C++ environments, this may not be the best solution for you. In the abstract I mentioned that I'd explain that this isn't really a problem. Using the proxy pattern, we encapsulate the real class and delegate any calls made to it to the target object. The member functions of the proxy class coerce the arguments and return values to and from Lua, and delegate the calls to the target object. You would register the proxy class with Lua, not the real class. Additionally, you may use inheritance as well where the proxy class inherits from the base class and delegates the function calls up to the base class, but with one caveat, the base class must have a default constructor; you cannot get the constructor arguments from Lua to the base class in the proxy's constructor initializer list. The proxy pattern solves our problem, we now can use the class in both C++ and Lua, but in doing so requires us to write proxy classes and maintain them.
+<P>
+Objects are simply new'ed when created, more control as to how an object is created should be given to the user. For example, the user may wish to register a singleton class. One solution is to have the user implement a static <code>create()</code> member function that returns a pointer to the object. This way the user may implement a singleton class, simply allocate the object via new, or anything else. The <code>constructor</code> function could be modified to call <code>create()</code> rather than <code>new</code> to get an object pointer. This pushes more policy unto the class but is much more flexible. A "hook" for garbage collection may be of use to some as well.
+
+<H2>Conclusion</H2>
+
+This note explained a simple method of binding C++ classes to Lua. The implementation is rather simple giving you an opportunity to modify it for your own purposes, at the same time satisfying any general use. There are many other tools for binding C++ to Lua, such as tolua, SWIGLua, and other small implementations like this one. Each with their own strengths, weaknesses, and suitability to your specific problem. Hopefully this note has shed some light on the subtler issues.
+<P>
+
+The full source of the template class, around 70 lines of source, is available from the Lua
+<A HREF="../addons.html">add-ons page</A>.
+<P>
+
+<H2>References</H2>
+[1] R. Hickey, <A HREF="http://www.bestweb.net/~rhickey/functor.html">Callbacks in C++ using template functors</A>, C++ Report February 95
+<P>
+
+<HR>
+<SMALL>
+Last update:
+Wed Mar 12 11:51:13 EST 2003
+by <A HREF="http://www.tecgraf.puc-rio.br/~lhf/">lhf</A>.
+</SMALL>
+
+</BODY>
+</HTML>

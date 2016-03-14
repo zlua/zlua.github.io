@@ -1,0 +1,108 @@
+html {
+	background-color: #F8F8F8 ;
+}
+
+body {
+	background-color: #FFFFFF ;
+	color: #000000 ;
+	font-family: "New Century Schoolbook", "Century Schoolbook", "Century Schoolbook L", serif ;
+	text-align: justify ;
+	line-height: 1.25 ;
+	font-size: 13pt ;
+	margin: 16px auto ;
+	padding: 32px ;
+	padding-top: 16px ;
+	border: solid #a0a0a0 1px ;
+	border-radius: 20px ;
+	max-width: 64.615em ;	/* 70/(13/12) */
+	width: 90% ;
+}
+
+h1, h2, h3, h4 {
+	text-align: left ;
+}
+
+a {
+	text-decoration: none ;
+}
+
+a:link {
+	color: #000080 ;
+}
+
+a:link:hover, a:visited:hover {
+	background-color: #D0D0FF ;
+	color: #000080 ;
+	border-radius: 4px ;
+}
+
+a:link:active, a:visited:active {
+	color: #FF0000 ;
+}
+
+:target {
+	background-color: #F0F0F0 ;
+	margin: -8px ;
+	padding: 8px ;
+	border-radius: 8px ;
+	outline: none ;
+}
+
+hr {
+	visibility: hidden ;
+	margin-bottom: 1em ;
+}
+
+td {
+	border: none ;
+	padding: 0 0.5em ;
+}
+
+li {
+	margin-bottom: 1em ;
+}
+
+table.nav {
+	border: none ;
+	border-spacing: 0 ;
+	border-collapse: collapse ;
+	font-family: sans-serif ;
+}
+
+table.nav td {
+	padding: 0 ;
+}
+
+table.nav img {
+	vertical-align: middle ;
+}
+
+table.nav a  {
+	margin: -3px -3px -3px -3px ;
+	padding: 3px  3px  3px  3px ;
+	border-radius: 4px ;
+}
+
+table.nav small  {
+	font-size: x-small ;
+	color: gray ;
+}
+
+span.spacer {
+	margin-right: 4em ;
+}
+
+p.warning {
+	color: #000000 ;
+	padding: 1em ;
+	padding-left: 0em ;
+	margin-bottom: 4em ;
+	font-family: Helvetica, Arial, sans-serif ;
+	font-size: small ;
+}
+
+p.warning img {
+	margin-right: 1.5em ;
+	border: solid #a0a0a0 1px ;
+	box-shadow: 4px 4px 4px #ccc ;
+}

@@ -1,0 +1,59 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua 4.0.1 source code - lfunc.h</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="../../lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="../source.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="../../home.html"><IMG SRC="../../images/logo.gif" ALT="Lua"></A>
+lfunc.h
+<SPAN CLASS="note">(4.0.1)</SPAN>
+</H1>
+
+<DIV CLASS="menubar">
+<A HREF="./">module index</A>
+&middot;
+<A HREF="idx.html">name index</A>
+&middot;
+<A HREF="../">other versions</A>
+</DIV>
+
+<PRE>
+/*
+** $Id: lfunc.h,v 1.13 2000/09/29 12:42:13 roberto Exp $
+** Auxiliary functions to manipulate prototypes and closures
+** See Copyright Notice in lua.h
+*/
+
+#ifndef <A HREF="lfunc.h.html#lfunc_h">lfunc_h</A>
+#define <A NAME="lfunc_h"><SPAN CLASS="definition">lfunc_h</SPAN></A>
+
+
+#include "<A HREF="lobject.h.html">lobject.h</A>"
+
+
+
+<A HREF="lobject.h.html#Proto">Proto</A> *<A HREF="lfunc.c.html#luaF_newproto">luaF_newproto</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L);
+void <A HREF="lfunc.c.html#luaF_protook">luaF_protook</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *f, int pc);
+<A HREF="lobject.h.html#Closure">Closure</A> *<A HREF="lfunc.c.html#luaF_newclosure">luaF_newclosure</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, int nelems);
+void <A HREF="lfunc.c.html#luaF_freeproto">luaF_freeproto</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Proto">Proto</A> *f);
+void <A HREF="lfunc.c.html#luaF_freeclosure">luaF_freeclosure</A> (<A HREF="lstate.h.html#lua_State">lua_State</A> *L, <A HREF="lobject.h.html#Closure">Closure</A> *c);
+
+const char *<A HREF="lfunc.c.html#luaF_getlocalname">luaF_getlocalname</A> (const <A HREF="lobject.h.html#Proto">Proto</A> *func, int local_number, int pc);
+
+
+#endif
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Sat Mar  5 09:29:30 2016
+</P>
+
+</BODY>
+</HTML>
