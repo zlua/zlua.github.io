@@ -1,0 +1,28 @@
+li {
+	margin-bottom: 20pt ;
+}
+
+div.errata {
+	border-radius: 4px ;
+	margin-top: 5pt ;
+	padding: 8px ;
+	background-color: #F8F8F8 ;
+}
+
+span.deleted, span.inserted, span.corrected {
+	border-radius: 4px ;
+	margin: -2px  0px -2px  0px ;
+	padding: 2px  4px  2px  4px ;
+}
+
+span.deleted {
+	background-color: #FFDDDD ;
+}
+
+span.inserted {
+	background-color: #DDFFDD ;
+}
+
+span.corrected {
+	background-color: #DDDDFF ;
+}

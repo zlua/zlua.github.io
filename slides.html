@@ -1,0 +1,672 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua: seminar slides</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="lua.css">
+<LINK REL="stylesheet" TYPE="text/css" HREF="paper.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="home.html"><IMG SRC="images/logo.gif" ALT="Lua"></A>
+Seminar slides
+</H1>
+
+<P>
+This page contains the slides of a talk about Lua
+given at the
+<A HREF="http://se.uwaterloo.ca/">Software Engineering Lab</A>
+of the
+<A HREF="http://www.uwaterloo.ca">University of Waterloo</A>
+in November 1995.
+At that time, the current version of Lua was
+<A HREF="versions.html#2.4">2.4</A>
+and so these slides are somewhat outdated:
+for instance,
+fallbacks were replaced by tag methods in
+<A HREF="versions.html#3.0">3.0</A>
+and by metatables in
+<A HREF="versions.html#5.0">5.0</A>,
+and the C API changed in
+<A HREF="versions.html#4.0">4.0</A>.
+Nevertheless,
+the main points remain valid.
+
+<H1>Lua, an extensible extension language</H1>
+<P>
+by
+Luiz Henrique de Figueiredo,
+Roberto Ierusalimschy,
+Waldemar Celes
+
+<DIV CLASS="abstract">
+<h4>Abstract.</h4>
+There is an important trend nowadays to split complex systems in two
+parts: kernel (written in a compiled language) and configuration
+(written in an interpreted language).  Lua is a new language for
+configuring and extending applications, Lua combines procedural
+features with powerful data description facilities, by using a
+simple, yet powerful, mechanism of tables.  This mechanism implements
+the concepts of records, arrays, and recursive data types (pointers),
+and adds some object-oriented facilities, such as methods with
+dynamic dispatching.
+
+Lua presents a mechanism of fallbacks that allows programmers to extend
+the semantics of the language in some unconventional ways.  As a
+noteworthy example, fallbacks allow the user to add different kinds of
+inheritance to the language.
+
+Currently, Lua is being extensively used in production for several
+tasks, including user configuration, general-purpose data-entry,
+description of user interfaces, storage of structured graphical
+metafiles, and generic attribute configuration for finite element
+meshes.  Lua is also being used in several research projects, such as
+"active" graphical objects, computing with distributed objects, and
+transparently extending WWW browsers with client-side code.
+</DIV>
+
+<H2><A NAME="Contents">Contents</A></H2>
+<UL>
+<LI><A HREF="#Customization">Customization</A>
+<LI><A HREF="#Configuration languages">Configuration languages</A>
+<LI><A HREF="#Embedded languages">Embedded languages</A>
+<LI><A HREF="#Requirements for extension languages">Requirements for extension languages</A>
+<LI><A HREF="#TeCGraf">TeCGraf</A>
+<LI><A HREF="#Need for extension languages at TeCGraf">Need for extension languages at TeCGraf</A>
+<LI><A HREF="#Overview of Lua">Overview of Lua</A>
+<LI><A HREF="#Interface Host x Lua">Interface Host x Lua</A>
+<LI><A HREF="#Data types and variables">Data types and variables</A>
+<LI><A HREF="#Associative arrays">Associative arrays</A>
+<LI><A HREF="#Reflexive facilities">Reflexive facilities</A>
+<LI><A HREF="#Persistence">Persistence</A>
+<LI><A HREF="#Support for object oriented programming">Support for object oriented programming</A>
+<LI><A HREF="#Fallbacks">Fallbacks</A>
+<LI><A HREF="#Single inheritance with fallbacks">Single inheritance with fallbacks</A>
+<LI><A HREF="#Overloading with fallbacks">Overloading with fallbacks</A>
+<LI><A HREF="#Implementation">Implementation</A>
+<LI><A HREF="#Comparison with other extension languages">Comparison with other extension languages</A>
+<LI><A HREF="#Conclusion">Conclusion</A>
+<LI><A HREF="#API">API</A>
+</UL>
+
+<H2><A NAME="Customization">Customization</A></H2>
+<UL>
+<LI>	increasing demand for customization
+<UL>
+<LI>		choosing parameters no longer enough
+<LI>		configuration decisions at run time
+<LI>		macros and scripts increase productivity
+<LI>		flexible user interfaces
+<P>
+</UL>
+<LI>	current design trend: split
+<UL>
+<LI>		kernel
+<UL>
+<LI>			basic classes and objects
+<LI>			compiled code
+</UL>
+<LI>		configuration
+<UL>
+<LI>			connects classes and objects
+<LI>			interpreted code
+</UL>
+<LI>		cleaner, more flexible design
+<LI>		proliferation of little languages
+</UL>
+</UL>
+
+<H2><A NAME="Configuration languages">Configuration languages</A></H2>
+<UL>
+<LI>	preference selection
+<UL>
+<LI>		option lists in command lines
+<LI>		configuration files: variable-value pairs
+<P>
+</UL>
+<LI>	scripting languages
+<UL>
+<LI>		task automation with limited flow control
+<P>
+</UL>
+<LI>	macro languages
+<UL>
+<LI>		task automation with no flow control
+<P>
+</UL>
+<LI>	embedded languages
+<UL>
+<LI>		user defined functions
+<LI>		primitives provided by applications
+<LI>		extend kernel semantics
+<UL>
+<LI>			extension languages
+</UL>
+</UL>
+</UL>
+
+<H2><A NAME="Embedded languages">Embedded languages</A></H2>
+<UL>
+<LI>	not standalone, need host client
+<P>
+<LI>	host provides domain-specific extensions
+<UL>
+<LI>		customizes embedded language
+<LI>		higher level abstractions
+<LI>		single syntactical framework
+<P>
+</UL>
+<LI>	syntax for own programs
+<UL>
+<LI>		for user
+<P>
+</UL>
+<LI>	API for interfacing with hosts
+<UL>
+<LI>		for application programmer
+<LI>		two-way communication
+</UL>
+</UL>
+
+<H2><A NAME="Requirements for extension languages">Requirements for extension languages</A></H2>
+<UL>
+<LI>	good data description facilities
+<UL>
+<LI>		 for configuration
+<P>
+</UL>
+<LI>	simple syntax and semantics
+<UL>
+<LI>		main users not professional programmers
+<P>
+</UL>
+<LI>	small with small implementation
+<UL>
+<LI>		easy to learn
+<LI>		low cost
+<P>
+</UL>
+<LI>	programming-in-the-small
+<UL>
+<LI>		many mechanisms not essential
+<UL>
+<LI>			static type checking
+<P>
+</UL>
+</UL>
+<LI>	extensibility
+<UL>
+<LI>		very high abstraction levels
+<LI>		many different domains
+</UL>
+</UL>
+
+<H2><A NAME="TeCGraf">TeCGraf</A></H2>
+<UL>
+<LI>	Computer Graphics Technology Group of PUC-Rio, Brazil
+<P>
+<LI>	Began as partnership between PUC-Rio and PETROBRAS
+<LI>	Now has many industrial partners
+<P>
+<LI>	Main area: Computer Graphics
+<UL>
+<LI>		Scientific visualization
+<LI>		Graphical user interfaces
+<LI>		Geometric modeling
+<P>
+</UL>
+<LI>	Major concern: portability
+<UL>
+<LI>		clients use many different platforms
+<LI>		need for configuration scheme
+</UL>
+</UL>
+
+<H2><A NAME="Need for extension languages at TeCGraf">Need for extension languages at TeCGraf</A></H2>
+<UL>
+<LI>	generic data entry for pre-processing
+<UL>
+<LI>		simple declarative language
+<LI>		pre-coded validation tests not adequate
+<LI>		users demanded procedural power
+<P>
+</UL>
+<LI>	report generator for lithology profiles
+<UL>
+<LI>		declarative language for data description
+<P>
+</UL>
+<LI>	design single generic language: Lua
+<UL>
+<LI>		procedural language
+<LI>		data description facilities
+<LI>		extensible language framework
+</UL>
+</UL>
+
+<H2><A NAME="Overview of Lua">Overview of Lua</A></H2>
+<UL>
+<LI>	general purpose extension language
+<UL>
+<LI>		simplified Pascal-like syntax
+<LI>		procedural programming
+<LI>		powerful data description facilities
+<P>
+</UL>
+<LI>	small library of C functions
+<UL>
+<LI>		6000 lines (2000 from yacc)
+<LI>		bytecode compiler and interpreter
+<LI>		predefined functions
+</UL>
+<LI>	additional client libraries
+<UL>
+<LI>		io, math, string, ...
+<P>
+</UL>
+<LI>	extensible with meta-mechanisms
+<UL>
+<LI>		dynamic associative arrays
+<LI>		reflexive facilities
+<LI>		fallbacks
+</UL>
+</UL>
+
+<H2><A NAME="Interface Host x Lua">Interface Host x Lua</A></H2>
+<UL>
+<LI>	100 line header file; 30 C functions
+<LI>	interface uses only simple types
+<UL>
+<LI>		numbers, strings, pointers
+<P>
+</UL>
+<LI>	Host can run Lua code in file or string
+<LI>	all chunks run in a global environment
+<P>
+<LI>	Host can read/write global variables in Lua
+<LI>	Host can call Lua functions
+<LI>	Lua can call registered Host functions
+</UL>
+
+<H2><A NAME="Data types and variables">Data types and variables</A></H2>
+<UL>
+<LI>	Lua is dynamically typed
+<UL>
+<LI>		only values have types, variables don't
+<LI>		no variable type declarations
+<P>
+</UL>
+<LI>	Lua has garbage collection
+<UL>
+<LI>		unused values are discarded
+<LI>		no need for explicit memory management
+<P>
+</UL>
+<LI>	primitive data types
+<UL>
+<LI>		<I>nil</I>
+<LI>		numbers and strings
+<LI>		functions: provided by user or host
+<LI>		<I>tables</I>: associative arrays
+<LI>		<I>userdata</I>: pointers to host data
+</UL>
+<LI>	"user types"
+</UL>
+
+<H2><A NAME="Associative arrays">Associative arrays</A></H2>
+<UL>
+<LI>	can be indexed with any value
+<UL>
+<LI>		ordinary arrays, sets, symbol tables, ...
+<P>
+</UL>
+<LI>	can simulate records
+<UL>
+<LI>		<TT>a.name</TT> is syntactic sugar for <TT>a["name"]</TT>
+<P>
+</UL>
+<LI>	values are references to objects
+<UL>
+<LI>		tables can model generic graphs
+<LI>		need to be explicitly created
+<P>
+</UL>
+<LI>	many algorithms are simplified
+<UL>
+<LI>		built-in data structures for searching
+<P>
+</UL>
+<LI>	unifying data constructor
+<P>
+<LI>	support for objects
+</UL>
+
+<H2><A NAME="Associative arrays">Associative arrays</A></H2>
+<UL>
+<LI>	lists
+<PRE>
+	colors = {"red", "green", "blue", "black"}
+
+	colors = {}
+	colors[1]="red"     colors[2]="green"
+	colors[3]="blue"    colors[4]="black"
+</PRE>
+<P>
+<LI>	records
+<PRE>
+	w = {x=200, y=300, color="blue"}
+
+	w = {}   w.x=200  w.y=300  w.color="blue"
+</PRE>
+<P>
+<LI>	user controlled type constructors
+<UL>
+<LI>		<TT>f{...}</TT> is syntactic sugar for <TT>f({...})</TT>
+</UL>
+<PRE>
+	w = Window{x=200, y=300, color="blue"}
+</PRE>
+</UL>
+
+<H2><A NAME="Reflexive facilities">Reflexive facilities</A></H2>
+<UL>
+<LI>	function <TT>type</TT> returns type of a value
+<P>
+<LI>	function <TT>nextvar</TT> traverses global variables
+<UL>
+<LI>		manipulation of global environment
+</UL>
+<PRE>
+	i,v = nextvar(nil)
+	while i do
+	  ...
+	  i,v = nextvar(i)
+	end
+</PRE>
+<P>
+<LI>	function <TT>next</TT> traverses tables
+<PRE>
+	i,v = next(t,nil)
+	while i do
+	  ...
+	  i,v = next(t,i)
+	end
+</PRE>
+</UL>
+
+<H2><A NAME="Persistence">Persistence</A></H2>
+<PRE>
+	function save(i,v)
+	 local t=type(v)
+	 write(i..'=')
+	     if t=='nil'    then write('nil')
+	 elseif t=='number' then write(v)
+	 elseif t=='string' then write('"'..v..'"')
+	 elseif t=='table'  then write_record(v)
+	 end
+	end
+	
+	function write_record(t)
+	 local i,v=next(t,nil)
+	 write('{')
+	 while i do
+	   save(i,v)
+	   i,v=next(t,i)
+	   if i then write(',') end
+	 end
+	 write('}')
+	end
+	
+	writeto("state")          -- save env to file
+	i,v=nextvar(nil)
+	while i do
+	 save(i,v) i,v=nextvar(i)
+	end
+	
+	dofile("state")          -- restore env from file
+</PRE>
+
+<H2><A NAME="Support for object oriented programming">Support for object oriented programming</A></H2>
+<UL>
+<LI>	first-class functions + tables = almost OO
+<UL>
+<LI>		table fields can contain functions
+<P>
+</UL>
+<LI>	syntactic sugar for methods
+<PRE>
+	function x:f(a)      function dummy(self,a)
+	 ...                  ...
+	end                  end
+	                     x.f = dummy
+
+	x:f(b)               x.f(x,b)
+</PRE>
+<P>
+<LI>	inheritance
+<UL>
+<LI>		used to simulate classes
+<LI>		implemented with fallbacks
+</UL>
+</UL>
+
+<H2><A NAME="Fallbacks">Fallbacks</A></H2>
+<UL>
+<LI>	functions called when Lua cannot proceed
+<UL>
+<LI>		type errors
+<LI>		absent index
+</UL>
+<LI>	halting unsuitable for embedded language
+<P>
+<LI>	semantics
+<UL>
+<LI>		exception handling with resumption
+<P>
+</UL>
+<LI>	pragmatics
+<UL>
+<LI>		meta-mechanism for language extension
+<P>
+</UL>
+<LI>	typical uses
+<UL>
+<LI>		different kinds of inheritance
+<LI>		overloading
+</UL>
+</UL>
+
+<H2><A NAME="Single inheritance with fallbacks">Single inheritance with fallbacks</A></H2>
+<PRE>
+	function Index(t,f)
+	 if f=="parent" then
+	  return oldIndex(t,f)
+	 end
+	 local p=t.parent
+	 if type(p)=="table" then
+	  return p[f]
+	 else
+	  return oldIndex(t,f)
+	 end
+	end
+
+	oldIndex=setfallback("index", Index)
+
+	a=Window{x=100, y=200, color="red"}
+	b=Window{x=300, y=400, parent=a}
+
+	b.color == "red"
+</PRE>
+
+<H2><A NAME="Overloading with fallbacks">Overloading with fallbacks</A></H2>
+familiar syntax for computing with application objects
+<PRE>
+	function Overload(a,b,op)
+	 local i=op.."("..a.name..","..b.name..")"
+	 if T[i]==nil then
+	   n=n+1 T[i]=create("t"..n)
+	   write(T[i].name..'='..i.."\n")
+	 end
+	 return T[i]
+	end
+	
+	function create(v)
+	 local t={name=v}
+	 setglobal(v,t)
+	 return t
+	end
+	
+	setfallback("arith",Overload)
+	create("a") create("b") create("c")
+	n=0    T={}
+	
+	E=(a*a+b*b)*(a*a-b*b)/(a*a+b*b+c)+(a*(b*b)*c)
+	
+	t1=mul(a,a)      t2=mul(b,b)      t3=add(t1,t2)
+	t4=sub(t1,t2)    t5=mul(t3,t4)    t6=add(t3,c)
+	t7=div(t5,t6)    t8=mul(a,t2)     t9=mul(t8,c)
+	t10=add(t7,t9)
+</PRE>
+
+global common sub-expression identification!<P>
+
+<H2><A NAME="Implementation">Implementation</A></H2>
+<UL>
+<LI>	extension languages always interpreted
+<UL>
+<LI>		directly from source code
+<LI>		pre-compiled to intermediate form
+<P>
+</UL>
+<LI>	Lua is pre-compiled to bytecodes
+<UL>
+<LI>		virtual stack machine
+<LI>		67 instructions (8-bit bytecodes)
+<P>
+</UL>
+<LI>	bytecodes for <TT>a = b + f(c)</TT>
+<PRE>
+        0    PUSHGLOBAL   "b"
+        3    PUSHGLOBAL   "f"
+        6    PUSHGLOBAL   "c"
+        9    CALLFUNC     1,1
+       12    ADD
+       13    STOREGLOBAL  "a"
+</PRE>
+<P>
+<LI>	yacc, but hand-written lex
+</UL>
+
+<H2><A NAME="Comparison with other extension languages">Comparison with other extension languages</A></H2>
+<UL>
+<LI>	Lisp dialects (Scheme)
+<UL>
+<LI>		simple, easily parsed syntax
+<LI>		built-in extensibility
+<LI>		unfriendly for non-programmers
+<P>
+</UL>
+<LI>	Tcl
+<UL>
+<LI>		success due to Tk
+<LI>		very primitive syntax
+<UL>
+<LI>			<TT>set A [expr $A*2]</TT>
+</UL>
+<LI>		single primitive type (strings)
+<LI>		no built-in control structures
+<LI>		inefficient
+<P>
+</UL>
+<LI>	Python
+<UL>
+<LI>		not ready for embedding (no prefix!) [This has been corrected.]
+<LI>		not small (programming-in-the-large)
+</UL>
+</UL>
+
+<H2><A NAME="Comparison with other extension languages">Comparison with other extension languages</A></H2>
+<UL>
+<LI>	Lua
+<UL>
+<LI>		10 to 20 times faster than Tcl
+<LI>		20 times slower than C
+<LI>		small library; single, 100 line header file
+<LI>		pre-compiled to bytecodes
+<LI>		clean but familiar syntax
+<LI>		simple, extensible semantics
+<LI>		built-in notion of objects
+<LI>		single data structure mechanism (tables)
+<LI>		portable (DOS, Win, Mac, Unix, CRAY)
+<LI>		secure interpreters
+<LI>		freely available (but not public domain)
+</UL>
+</UL>
+
+<H2><A NAME="Conclusion">Conclusion</A></H2>
+<UL>
+<LI>	extensively used in production since mid 93
+<UL>
+<LI>		configuration of application environments
+<LI>		general-purpose data-entry with user defined dialogs and validation procedures
+<LI>		description of user interfaces (IUP-Lua)
+<LI>		storage of structured graphical metafiles
+<LI>		generic attribute configuration for FEM
+<P>
+</UL>
+<LI>	research projects
+<UL>
+<LI>		visual programming system: Visual Lua
+<LI>		"active" graphical objects
+<LI>		computing with distributed objects
+<LI>		transparently extending WWW browsers with client-side Lua code
+</UL>
+</UL>
+
+<H2><A NAME="API">API</A></H2>
+<PRE>
+lua_Object     lua_setfallback          (char *name, lua_CFunction fallback);
+void           lua_error                (char *s);
+int            lua_dofile               (char *filename);
+int            lua_dostring             (char *string);
+int            lua_callfunction         (lua_Object function);
+int            lua_call                 (char *funcname);
+void           lua_beginblock           (void);
+void           lua_endblock             (void);
+lua_Object     lua_getparam             (int number);
+#define        lua_getresult(_)         lua_getparam(_)
+float          lua_getnumber            (lua_Object object);
+char          *lua_getstring            (lua_Object object);
+lua_CFunction  lua_getcfunction         (lua_Object object);
+void          *lua_getuserdata          (lua_Object object);
+void           lua_pushnil              (void);
+void           lua_pushnumber           (float n);
+void           lua_pushstring           (char *s);
+void           lua_pushliteral          (char *s);
+void           lua_pushcfunction        (lua_CFunction fn);
+void           lua_pushusertag          (void *u, int tag);
+void           lua_pushobject           (lua_Object object);
+lua_Object     lua_getglobal            (char *name);
+void           lua_storeglobal          (char *name);
+void           lua_storesubscript       (void);
+lua_Object     lua_getsubscript         (void);
+int            lua_type                 (lua_Object object);
+int            lua_lock                 (void);
+lua_Object     lua_getlocked            (int ref);
+void           lua_pushlocked           (int ref);
+void           lua_unlock               (int ref);
+lua_Object     lua_createtable          (void);
+</PRE>
+
+<P CLASS="footer">
+Last update:
+Tue Mar 17 23:46:15 BRT 2015
+</P>
+<!--
+Last change: minor edit
+-->
+
+</BODY>
+</HTML>

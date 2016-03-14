@@ -1,0 +1,79 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua: demo</TITLE>
+<BASE HREF="http://www.lua.org/">
+<LINK REL="stylesheet" TYPE="text/css" HREF="lua.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=utf-8">
+<STYLE TYPE="text/css">
+textarea {
+	font-family: monospace ;
+}
+
+input {
+	margin-right: 1em ;	
+}
+</STYLE>
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="home.html"><IMG SRC="images/logo.gif" ALT="Lua"></A>
+Demo
+</H1>
+
+<P>
+Try Lua before
+<A HREF="download.html">downloading</A> it.
+Enter your Lua program
+or
+choose one of the demo programs below.
+
+<DIV CLASS="menubar">
+<A HREF="cgi-bin/demo?hello">hello</A>
+&middot;
+<A HREF="cgi-bin/demo?globals">globals</A>
+&middot;
+<A HREF="cgi-bin/demo?bisect">bisect</A>
+&middot;
+<A HREF="cgi-bin/demo?sieve">sieve</A>
+&middot;
+<A HREF="cgi-bin/demo?account">account</A>
+</DIV>
+
+<P>
+<FORM ACTION="cgi-bin/demo" METHOD="POST">
+<TEXTAREA ROWS="16" COLS="80" NAME="input" maxlength="2000">
+</TEXTAREA>
+
+<P>
+<INPUT TYPE="submit" VALUE="run">
+<INPUT TYPE="button" VALUE="clear" onclick="this.form.elements['input'].value=''">
+<INPUT TYPE="reset" VALUE="restore">
+<INPUT TYPE="button" VALUE="restart" onclick="window.location.href='/demo.html'">
+</FORM>
+
+<P>
+<A HREF="http://store.feistyduck.com"><IMG SRC="images/feisty-duck.png" ALT="[buy e-books at Feisty Duck]" TITLE="buy e-books at Feisty Duck" HEIGHT=30 ALIGN="right"></A>
+<A HREF="http://astore.amazon.com/lua-store-20"><IMG SRC="images/amazon.gif" ALT="[buy at the Lua Bookstore at Amazon]" TITLE="buy at the Lua Bookstore at Amazon" ALIGN="right"></A>
+
+To learn more about Lua,
+buy a book at the
+<A HREF="http://astore.amazon.com/lua-store-20">Lua Bookstore at Amazon</A>
+or an e-book at
+<A HREF="http://store.feistyduck.com/">Feisty Duck</A>.
+<BR>
+This helps to
+<A HREF="donations.html">support the Lua project</A>.
+
+<P CLASS="footer">
+Last update:
+Fri Mar 13 09:02:52 BRT 2015
+</P>
+<!--
+Last change: minor edit
+-->
+
+</BODY>
+</HTML>

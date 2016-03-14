@@ -1,0 +1,431 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua: FAQ</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="lua.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+<STYLE TYPE="text/css">
+ul {
+	list-style-type: none ;
+}
+
+h2:before {
+	content: "" ;
+	padding-right: 0em ;
+}
+
+tt {
+	font-size: 12pt ;
+}
+</STYLE>
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="home.html"><IMG SRC="images/logo.gif" ALT="Lua"></A>
+Frequently Asked Questions
+</H1>
+
+<P>
+Here are answers to some frequently asked questions about Lua.
+<BR>
+For an introduction to what Lua is, see this
+<A HREF="about.html">summary</A>
+or learn how to
+<A HREF="start.html">get started</A> with Lua.
+<BR>
+For programming questions,
+see the community-maintained
+<A HREF="http://lua-users.org/wiki/LuaFaq">LuaFaq</A>
+and also the much longer
+<A HREF="http://www.luafaq.org/">uFAQ</A>.
+
+<UL CLASS="menubar" style="padding: 0">
+<LI><A HREF="#1">1 &ndash; Distribution</A>
+<UL>
+<LI><A HREF="#1.1">1.1 &ndash; What do I need to build Lua?</A>
+<LI><A HREF="#1.2">1.2 &ndash; How do I build Lua for Windows and other systems?</A>
+<LI><A HREF="#1.3">1.3 &ndash; When is the next version due?</A>
+<LI><A HREF="#1.4">1.4 &ndash; What changes will the next version bring?</A>
+<LI><A HREF="#1.5">1.5 &ndash; Is Lua free software?</A>
+<LI><A HREF="#1.6">1.6 &ndash; Is Lua compatible with GPL software?</A>
+<LI><A HREF="#1.7">1.7 &ndash; What do I call software derived from Lua?</A>
+<LI><A HREF="#1.8">1.8 &ndash; Is there a public revision control repository?</A>
+<LI><A HREF="#1.9">1.9 &ndash; Do you accept patches?</A>
+</UL>
+<P>
+<LI><A HREF="#2">2 &ndash; Information</A>
+<UL>
+<LI><A HREF="#2.1">2.1 &ndash; Is there a mailing list for Lua?</A>
+<LI><A HREF="#2.2">2.2 &ndash; Is there a newsgroup for Lua?</A>
+<LI><A HREF="#2.3">2.3 &ndash; How do I report a bug in Lua?</A>
+<LI><A HREF="#2.4">2.4 &ndash; Who uses Lua?</A>
+<LI><A HREF="#2.5">2.5 &ndash; Are there any books on Lua?</A>
+<LI><A HREF="#2.6">2.6 &ndash; How can I help to support the Lua project?</A>
+</UL>
+</UL>
+
+<H2><A NAME="1">1 &ndash; Distribution</A></H2>
+<P>
+See the
+<A HREF="download.html">download</A>
+and
+<A HREF="start.html">get started</A>
+pages
+for instructions on how to get source code and binaries for Lua.
+
+<H3><A NAME="1.1">1.1 &ndash; What do I need to build Lua?</A></H3>
+<P>
+Lua is implemented in pure ANSI C
+and compiles unmodified in all known platforms.
+All you need to build Lua is an ANSI C compiler
+(<A HREF="http://www.gnu.org/software/gcc/gcc.html">gcc</A> is a popular one).
+Lua also compiles cleanly as C++.
+
+<P>
+If you are building Lua in a Unix system (like Linux or Mac OS X),
+then you probably already have everything you need and
+simply typing <TT>make</TT> should do it.
+(You'll only have to choose a suitable platform.)
+Otherwise,
+see the
+<A HREF="#1.2">next question</A>.
+In any case,
+for full instructions
+see the <A HREF="manual/5.3/readme.html">readme</A>
+that comes with the distribution.
+
+<A HREF="http://media.wiley.com/product_data/excerpt/71/04700691/0470069171.pdf">Chapter 1</A>
+of the book
+<A HREF="http://www.amazon.com/exec/obidos/ASIN/0470069171/lua-docs-20">Beginning Lua Programming</A>
+contains detailed instructions for downloading, building, and installing Lua.
+Here are simple instructions for Linux and Mac OS X:
+</P>
+
+<TABLE>
+<TR>
+<TD>
+<PRE CLASS="session">
+wget http://www.lua.org/ftp/lua-5.3.2.tar.gz
+tar zxf lua-5.3.2.tar.gz
+cd lua-5.3.2
+make linux test
+</PRE>
+<TD CLASS="gutter">
+<TD>
+<PRE CLASS="session">
+curl -R -O http://www.lua.org/ftp/lua-5.3.2.tar.gz
+tar zxf lua-5.3.2.tar.gz
+cd lua-5.3.2
+make macosx test
+</PRE>
+</TABLE>
+
+<P>
+If you don't have the time or the inclination to compile Lua yourself,
+get a binary from
+<A HREF="http://lua-users.org/wiki/LuaBinaries">LuaBinaries</A>.
+If you only want to try Lua,
+try the
+<A HREF="demo.html">live demo</A>.
+Try also
+<A HREF="http://luadist.org/">LuaDist</A>,
+a multi-platform distribution of Lua that includes batteries.
+
+<H3><A NAME="1.2">1.2 &ndash; How do I build Lua in Windows and other systems?</A></H3>
+<P>
+This depends on your compiler.
+Most compilers in these platforms require that you create "project" files.
+You'll need to create projects (or whatever your compiler uses)
+for building the library, the interpreter, and the compiler.
+The sources are all in the <TT>src</TT> directory.
+The exact lists of which modules should go into which project are given in
+the <A HREF="manual/5.3/readme.html#other">readme</A>.
+See also
+<A HREF="http://lua-users.org/wiki/BuildingLua">BuildingLua</A>
+in the
+<A HREF="http://lua-users.org/wiki/">wiki</A>.
+
+<A HREF="http://media.wiley.com/product_data/excerpt/71/04700691/0470069171.pdf">Chapter 1</A>
+of the book
+<A HREF="http://www.amazon.com/exec/obidos/ASIN/0470069171/lua-docs-20">Beginning Lua Programming</A>
+contains detailed instructions for downloading, building, and installing Lua.
+
+<P>
+If you don't have the time or the inclination to compile Lua yourself,
+get a binary from
+<A HREF="http://lua-users.org/wiki/LuaBinaries">LuaBinaries</A>.
+Try also
+<A HREF="http://luadist.org/">LuaDist</A>,
+a multi-platform distribution of Lua that includes batteries.
+
+<H3><A NAME="1.3">1.3 &ndash; When is the next version due?</A></H3>
+<P>
+Lua is in continuous development but new versions are
+<A HREF="versions.html">infrequent</A>.
+
+<P>
+<A HREF="versions.html#5.3">Lua 5.3</A> was released on 12 Jan 2015.
+
+<H3><A NAME="1.4">1.4 &ndash; What changes will the next version bring?</A></H3>
+<P>
+<A HREF="versions.html#5.3">Lua 5.3</A> has just been released.
+For a preview of what is coming in the next version,
+try a
+<A HREF="work/">work version</A>
+when available.
+
+<P>
+If you're concerned with incompatibilities,
+you shouldn't,
+because we make every effort to avoid introducing any incompatibilities.
+When incompatibilities are unavoidable,
+previous code is usually supported unmodified,
+possibly by building Lua with a suitable compilation flag.
+In any case,
+the
+<A HREF="manual/5.3/">reference manual</A>
+contains a
+<A HREF="manual/5.3/manual.html#8">list of incompatibilities</A>.
+
+<H3><A NAME="1.5">1.5 &ndash; Is Lua free software?</A></H3>
+<P>
+Yes,
+Lua is freely available for any purpose, including commercial purposes,
+at absolutely no cost,
+and using it requires no paperwork.
+Read the details in the
+<A HREF="license.html">license page</A>.
+
+<H3><A NAME="1.6">1.6 &ndash; Is Lua compatible with GPL software?</A></H3>
+<P>
+Yes.
+Lua is distributed under the terms of the very liberal and well-known
+<A HREF="http://www.opensource.org/licenses/mit-license.html">MIT license</A>,
+which is
+<A HREF="http://www.gnu.org/licenses/license-list.html#GPLCompatibleLicenses">compatible with GPL</A>
+and is approved by the
+<A HREF="http://www.opensource.org/">Open Source Initiative</A>.
+Read the details in the
+<A HREF="license.html">license page</A>.
+
+<H3><A NAME="1.7">1.7 &ndash; What do I call software derived from Lua?</A></H3>
+<P>
+Lua is intended to be used in other people's software,
+including yours.
+In most cases,
+Lua is simply extended with new functions that
+adapt Lua to your specific domain.
+This is exactly what Lua was designed for.
+When the time comes to distribute your software two questions may arise:
+"May I still call the language inside my software Lua?"
+and
+"May I call it something else?".
+
+<P>
+The answer is the following:
+If the syntax and the semantics of the language
+(that is, the parser and the virtual machine)
+remain the same,
+then the language is still Lua.
+If you simply add new libraries,
+or even replace the standard Lua libraries with your own libraries,
+the language is still the same, and
+you don't need to (and probably shouldn't) give it a completely different name.
+
+<P>
+If you have changed the syntax or the semantics of the language,
+then it's probably a minor extension and
+you'll probably benefit from calling your language a Lua variant,
+so that you can refer users to existing Lua documentation and community,
+with the caveats relating to your extension of the language.
+
+<P>
+Usually,
+people use some name that has Lua as part of it
+(CGILua, LuaMan, LuaOrb, etc.),
+so that
+it is clear that it <EM>uses</EM> Lua
+but
+it is not the official Lua distribution.
+In other words, it should be very clear that your software uses Lua
+(or, more specifically, that the language inside your software <I>is</I> Lua),
+but also it should be clear that your software <EM>is not</EM> Lua.
+
+<P>
+In any case,
+please give us credit for Lua,
+according to the
+<A HREF="license.html">license</A>.
+
+<P>
+If this explanation is still unclear,
+please
+<A HREF="contact.html">contact us</A>.
+
+<H3><A NAME="1.8">1.8 &ndash; Is there a public revision control repository?</A></H3>
+<P>
+No, there is no publicly available repository of Lua development code.
+Lua is open-source software but it is not openly developed.
+Read
+<A HREF="http://lua-users.org/lists/lua-l/2008-06/msg00407.html">this explanation</A>.
+If you want to see a preview of what is coming in the next version,
+you'll have to wait until a
+<A HREF="work/">work version</A>
+becomes available.
+<!--
+try a
+<A HREF="work/">work version</A>.
+-->
+
+<H3><A NAME="1.9">1.9 &ndash; Do you accept patches?</A></H3>
+<P>
+We encourage discussions based on
+tested code solutions for problems and enhancements,
+but we never incorporate third-party code verbatim.
+We always try to understand the issue and the proposed solution
+and then,
+if we choose to address the issue,
+we provide our own code.
+All code in Lua is written by us.
+See also the
+<A HREF="#1.8">previous question</A>.
+
+<H2><A NAME="2">2 &ndash; Information</A></H2>
+<P>
+Complete information on Lua can be found in its
+<A HREF="home.html">home page</A>.
+You may want to read a
+<A HREF="about.html">summary</A> first,
+choose an entry point from the
+<A HREF="map.html">site map</A>,
+or learn how to
+<A HREF="start.html">get started</A> with Lua.
+
+<H3><A NAME="2.1">2.1 &ndash; Is there a mailing list for Lua?</A></H3>
+<P>
+Yes, a friendly and <A HREF="lua-l-stats.html">active</A> one called
+<A HREF="lua-l.html">lua-l</A>.
+Everyone is welcome.
+Read all about it
+<A HREF="lua-l.html">here</A>.
+
+<P>
+For discussions in Portuguese,
+there is
+<A HREF="lua-br.html">Lua BR</A>,
+the Brazilian version of lua-l.
+
+<H3><A NAME="2.2">2.2 &ndash; Is there a newsgroup for Lua?</A></H3>
+<P>
+No,
+just use the
+<A HREF="lua-l.html">mailing list</A>.
+If you want to read the postings using a web interface,
+see the archives at
+<A HREF="http://news.gmane.org/gmane.comp.lang.lua.general">Gmane</A>
+and
+<A HREF="http://marc.info/?l=lua-l">MARC</A>.
+You may want also want to
+<A HREF="http://lua-users.org/lists/lua-l/">search the archives</A>.
+
+<P>
+If you're looking for a Q&amp;A forum for Lua,
+try
+<A HREF="http://stackoverflow.com/questions/tagged/lua">stackoverflow</A>
+or
+<A HREF="http://pt.stackoverflow.com/questions/tagged/lua">pt.stackoverflow</A>.
+
+<H3><A NAME="2.3">2.3 &ndash; How do I report a bug in Lua?</A></H3>
+<P>
+First, try to make sure that you have indeed found a bug.
+<A HREF="bugs.html">Check</A>
+whether the problem has been already
+<A HREF="bugs.html">reported</A>
+(and probably fixed).
+
+<A HREF="http://lua-users.org/lists/lua-l/">Search the archives</A>
+of the
+<A HREF="lua-l.html">mailing list</A>
+to see whether
+someone else has come across the same problem
+and have a fix or an explanation.
+
+After that research,
+if you still think you may have found a bug,
+post a report in the
+<A HREF="lua-l.html">mailing list</A>.
+
+<P>
+Before reporting a bug,
+try to identify a "minimal" program that exhibits the bug,
+also known as
+<A HREF="https://en.wikipedia.org/wiki/Minimal_Working_Example">MWE</A>
+and
+<A HREF="http://sscce.org/">SSCCE</A>.
+This makes it much easier to reproduce, document, and track down the bug.
+Also,
+read Simon Tatham's essay on
+<A HREF="http://www.chiark.greenend.org.uk/~sgtatham/bugs.html">How to Report Bugs Effectively</A>.
+
+<H3><A NAME="2.4">2.4 &ndash; Who uses Lua?</A></H3>
+<P>
+Lua is used in many products and projects around the world,
+including several well-known games.
+The full list is too long for us to keep track.
+See a
+<A HREF="uses.html">list of lists</A>.
+
+<H3><A NAME="2.5">2.5 &ndash; Are there any books on Lua?</A></H3>
+<P>
+Yes, several.
+See the complete list
+<A HREF="docs.html#books">here</A>.
+Roberto's book,
+<A HREF="pil/"><EM>Programming in Lua</EM></A>,
+is a detailed and authoritative introduction to all aspects of Lua programming.
+The
+<A HREF="http://www.amazon.com/exec/obidos/ASIN/859037985X/lua-faq-20">third edition</A>
+appeared in 2013.
+The first edition
+was published in 2003
+and is available
+<A HREF="pil/contents.html">online</A>.
+The second edition
+appeared in 2006
+and is available in English, German, Korean, Chinese, and Japanese.
+There are
+<A HREF="docs.html#otherbooks">books on Lua by other authors</A>
+as well.
+
+<H3><A NAME="2.6">2.6 &ndash; How can I help to support the Lua project?</A></H3>
+<P>
+You can help to
+<A HREF="donations.html">support the Lua project</A>
+by
+<A HREF="donations.html#books">buying a book</A>
+published by Lua.org
+and by
+<A HREF="donations.html#donation">making a donation</A>.
+
+<P>
+You can also help to spread the word about Lua by buying Lua products
+at
+<A HREF="http://www.zazzle.com/Lua_Store">Zazzle</A>
+and
+<A HREF="http://www.cafepress.com/lualang">CafePress</A>.
+
+<P CLASS="logos">
+<A HREF="http://astore.amazon.com/lua-store-20"><IMG SRC="images/amazon.gif" ALT="[buy at the Lua Bookstore at Amazon]" TITLE="buy at the Lua Bookstore at Amazon"></A>
+
+<P CLASS="footer">
+Last update:
+Fri Feb 12 22:35:25 BRST 2016
+</P>
+<!--
+Last change: minor edit
+-->
+
+</BODY>
+</HTML>

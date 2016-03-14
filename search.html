@@ -1,0 +1,79 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>Lua: site search</TITLE>
+<LINK REL="stylesheet" TYPE="text/css" HREF="lua.css">
+<META HTTP-EQUIV="content-type" CONTENT="text/html; charset=iso-8859-1">
+<STYLE TYPE="text/css">
+form {
+	display: inline ;
+}
+
+input {
+	margin-right: 1em ;
+}
+
+div.search {
+	padding-bottom: 1em;
+}
+</STYLE>
+</HEAD>
+
+<BODY>
+
+<H1>
+<A HREF="home.html"><IMG SRC="images/logo.gif" ALT="Lua"></A>
+Site search
+</H1>
+
+<P>
+You can search the
+<A HREF="home.html">site</A>
+with
+<A HREF="http://www.google.com/">Google</A>.
+Try also the
+<A HREF="map.html">site map</A>.
+
+<DIV CLASS="search">
+<form method="get" action="http://www.google.com/search">
+<input type="text" name="q" size="40" maxlength="255">
+<input type="submit" value="search">
+<input type="reset" value="clear">
+<input type="hidden" name="sitesearch" value="lua.org">
+</form>
+<form action="http://www.google.com/advanced_search">
+<input type="submit" value="advanced search">
+<input type="hidden" name="as_sitesearch" value="lua.org">
+</form>
+<P STYLE="color: gray; font-size: small ;">
+Google searches its cached version of the site and so
+some pages may be slightly outdated or missing.
+</DIV>
+
+<P>
+You can also search the <A HREF="lua-l.html">mailing list</A> archive
+at <A HREF="http://lua-users.org/">lua-users.org</A>:
+
+<DIV CLASS="search">
+<form method="GET" action="http://lua-users.org/cgi-bin/namazu.cgi">
+<input type="text" name="query" size="40" MAXLENGTH="255">
+<input type="submit" value="search">
+<input type="reset" value="clear">
+<input type="hidden" name="idxname" value="lua-l">
+<input type="hidden" name="max" value="10">
+</form>
+<form action="http://lua-users.org/cgi-bin/namazu.cgi">
+<input type="submit" value="advanced search">
+</form>
+</DIV>
+
+<P CLASS="footer">
+Last update:
+Thu Mar 12 23:56:00 BRT 2015
+</P>
+<!--
+Last change: minor edit
+-->
+
+</BODY>
+</HTML>

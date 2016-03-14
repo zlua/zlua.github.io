@@ -1,0 +1,17 @@
+.reprint {
+	font-size: small ;
+}
+
+div.abstract h4 {
+	display: inline ;
+	font-size: medium ;
+}
+
+pre, code, tt {
+	font-size: 12pt ;
+}
+
+p.caption {
+	font-size: smaller ;
+}
+

@@ -1,0 +1,52 @@
+pre {
+	border: solid #a0a0a0 2px ;
+	border-radius: 8px ;
+	font-family: monospace ;
+	padding: 8px ;
+	width: 25em ;
+}
+
+.affiliation {
+	color: gray ;
+	font-size: small ;
+	padding-left: 0.3em ;
+}
+
+.title {
+	font-weight: bold ;
+	margin-right: 1em ;
+}
+
+.speaker {
+	font-style: italic ;
+}
+
+.abstract {
+	display: block ;
+	margin-top: 0.5em ;
+	font-size: small ;
+}
+
+td.break {
+	background-color: #eeeeee ;
+	padding: 8px ;
+	padding-left: 12px ;
+}
+
+td.time {
+	text-align: right ;
+	vertical-align: top ;
+	font-size:small ;
+}
+
+td.timebreak {
+	text-align: right ;
+	vertical-align: middle ;
+	font-size:small ;
+}
+
+.cancelled, .slides {
+	color: gray ;
+	font-size: small ;
+	margin-left: 1em ;
+}
