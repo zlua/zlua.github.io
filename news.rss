@@ -1,0 +1,1227 @@
+<?xml version="1.0" encoding="iso-8859-1" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<atom:link href="http://www.lua.org/news.rss" rel="self" type="application/rss+xml" />
+<title>Lua: news</title>
+<link>http://www.lua.org/news.html</link>
+<description>What's happening in the Lua world.</description>
+<lastBuildDate>Thu, 04 Feb 2016 10:04:37 -0200</lastBuildDate>
+<pubDate>Thu, 04 Feb 2016 10:04:37 -0200</pubDate>
+
+<item>
+<title>Lua Workshop 2016 to be held in San Francisco</title>
+<link>http://www.lua.org/wshop16.html</link>
+<description>
+The Lua Workshop 2016 will be held in San Francisco, CA, on Oct 13-14,
+cortesy of Mashape.
+</description>
+<pubDate>
+Thu, 04 Feb 2016 10:04:37 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.3.2 released</title>
+<link>http://www.lua.org/ftp/lua-5.3.2.tar.gz</link>
+<description>
+Lua 5.3.2 has been released. It fixes all known bugs in Lua 5.3.1.
+</description>
+<pubDate>
+Mon, 30 Nov 2015 09:55:00 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2015 held in Stockholm</title>
+<link>http://www.lua.org/wshop15.html</link>
+<description>
+The Lua Workshop 2015 was held in Stockholm, Sweden, courtesy of King.
+</description>
+<pubDate>
+Sat, 17 Oct 2015 04:00:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.3.1 released</title>
+<link>http://www.lua.org/ftp/lua-5.3.1.tar.gz</link>
+<description>
+Lua 5.3.1 has been released. It fixes all known bugs in Lua 5.3.0.
+</description>
+<pubDate>
+Wed, 17 Jun 2015 07:43:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.4 released</title>
+<link>http://www.lua.org/ftp/lua-5.2.4.tar.gz</link>
+<description>
+Lua 5.2.4 has been released. It fixes all known bugs in Lua 5.2.3.
+</description>
+<pubDate>
+Sat, 07 Mar 2015 07:35:47 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.3.0 is almost here</title>
+<link>http://www.lua.org/work/</link>
+<description>
+We have entered the final release-candidate cycle for Lua 5.3.0.
+</description>
+<pubDate>
+Tue, 16 Dec 2014 23:15:29 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.3.0 (beta) released</title>
+<link>http://www.lua.org/work/</link>
+<description>
+The beta version of Lua 5.3 has been released for testing.
+</description>
+<pubDate>
+Thu, 23 Oct 2014 09:16:52 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2014 ends today</title>
+<link>http://www.lua.org/wshop14.html</link>
+<description>
+The Lua Workshop 2014, which is being held in Moscow, ends today.
+</description>
+<pubDate>
+Sun, 14 Sep 2014 09:05:03 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.3.0 (alpha) released</title>
+<link>http://www.lua.org/work/</link>
+<description>
+The alpha version of Lua 5.3 has been released for testing.
+</description>
+<pubDate>
+Thu, 31 Jul 2014 15:40:09 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.3.0 (work3) released</title>
+<link>http://www.lua.org/work/</link>
+<description>
+The third work version of Lua 5.3 has been released for testing.
+</description>
+<pubDate>
+Thu, 19 Jun 2014 17:37:33 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2014 to be held in Moscow</title>
+<link>http://www.lua.org/wshop14.html</link>
+<description>
+The Lua Workshop 2014 will be held in Moscow, Russia,
+on September 13-14, 2014.
+</description>
+<pubDate>
+Fri, 25 Apr 2014 08:19:25 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.3.0 (work2) released</title>
+<link>http://www.lua.org/work/</link>
+<description>
+The second work version of Lua 5.3 has been released for testing.
+</description>
+<pubDate>
+Sun, 30 Mar 2014 13:14:47 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Reference manual now available in Portuguese</title>
+<link>http://www.lua.org/manual/5.2/pt/</link>
+<description>
+The Lua 5.2 reference manual has been translated into Portuguese.
+O manual de referência de Lua 5.2 foi traduzido para o português.
+</description>
+<pubDate>
+Tue, 28 Jan 2014 22:44:57 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.3 released</title>
+<link>http://www.lua.org/ftp/lua-5.2.3.tar.gz</link>
+<description>
+Lua 5.2.3 has been released. It fixes all known bugs in Lua 5.2.2.
+</description>
+<pubDate>
+Fri, 06 Dec 2013 10:58:09 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2013 held in Toulouse</title>
+<link>http://www.lua.org/wshop13.html</link>
+<description>
+Lua Workshop 2013 held in Toulouse, France,
+as part of Le Capitole du Libre.
+</description>
+<pubDate>
+Sat, 23 Nov 2013 08:00:00 -0200
+</pubDate>
+</item>
+
+<item>
+<title>20 years of Lua</title>
+<link>http://lua-users.org/lists/lua-l/2013-07/msg00846.html</link>
+<description>
+We commemorate 20 years of the first version of Lua today.
+</description>
+<pubDate>
+Sun, 28 Jul 2013 20:07:52 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Roberto receives award for Lua</title>
+<link>http://www.sbc.org.br/index.php?option=com_content&amp;view=article&amp;id=1235:premiacoexxxiii</link>
+<description>
+Roberto Ierusalimschy, chief architect of Lua, received the Scientific Merit Award of the Brazilian Computer Society for his work on Lua.
+</description>
+<pubDate>
+Fri, 02 Aug 2013 08:30:55 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2013 to be held in Toulouse</title>
+<link>http://www.lua.org/wshop13.html</link>
+<description>
+The Lua Workshop 2013 will be held in Toulouse, France,
+on November 23-24, 2013,
+as part of Le Capitole du Libre.
+</description>
+<pubDate>
+Fri, 12 Jul 2013 21:24:08 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Programming in Lua now available as an e-book</title>
+<link>http://store.feistyduck.com/products/programming-in-lua</link>
+<description>
+The book "Programming in Lua" (3rd edition) is now available as an e-book through Feisty Duck.
+</description>
+<pubDate>
+Tue, 14 May 2013 20:16:32 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Roberto gives an invited talk at WWW 2013</title>
+<link>http://www2013.org/program/why-do-we-need-multiple-languages/</link>
+<description>
+Roberto gives an invited talk "Lua versus Javascript: Why do we need multiple languages?" at WWW 2013, the 22nd International World Wide Web Conference.
+</description>
+<pubDate>
+Mon, 13 May 2013 14:44:30 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.2 released</title>
+<link>http://www.lua.org/ftp/lua-5.2.2.tar.gz</link>
+<description>
+Lua 5.2.2 has been released. It fixes all known bugs in Lua 5.2.1.
+</description>
+<pubDate>
+Wed, 27 Mar 2013 10:55:09 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Third edition of "Programming in Lua" published</title>
+<link>http://www.amazon.com/exec/obidos/ASIN/859037985X/lua-docs-20</link>
+<description>
+The third edition of "Programming in Lua" by Roberto Ierusalimschy has been published.
+</description>
+<pubDate>
+Wed, 02 Jan 2013 09:48:09 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Reopened donations via PayPal</title>
+<link>http://www.lua.org/donations.html</link>
+<description>
+Donations to the Lua project via PayPal are again available.
+</description>
+<pubDate>
+Mon, 10 Dec 2012 16:26:59 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2012 held at Verisign</title>
+<link>http://www.lua.org/wshop12.html</link>
+<description>
+The Lua Workshop 2012 was held at Verisign's headquarters.
+</description>
+<pubDate>
+Thu, 29 Nov 2012 08:10:49 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.1 released</title>
+<link>http://www.lua.org/ftp/lua-5.2.1.tar.gz</link>
+<description>
+Lua 5.2.1 has been released. It fixes all known bugs in Lua 5.2.0.
+</description>
+<pubDate>
+Thu, 14 Jun 2012 22:00:16 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2012 to be held at Verisign</title>
+<link>http://www.lua.org/wshop12.html</link>
+<description>
+The Lua Workshop 2012 will be held at
+Verisign's headquarters in Reston, Virginia, on November 29-30, 2012.
+</description>
+<pubDate>
+Mon, 21 May 2012 15:04:44 -0300
+</pubDate>
+</item>
+
+<item>
+<title>New LuaJIT mailing list</title>
+<link>http://luajit.org/list.html</link>
+<description>
+LuaJIT now has its own mailing list, dedicated to announcements, discussions, bug reports or feature requests.
+</description>
+<pubDate>
+Sat, 05 May 2012 08:30:30 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua store opens at Fibers</title>
+<link>http://www.fibers.com/shop/Lua</link>
+<description>
+You can help to spread the word about Lua by buying Lua T-shirts at Fibers. Use Lua, wear Lua!
+</description>
+<pubDate>
+Tue, 17 Apr 2012 18:38:39 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Initial plans for the Lua Workshop 2012</title>
+<link>http://lua-users.org/wiki/LuaWorkshopTwoThousandTwelve</link>
+<description>
+We have started planning the Lua Workshop 2012. Please sign up if you're interested.
+</description>
+<pubDate>
+Tue, 03 Apr 2012 13:05:45 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.1.5 released</title>
+<link>http://www.lua.org/ftp/lua-5.1.5.tar.gz</link>
+<description>
+Lua 5.1.5 has been released. It applies all patches for Lua 5.1.4.
+</description>
+<pubDate>
+Fri, 17 Feb 2012 06:41:26 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua wins Front Line Award 2011</title>
+<link>http://www.gdmag.com/blog/2012/01/front-line-award-winners.php</link>
+<description>
+Lua won the Front Line Award 2011 from Game Developers Magazine in the category Programming Tools.
+</description>
+<pubDate>
+Mon, 16 Jan 2012 10:02:22 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.0 released</title>
+<link>http://www.lua.org/ftp/lua-5.2.0.tar.gz</link>
+<description>
+The first release of Lua 5.2 is now ready.
+</description>
+<pubDate>
+Fri, 16 Dec 2011 16:45:21 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.0 is almost here</title>
+<link>http://www.lua.org/work/</link>
+<description>
+We have entered the final release-candidate cycle for Lua 5.2.0.
+</description>
+<pubDate>
+Thu, 24 Nov 2011 12:00:00 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Roberto visits Stanford</title>
+<link>http://las.stanford.edu/people/tinker-professors</link>
+<description>
+Roberto Ierusalimschy, the chief architect of Lua, will be visiting Stanford University for three months on a Tinker Professorship starting in January 2012.
+</description>
+<pubDate>
+Mon, 07 Nov 2011 14:08:19 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2011 held in Switzerland</title>
+<link>http://www.lua.org/wshop11.html</link>
+<description>
+The Lua Workshop 2011 was held in Switzerland.
+</description>
+<pubDate>
+Thu, 08 Sep 2011 07:22:51 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.0 (beta) released</title>
+<link>http://www.lua.org/work/</link>
+<description>
+The beta version of Lua 5.2 is now available for testing.
+</description>
+<pubDate>
+Wed, 13 Jul 2011 22:32:30 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua enters the top 10 languages of the TIOBE index</title>
+<link>http://www.tiobe.com/index.php/tiobe_index</link>
+<description>
+Lua enters the top 10 languages of the TIOBE index for the first time.
+</description>
+<pubDate>
+Mon, 06 Jun 2011 23:00:40 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua article in ACM Queue</title>
+<link>http://queue.acm.org/detail.cfm?id=1983083</link>
+<description>
+The article "Passing a Language through the Eye of a Needle" has appeared in ACM Queue.
+</description>
+<pubDate>
+Fri, 20 May 2011 10:21:14 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2011 to be held in Switzerland</title>
+<link>http://www.lua.org/wshop11.html</link>
+<description>
+The Lua Workshop 2011 will be held in Frick, Switzerland on September 8-9.
+</description>
+<pubDate>
+Wed, 27 Apr 2011 11:04:21 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua is approaching the top 10 of the TIOBE index</title>
+<link>http://www.tiobe.com/index.php/tiobe_index</link>
+<description>
+Lua is approaching the top 10 languages of the TIOBE Programming Community Index.
+</description>
+<pubDate>
+Tue, 12 Apr 2011 14:24:34 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Reference manual now available in German</title>
+<link>http://lua.coders-online.net/</link>
+<description>
+The Lua 5.1 reference manual has been translated into German.
+</description>
+<pubDate>
+Tue, 15 Mar 2011 15:29:16 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Initial plans for the Lua Workshop 2011</title>
+<link>http://lua-users.org/wiki/LuaWorkshopTwoThousandEleven</link>
+<description>
+We have started planning the Lua Workshop 2011. Please sign up if you're interested.
+</description>
+<pubDate>
+Fri, 25 Feb 2011 09:39:09 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.0 (alpha) released</title>
+<link>http://www.lua.org/work/</link>
+<description>
+The alpha version of Lua 5.2 is now available for testing.
+</description>
+<pubDate>
+Thu, 25 Nov 2010 14:28:31 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2.0 (work5) released</title>
+<link>http://lua-users.org/lists/lua-l/2010-10/msg00834.html</link>
+<description>
+The fifth work version of Lua 5.2 has been released for testing.
+</description>
+<pubDate>
+Sun, 31 Oct 2010 08:26:58 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Social Media Press joins our corporate sponsorship program</title>
+<link>http://www.lua.org/sponsors.html</link>
+<description>
+Social Media Press has joined our corporate sponsorship program.
+</description>
+<pubDate>
+Thu, 30 Sep 2010 20:30:35 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Mailing list has a new home</title>
+<link>http://vlists.pepperfish.net/cgi-bin/mailman/listinfo/lua-l-lists.lua.org</link>
+<description>
+The mailing list has a new home at Pepperfish.
+</description>
+<pubDate>
+Sat, 28 Aug 2010 13:15:43 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Scheduled maintenance at Lua.org</title>
+<link>http://www.tecgraf.puc-rio.br/lua/mirror/</link>
+<description>
+Short maintenance scheduled at Lua.org on 20 August.
+Mirror site at PUC-Rio activated during downtime.
+</description>
+<pubDate>
+Thu, 19 Aug 2010 10:33:26 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2 (work4) released.</title>
+<link>http://lua-users.org/lists/lua-l/2010-07/msg00862.html</link>
+<description>
+The fourth work version of Lua 5.2 has been released for testing.
+</description>
+<pubDate>
+Sun, 01 Aug 2010 10:47:57 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2 (work3) released</title>
+<link>http://lua-users.org/lists/lua-l/2010-05/msg00331.html</link>
+<description>
+The third work version of Lua 5.2 has been released for testing.
+</description>
+<pubDate>
+Tue, 18 May 2010 09:42:22 -0300
+</pubDate>
+</item>
+
+<item>
+<title>CSTUG joins our corporate sponsorship program</title>
+<link>http://www.lua.org/sponsors.html</link>
+<description>
+The Czechoslovak TeX Users Group has joined our corporate sponsorship program.
+</description>
+<pubDate>
+Mon, 10 May 2010 20:26:31 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua Programming Gems now available as an e-book</title>
+<link>http://store.feistyduck.com/products/lua-programming-gems-ebook</link>
+<description>
+The book "Lua Programming Gems" is now available as an e-book through Feisty Duck.
+</description>
+<pubDate>
+Tue, 23 Mar 2010 10:08:25 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Roberto talks about Lua at Stanford</title>
+<link>http://www.stanford.edu/class/ee380/Abstracts/100310.html</link>
+<description>
+Roberto Ierusalimschy, the chief architect of Lua, will talk tomorrow at the Stanford EE Computer Systems Colloquium about the design of Lua or "Small is Beautiful".
+</description>
+<pubDate>
+Tue, 09 Mar 2010 00:02:30 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Tutorial on Lua scripting in game production at GDC 2010</title>
+<link>http://www.gdconf.com/conference/tutorials.html#103</link>
+<description>
+A full-day tutorial on Lua scripting in game production will be given today at the Game Developers Conference in San Francisco.
+</description>
+<pubDate>
+Tue, 09 Mar 2010 00:02:30 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Adobe joins our corporate sponsorship program</title>
+<link>http://www.lua.org/sponsors.html</link>
+<description>
+Adobe Systems has joined our corporate sponsorship program.
+</description>
+<pubDate>
+Thu, 04 Mar 2010 10:40:14 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua forums</title>
+<link>http://forum.luahub.com/</link>
+<description>
+The Lua web forums have a new home, courtesy of Stefan Peters.
+</description>
+<pubDate>
+Thu, 21 Jan 2010 08:14:05 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Programming in Lua now available as an e-book</title>
+<link>http://store.feistyduck.com/products/programming-in-lua</link>
+<description>
+The book "Programming in Lua" (2nd edition) is now available as an e-book through Feisty Duck.
+</description>
+<pubDate>
+Mon, 18 Jan 2010 17:08:14 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2 (work2) released</title>
+<link>http://lua-users.org/lists/lua-l/2010-01/msg00814.html</link>
+<description>
+The second work version of Lua 5.2 has been released for testing.
+</description>
+<pubDate>
+Wed, 13 Jan 2010 23:57:57 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.2 (work1) released</title>
+<link>http://lua-users.org/lists/lua-l/2010-01/msg00260.html</link>
+<description>
+The first work version of Lua 5.2 has been released for testing.
+</description>
+<pubDate>
+Sat, 09 Jan 2010 22:17:53 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Tutorial on Lua scripting in game production at GDC 2010</title>
+<link>http://www.gdconf.com/conference/tutorials.html#103</link>
+<description>
+A full-day tutorial on Lua scripting in game production will be given at the Game Developers Conference in San Francisco on Tuesday, March 9th 2010.
+</description>
+<pubDate>
+Thu, 17 Dec 2009 11:27:13 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua store opens at Zazzle</title>
+<link>http://www.zazzle.com/Lua_Store</link>
+<description>
+You can help to spread the word about Lua by buying Lua products at Zazzle and CafePress. Use Lua, wear Lua!
+</description>
+<pubDate>
+Wed, 28 Oct 2009 18:48:33 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2009 held in Rio de Janeiro</title>
+<link>http://www.lua.org/wshop09.html</link>
+<description>
+The Lua Workshop 2009 was held at PUC-Rio in Rio de Janeiro.
+</description>
+<pubDate>
+Tue, 06 Oct 2009 09:26:29 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Created Lua BR</title>
+<link>http://groups.google.com/group/lua-br</link>
+<description>
+Lua BR é a versão brasileira da lista de Lua.
+Todos são bem vindos!
+
+Lua BR is the brazilian version of lua-l.
+The primary language of Lua BR is meant to be Portuguese.
+Everyone is welcome.
+</description>
+<pubDate>
+Wed, 12 Aug 2009 21:11:14 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Ansca announces the Corona SDK based on Lua</title>
+<link>http://lua-users.org/lists/lua-l/2009-06/msg00589.html</link>
+<description>
+Ansca has announced
+the Corona SDK for writing native iPhone applications in Lua.
+</description>
+<pubDate>
+Wed, 24 Jun 2009 18:47:33 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Google's Android Scripting Environment supports Lua</title>
+<link>http://google-opensource.blogspot.com/2009/06/introducing-android-scripting.html</link>
+<description>
+Google introduces the Android Scripting Environment with support for Lua.
+</description>
+<pubDate>
+Tue, 09 Jun 2009 10:07:39 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2009 announced</title>
+<link>http://www.lua.org/wshop09.html</link>
+<description>
+This year the Lua Workshop will be held in Rio de Janeiro, Brazil,
+on October 6-7, 2009.
+</description>
+<pubDate>
+Fri, 29 May 2009 11:41:26 -0300
+</pubDate>
+</item>
+
+<item>
+<title>"Concepts of Programming Languages" discusses Lua</title>
+<link>http://www.pearsonhighered.com/educator/academic/product/0,3110,0136073476,00.html</link>
+<description>
+The 9th edition of the book "Concepts of Programming Languages"
+includes sections on Lua and a brief interview with Roberto.
+</description>
+<pubDate>
+Mon, 18 May 2009 19:02:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Scheduled maintenance at Lua.org</title>
+<link>http://www.tecgraf.puc-rio.br/lua/</link>
+<description>
+Short maintenance scheduled at Lua.org on 15 April.
+Mirror site at PUC-Rio activated during downtime.
+</description>
+<pubDate>
+Sun, 12 Apr 2009 21:27:26 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Interview to appear in "Masterminds of Programming"</title>
+<link>http://www.amazon.com/exec/obidos/ASIN/0596515170/lua-news-20</link>
+<description>
+The book "Masterminds of Programming: Conversations with the Creators of Major Programming Languages" includes an interview with the Lua team.
+</description>
+<pubDate>
+Fri, 27 Mar 2009 14:57:01 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Reference manual now available in Hungarian</title>
+<link>http://thor.4242.hu/scripting/manual_hu.html</link>
+<description>
+The Lua 5.1 reference manual has been translated into Hungarian.
+</description>
+<pubDate>
+Mon, 12 Jan 2009 09:16:36 -0200
+</pubDate>
+</item>
+
+<item>
+<title>"Lua Programming Gems" published</title>
+<link>http://www.lua.org/gems/</link>
+<description>
+The book "Lua Programming Gems" has been published.
+</description>
+<pubDate>
+Sun, 14 Dec 2008 19:44:54 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Roberto interviewed in Computerworld</title>
+<link>http://www.computerworld.com.au/index.php/id;1028768484</link>
+<description>
+Roberto Ierusalimschy, the chief architect of Lua,
+was interviewed about Lua in
+Computerworld's "The A-Z of Programming Languages" series.
+</description>
+<pubDate>
+Fri, 12 Sep 2008 00:14:40 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.1.4 released</title>
+<link>http://www.lua.org/ftp/lua-5.1.4.tar.gz</link>
+<description>
+Lua 5.1.4 has been released. It fixes all known bugs in Lua 5.1.3.
+</description>
+<pubDate>
+Fri, 22 Aug 2008 00:22:54 -0300
+</pubDate>
+</item>
+
+<item>
+<title>New corporate sponsor</title>
+<link>http://www.lua.org/sponsors.html</link>
+<description>
+TYPO3 (AOE media) has joined our corporate sponsorship program.
+</description>
+<pubDate>
+Tue, 01 Jul 2008 20:14:17 -0300
+</pubDate>
+</item>
+
+<item>
+<title>New corporate sponsorship program</title>
+<link>http://www.lua.org/sponsors.html</link>
+<description>
+We have launched a corporate sponsorship program for the Lua project and
+Océ is our first corporate sponsor.
+</description>
+<pubDate>
+Fri, 06 Jun 2008 21:48:58 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Roberto talks about Lua at JAOO 2008</title>
+<link>http://jaoo.com.au/brisbane-2008/presentation/Learn+LUA+in+20+minutes</link>
+<description>
+Roberto Ierusalimschy, the chief architect of Lua,
+will talk at the JAOO Australia conference in Brisbane and Sydney.
+</description>
+<pubDate>
+Tue, 27 May 2008 13:55:15 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Chinese translation of "Programming in Lua" published</title>
+<link>http://www.phei.com.cn/bookshop/bookinfo.asp?bookcode=TP061870%20&amp;booktype=new</link>
+<description>
+A Chinese translation of the book "Programming in Lua" has been published.
+</description>
+<pubDate>
+Tue, 13 May 2008 11:35:45 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Patch for Lua 5.1.3 released</title>
+<link>http://www.lua.org/ftp/patch-lua-5.1.3</link>
+<description>
+A patch file fixing all known bugs in Lua 5.1.3 is now available.
+</description>
+<pubDate>
+Sat, 10 May 2008 15:40:23 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Reference manual now available in Russian</title>
+<link>http://www.lua.ru/doc/</link>
+<description>
+The Lua 5.1 reference manual has been translated into Russian.
+</description>
+<pubDate>
+Thu, 13 Mar 2008 11:22:19 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Live Lua demo now available</title>
+<link>http://www.lua.org/demo.html</link>
+<description>
+You can now try Lua directly in your browser.
+</description>
+<pubDate>
+Fri, 22 Feb 2008 00:50:56 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.1.3 released</title>
+<link>http://www.lua.org/ftp/lua-5.1.3.tar.gz</link>
+<description>
+Lua 5.1.3 has been released. It fixes all known bugs in Lua 5.1.2.
+</description>
+<pubDate>
+Fri, 25 Jan 2008 12:46:13 -0200
+</pubDate>
+</item>
+
+<item>
+<title>"Introductory Lua programming" published</title>
+<link>http://www.amazon.co.jp/exec/obidos/ASIN/4797342722</link>
+<description>
+The book "Introductory Lua programming" by Yutaka Ueno has been published (in Japanese).
+</description>
+<pubDate>
+Thu, 24 Jan 2008 21:05:26 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Reference manual now available in Spanish</title>
+<link>http://www.lua.org/manual/5.1/es/</link>
+<description>
+The Lua 5.1 reference manual has been translated into Spanish.
+</description>
+<pubDate>
+Tue, 18 Dec 2007 18:09:35 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2008 to be held in Washington, D.C.</title>
+<link>http://www.lua.org/wshop08.html</link>
+<description>
+Lua Workshop 2008 to be held at George Washington University in
+Washington, D.C.
+</description>
+<pubDate>
+Wed, 12 Dec 2007 14:19:41 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Reference manual now available in Portuguese</title>
+<link>http://www.lua.org/manual/5.1/pt/</link>
+<description>
+The Lua 5.1 reference manual has been translated into Portuguese.
+O manual de referência de Lua 5.1 foi traduzido para o português.
+</description>
+<pubDate>
+Tue, 11 Sep 2007 09:29:50 -0300
+</pubDate>
+</item>
+
+<item>
+<title>"Traveling light, the Lua way" appears in IEEE Software.</title>
+<link>http://doi.ieeecomputersociety.org/10.1109/MS.2007.150</link>
+<description>
+The article
+"Traveling light, the Lua way" by Ashwin Hirschi of Reflexis
+has appeared in IEEE Software.
+</description>
+<pubDate>
+Thu, 23 Aug 2007 09:33:14 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua climbs to position 15 in the TIOBE Index</title>
+<link>http://www.tiobe.com/index.php/tiobe_index</link>
+<description>
+Lua has climbed from position 18 to position 15
+in the TIOBE Programming Community Index.
+</description>
+<pubDate>
+Sun, 05 Aug 2007 22:07:58 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Workshop on LuaTeX held at TUG 2007</title>
+<link>http://tug.org/tug2007/</link>
+<description>
+A workshop on LuaTeX,
+an extended version of pdfTeX that embeds Lua,
+was held at the TUG 2007,
+the 28th Annual Meeting of the TeX Users Group.
+</description>
+<pubDate>
+Tue, 17 Jul 2007 18:00:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua climbs to position 18 in the TIOBE Index</title>
+<link>http://www.tiobe.com/index.php/tiobe_index</link>
+<description>
+Lua has climbed from position 21 to position 18
+in the TIOBE Programming Community Index.
+</description>
+<pubDate>
+Sun, 08 Jul 2007 08:00:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Korean translation of "Programming in Lua" published</title>
+<link>http://insightbook.springnote.com/pages/253177</link>
+<description>
+A Korean translation of the book "Programming in Lua"
+has been published by Insight.
+</description>
+<pubDate>
+Mon, 25 Jun 2007 22:48:14 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Article on Lua at ACM HOPL III</title>
+<link>http://research.ihost.com/hopl/HOPL.html</link>
+<description>
+The paper "The Evolution of Lua"
+was presented at the
+Third ACM SIGPLAN History of Programming Languages Conference (HOPL III).
+</description>
+<pubDate>
+Sat, 09 Jun 2007 14:30:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Article on Lua in IEEE Software</title>
+<description>
+The article "Traveling light, the Lua way"
+by Ashwin Hirschi
+will appear in the IEEE Software
+special issue on Rapid Application Development with Dynamically Typed Languages
+(September/October 2007).
+</description>
+<pubDate>
+Tue, 15 May 2007 21:36:01 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Article on Lua in Linux Journal</title>
+<link>http://www.linuxjournal.com/xstatic/abstracts/2007-06/bt9605</link>
+<description>
+The article "A Look at Lua" by Joseph Quigley
+will appear in the June 2007 issue of the Linux Journal.
+</description>
+<pubDate>
+Fri, 11 May 2007 07:12:42 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.1.2 released</title>
+<link>http://www.lua.org/versions.html#5.1</link>
+<description>
+Lua 5.1.2 released, fixing all known bugs in Lua 5.1.
+</description>
+<pubDate>
+Mon, 02 Apr 2007 05:22:12 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua climbs to position 25 in the TIOBE Index</title>
+<link>http://www.tiobe.com/index.php/tiobe_index</link>
+<description>
+Lua has climbed from position 44 to position 25
+in the TIOBE Programming Community Index.
+</description>
+<pubDate>
+Tue, 06 Mar 2007 09:05:49 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Mailing list turns 10</title>
+<link>http://lua-users.org/lists/lua-l/2007-02/msg00356.html</link>
+<description>
+The Lua mailing list is now 10 years old.
+</description>
+<pubDate>
+Sat, 24 Feb 2007 09:13:53 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Abstracts selected for Lua Programming Gems</title>
+<link>http://www.lua.org/gems/selected.html</link>
+<description>
+43 abstracts have been selected for Lua Programming Gems.
+</description>
+<pubDate>
+Fri, 02 Feb 2007 09:33:42 -0200
+</pubDate>
+</item>
+
+<item>
+<title>Call for contributions to Lua Programming Gems</title>
+<link>http://www.lua.org/gems/</link>
+<description>
+Contributions to a book on Lua Programming Gems are solicited.
+</description>
+<pubDate>
+Mon, 27 Nov 2006 15:55:33 -0200
+</pubDate>
+</item>
+
+<item>
+<title>German translation of Programming in Lua published</title>
+<link>https://www.opensourcepress.de/index.php?26&amp;backPID=15&amp;tt_products=87</link>
+<description>
+A German translation of the book "Programming in Lua" has been published.
+</description>
+<pubDate>
+Sat, 07 Oct 2006 10:39:17 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua enters top 50 in TIOBE index</title>
+<link>http://www.tiobe.com/index.php/tiobe_index</link>
+<description>
+Lua has entered the top 50 in the TIOBE Programming Community Index.
+</description>
+<pubDate>
+Thu, 05 Oct 2006 11:12:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Reference manual available as book</title>
+<link>http://www.amazon.com/exec/obidos/redirect?link_code=as2&amp;path=ASIN/8590379833&amp;tag=theprogrammil-20&amp;camp=1789&amp;creative=9325</link>
+<description>
+The reference manual for Lua 5.1 is now available as a book.
+</description>
+<pubDate>
+Mon, 21 Aug 2006 23:26:24 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2006 official page</title>
+<link>http://www.lua.org/wshop06.html</link>
+<description>
+Created official page for the Lua Workshop 2006
+</description>
+<pubDate>
+Sat, 08 Jul 2006 18:40:18 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.0.3 released</title>
+<link>http://www.lua.org/versions.html#5.0</link>
+<description>
+Lua 5.0.3 released, fixing all known bugs in Lua 5.0.2.
+</description>
+<pubDate>
+Mon, 26 Jun 2006 21:10:56 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.1.1 released</title>
+<link>http://www.lua.org/versions.html#5.1</link>
+<description>
+Lua 5.1.1 released, fixing all known bugs in Lua 5.1.
+</description>
+<pubDate>
+Fri, 09 Jun 2006 18:59:09 -0300
+</pubDate>
+</item>
+
+<item>
+<title>DistroWatch donation</title>
+<link>http://distrowatch.com/weekly.php?issue=20060605#donation</link>
+<description>
+Lua elected for DistroWatch May 2006 donation.
+</description>
+<pubDate>
+Wed, 07 Jun 2006 14:47:42 -0300
+</pubDate>
+</item>
+
+<item>
+<title>PIL2</title>
+<link>http://www.inf.puc-rio.br/~roberto/pil2/</link>
+<description>
+Second edition of "Programming in Lua" by Roberto Ierusalimschy published.
+</description>
+<pubDate>
+Thu, 23 Mar 2006 00:00:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua 5.1</title>
+<link>http://www.lua.org/versions.html#5.1</link>
+<description>
+Lua 5.1 released.
+</description>
+<pubDate>
+Tue, 21 Feb 2006 00:00:00 -0300
+</pubDate>
+</item>
+
+<item>
+<title>Lua Workshop 2006</title>
+<link>http://lua-users.org/wiki/LuaWorkshopOhSix</link>
+<description>
+Lua Workshop 2006 to be held at the Océ R&amp;D site in Venlo (NL).
+</description>
+<pubDate>
+Wed, 15 Feb 2006 00:00:00 -0200
+</pubDate>
+</item>
+
+</channel>
+</rss>

@@ -1,0 +1,63 @@
+                              Lua User survey
+
+   Please take a few minutes to answer the survey below and help us
+   know our community better. Thank you for your time!
+
+   Please send the completed form to <survey AT lua.org>.  Thanks.
+
+   As respostas podem ser em português.
+
+   _________________________________________________________________
+
+   * How did you find out about Lua? Do you think Lua should be more
+     widely known? How could this be done effectively?
+
+
+
+
+   * If you use Lua in your projects, what kind of role does it have?
+     Which languages, if any, were replaced in your projects by Lua?
+
+
+
+
+   * How large is the role of Lua in your projects? Can you estimate
+     how many lines of Lua code it has and what percentage of the total
+     code is written in Lua?
+
+
+
+
+   * What version of Lua do you use? If you have switched to the latest
+     version, why have you done so? If you still use an earlier version,
+     why haven't you moved to the latest version?
+
+
+
+
+   * If you don't (yet) use Lua in your projects, do you see yourself
+     using Lua instead of another language in the near future? If so,
+     which languages do you think will be replaced?
+
+
+
+
+   * Do you use Lua at work? If so, how many people use Lua in your
+     organization? If not, do you think you'll use Lua at work in the
+     near future? If not, why?
+
+
+
+
+   * What features or libraries do you miss most and wish that Lua had?
+     Does the lack of these features or libraries preclude you from
+     using Lua?
+
+
+
+
+   * If you wish, add any other comments or identify yourself.
+
+
+
+   _________________________________________________________________
